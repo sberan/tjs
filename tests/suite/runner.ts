@@ -9,6 +9,8 @@ export interface RunnerOptions {
   skipKeywords?: string[];
   /** Callback for each test result */
   onResult?: (result: TestResult) => void;
+  /** Remote schemas to make available for $ref resolution */
+  remotes?: Record<string, JsonSchema>;
 }
 
 // Keywords that are not yet implemented or have known issues
@@ -64,7 +66,10 @@ export function runTestSuite(files: TestFile[], options: RunnerOptions = {}): Co
       try {
         // Use formatAssertion: false for test suite compliance
         // (JSON Schema spec treats format as annotation-only by default)
-        validator = new Validator(group.schema as JsonSchema, { formatAssertion: false });
+        validator = new Validator(group.schema as JsonSchema, {
+          formatAssertion: false,
+          remotes: options.remotes,
+        });
       } catch (err) {
         // Schema construction failed - all tests in this group fail
         for (const test of group.tests) {
