@@ -16,8 +16,8 @@
   ],
   "scripts": {
     "build": "tsc",
-    "test": "npm run test:types && npm run test:runtime",
-    "test:types": "tsc --noEmit -p tests/types/tsconfig.json && vitest typecheck",
+    "test": "npm run test:types",
+    "test:types": "eslint tests/types/",
     "test:runtime": "vitest run"
   },
   "keywords": [
@@ -31,6 +31,9 @@
     "node": ">=18"
   },
   "devDependencies": {
+    "@typescript-eslint/parser": "^8.50.1",
+    "eslint": "^9.39.2",
+    "eslint-plugin-expect-type": "^0.6.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   },

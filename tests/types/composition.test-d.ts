@@ -1,4 +1,3 @@
-import type { Equal, Expect } from './test-utils.js';
 import { schema } from 'json-schema-ts';
 
 // anyOf - primitives
@@ -8,7 +7,7 @@ const AnyOfPrimitives = schema({
     { type: 'number' },
   ],
 });
-type _AnyOfPrimitives = Expect<Equal<typeof AnyOfPrimitives.type, string | number>>;
+AnyOfPrimitives.type; // $ExpectType string | number
 
 // anyOf - objects
 const AnyOfObjects = schema({
@@ -17,7 +16,7 @@ const AnyOfObjects = schema({
     { type: 'object', properties: { b: { type: 'number' } }, required: ['b'] },
   ],
 });
-type _AnyOfObjects = Expect<Equal<typeof AnyOfObjects.type, { a: string } | { b: number }>>;
+AnyOfObjects.type; // $ExpectType { a: string } | { b: number }
 
 // oneOf - discriminated union
 const OneOf = schema({
@@ -26,7 +25,7 @@ const OneOf = schema({
     { type: 'object', properties: { kind: { const: 'b' }, b: { type: 'number' } }, required: ['kind'] },
   ],
 });
-type _OneOf = Expect<Equal<typeof OneOf.type, { kind: 'a'; a?: string } | { kind: 'b'; b?: number }>>;
+OneOf.type; // $ExpectType { kind: "a"; a?: string } | { kind: "b"; b?: number }
 
 // allOf - intersection of objects
 const AllOf = schema({
@@ -35,8 +34,8 @@ const AllOf = schema({
     { type: 'object', properties: { age: { type: 'number' } }, required: ['age'] },
   ],
 });
-type _AllOfName = Expect<Equal<typeof AllOf.type['name'], string>>;
-type _AllOfAge = Expect<Equal<typeof AllOf.type['age'], number>>;
+AllOf.type.name; // $ExpectType string
+AllOf.type.age; // $ExpectType number
 
 // allOf - three schemas
 const AllOf3 = schema({
@@ -46,9 +45,9 @@ const AllOf3 = schema({
     { type: 'object', properties: { c: { type: 'boolean' } }, required: ['c'] },
   ],
 });
-type _AllOf3A = Expect<Equal<typeof AllOf3.type['a'], string>>;
-type _AllOf3B = Expect<Equal<typeof AllOf3.type['b'], number>>;
-type _AllOf3C = Expect<Equal<typeof AllOf3.type['c'], boolean>>;
+AllOf3.type.a; // $ExpectType string
+AllOf3.type.b; // $ExpectType number
+AllOf3.type.c; // $ExpectType boolean
 
 // if/then/else - results in union (then | else branches)
 const Conditional = schema({
@@ -78,4 +77,4 @@ const NestedAnyOf = schema({
   },
   required: ['value'],
 });
-type _NestedAnyOf = Expect<Equal<typeof NestedAnyOf.type, { value: string | number }>>;
+NestedAnyOf.type; // $ExpectType { value: string | number }

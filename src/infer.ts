@@ -163,12 +163,16 @@ type InferRef<R extends string, Defs, Depth extends unknown[]> =
 // Handle not (exclude from JsonValue)
 // Supports both single types and type arrays
 // Uses explicit union building instead of Exclude for cleaner type output
+// Force evaluation to avoid showing the helper type name
 type InferNot<N> =
   N extends { type: readonly string[] }
-    ? BuildNotType<N['type']>
+    ? EvalNotType<BuildNotType<N['type']>>
     : N extends { type: string }
-      ? BuildNotType<readonly [N['type']]>
+      ? EvalNotType<BuildNotType<readonly [N['type']]>>
       : JsonValue;
+
+// Force TypeScript to fully evaluate the union type
+type EvalNotType<T> = T extends infer U ? U : never;
 
 // Build the "not" type by including only types NOT in the excluded set
 // Note: 'integer' and 'number' both map to TS number, so excluding either excludes number
