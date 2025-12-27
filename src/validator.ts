@@ -182,12 +182,36 @@ export class Validator<T> {
 
   #validateFormat(data: string, format: string, path: string): ValidationError | null {
     const formatValidators: Record<string, (s: string) => boolean> = {
+      // Existing formats
       email: s => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s),
       uuid: s => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s),
-      'date-time': s => !isNaN(Date.parse(s)),
+      'date-time': s => !isNaN(Date.parse(s)) && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(s),
       uri: s => /^[a-z][a-z\d+.-]*:\/\/.+$/i.test(s),
       ipv4: s => /^(\d{1,3}\.){3}\d{1,3}$/.test(s) && s.split('.').every(n => parseInt(n) <= 255),
       ipv6: s => /^([0-9a-f]{1,4}:){7}[0-9a-f]{1,4}$/i.test(s),
+      // New formats
+      date: s => /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(Date.parse(s)),
+      time: s => /^\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?$/.test(s),
+      duration: s => /^P(\d+Y)?(\d+M)?(\d+W)?(\d+D)?(T(\d+H)?(\d+M)?(\d+(\.\d+)?S)?)?$/.test(s) && s !== 'P' && s !== 'PT',
+      hostname: s => /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i.test(s),
+      'uri-reference': s => {
+        try {
+          new URL(s, 'http://example.com');
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      'json-pointer': s => s === '' || /^(\/([^~/]|~0|~1)*)*$/.test(s),
+      'relative-json-pointer': s => /^\d+(#|(\/([^~/]|~0|~1)*)*)?$/.test(s),
+      regex: s => {
+        try {
+          new RegExp(s);
+          return true;
+        } catch {
+          return false;
+        }
+      },
     };
 
     const validator = formatValidators[format];
@@ -232,6 +256,39 @@ export class Validator<T> {
       errors.push({ path, message: 'Array items must be unique', keyword: 'uniqueItems', value: data });
     }
 
+    // Validate contains
+    if (schema.contains) {
+      const minContains = schema.minContains ?? 1;
+      const maxContains = schema.maxContains ?? Infinity;
+
+      // minContains: 0 disables contains validation entirely
+      if (minContains > 0) {
+        let matchCount = 0;
+        for (let i = 0; i < data.length; i++) {
+          if (this.#validate(data[i], schema.contains, `${path}[${i}]`).length === 0) {
+            matchCount++;
+          }
+        }
+
+        if (matchCount < minContains) {
+          errors.push({
+            path,
+            message: `Array must contain at least ${minContains} item(s) matching the contains schema`,
+            keyword: 'contains',
+            value: matchCount,
+          });
+        }
+        if (matchCount > maxContains) {
+          errors.push({
+            path,
+            message: `Array must contain at most ${maxContains} item(s) matching the contains schema`,
+            keyword: 'maxContains',
+            value: matchCount,
+          });
+        }
+      }
+    }
+
     // Validate prefixItems (tuple)
     if (schema.prefixItems) {
       for (let i = 0; i < schema.prefixItems.length; i++) {
@@ -267,11 +324,37 @@ export class Validator<T> {
     const errors: ValidationError[] = [];
     const properties = schema.properties ?? {};
     const required = schema.required ?? [];
+    const keys = Object.keys(data);
+
+    // Check minProperties/maxProperties
+    if (schema.minProperties !== undefined && keys.length < schema.minProperties) {
+      errors.push({ path, message: `Object must have at least ${schema.minProperties} properties`, keyword: 'minProperties', value: keys.length });
+    }
+    if (schema.maxProperties !== undefined && keys.length > schema.maxProperties) {
+      errors.push({ path, message: `Object must have at most ${schema.maxProperties} properties`, keyword: 'maxProperties', value: keys.length });
+    }
 
     // Check required properties
     for (const key of required) {
       if (!(key in data)) {
         errors.push({ path: path ? `${path}.${key}` : key, message: 'Required property is missing', keyword: 'required' });
+      }
+    }
+
+    // Check dependentRequired
+    if (schema.dependentRequired) {
+      for (const [trigger, dependents] of Object.entries(schema.dependentRequired)) {
+        if (trigger in data) {
+          for (const dependent of dependents) {
+            if (!(dependent in data)) {
+              errors.push({
+                path: path ? `${path}.${dependent}` : dependent,
+                message: `Property "${dependent}" is required when "${trigger}" is present`,
+                keyword: 'dependentRequired',
+              });
+            }
+          }
+        }
       }
     }
 
