@@ -1,7 +1,11 @@
 import { schema } from 'json-schema-ts';
 
+// =============================================================================
+// $ref and $defs - Schema References
+// =============================================================================
+
 // Simple $ref
-const WithDefs = schema({
+const SimpleRef = schema({
   $defs: {
     Item: {
       type: 'object',
@@ -12,7 +16,7 @@ const WithDefs = schema({
   type: 'array',
   items: { $ref: '#/$defs/Item' },
 });
-WithDefs.type; // $ExpectType { id: string }[]
+SimpleRef.type; // $ExpectType { id: string }[]
 
 // Multiple refs to same definition
 const MultiRef = schema({
@@ -91,3 +95,55 @@ const NestedWithRefs = schema({
   required: ['start', 'end'],
 });
 NestedWithRefs.type; // $ExpectType { start: { x: number; y: number }; end: { x: number; y: number } }
+
+// Deeply nested refs (ref to ref)
+const DeepRefs = schema({
+  $defs: {
+    Inner: {
+      type: 'object',
+      properties: { value: { type: 'string' } },
+      required: ['value'],
+    },
+    Outer: {
+      type: 'object',
+      properties: { inner: { $ref: '#/$defs/Inner' } },
+      required: ['inner'],
+    },
+  },
+  type: 'object',
+  properties: {
+    outer: { $ref: '#/$defs/Outer' },
+  },
+  required: ['outer'],
+});
+DeepRefs.type; // $ExpectType { outer: { inner: { value: string } } }
+
+// =============================================================================
+// Circular References - handled by depth limit
+// =============================================================================
+
+// Circular $ref expands to depth limit instead of causing TS recursion error
+const CircularRef = schema({
+  $defs: {
+    Node: {
+      type: 'object',
+      properties: {
+        value: { type: 'string' },
+        next: { $ref: '#/$defs/Node' },
+      },
+    },
+  },
+  $ref: '#/$defs/Node',
+});
+// Verify structure at first level (full expansion is ~15 levels deep)
+CircularRef.type.value; // $ExpectType string | undefined
+CircularRef.type.next?.value; // $ExpectType  string | undefined
+
+// Self-referential definition (direct cycle)
+const DirectCycle = schema({
+  $defs: {
+    Self: { $ref: '#/$defs/Self' },
+  },
+  $ref: '#/$defs/Self',
+});
+DirectCycle.type; // $ExpectType unknown

@@ -1,5 +1,9 @@
 import { schema } from 'json-schema-ts';
 
+// =============================================================================
+// Primitive Types
+// =============================================================================
+
 // String
 const S = schema({ type: 'string' });
 S.type; // $ExpectType string
@@ -20,6 +24,10 @@ B.type; // $ExpectType boolean
 const Null = schema({ type: 'null' });
 Null.type; // $ExpectType null
 
+// =============================================================================
+// Const - Literal Types
+// =============================================================================
+
 // Const - string
 const ConstStr = schema({ const: 'foo' });
 ConstStr.type; // $ExpectType "foo"
@@ -31,6 +39,10 @@ ConstNum.type; // $ExpectType 42
 // Const - boolean
 const ConstBool = schema({ const: true });
 ConstBool.type; // $ExpectType true
+
+// =============================================================================
+// Enum - Union of Literals
+// =============================================================================
 
 // Enum - strings
 const EnumStr = schema({ enum: ['a', 'b', 'c'] });
@@ -44,10 +56,60 @@ EnumNum.type; // $ExpectType 1 | 2 | 3
 const EnumMixed = schema({ enum: ['yes', 'no', 1, 0, null] });
 EnumMixed.type; // $ExpectType "yes" | "no" | 1 | 0 | null
 
-// Type array - nullable
-const Nullable = schema({ type: ['string', 'null'] });
-Nullable.type; // $ExpectType string | null
+// =============================================================================
+// Type Arrays - Union Types
+// =============================================================================
 
-// Type array - multiple
-const Multi = schema({ type: ['string', 'number', 'boolean'] });
-Multi.type; // $ExpectType string | number | boolean
+// Type array - nullable string
+const NullableString = schema({ type: ['string', 'null'] });
+NullableString.type; // $ExpectType string | null
+
+// Type array - multiple primitives
+const MultiPrimitive = schema({ type: ['string', 'number', 'boolean'] });
+MultiPrimitive.type; // $ExpectType string | number | boolean
+
+// Type array - nullable object with properties
+const NullableObject = schema({
+  type: ['object', 'null'],
+  properties: {
+    foo: { type: 'string' },
+  },
+});
+NullableObject.type; // $ExpectType { foo?: string } | null
+
+// Type array - nullable object with required
+const NullableObjectRequired = schema({
+  type: ['object', 'null'],
+  properties: {
+    id: { type: 'string' },
+    name: { type: 'string' },
+  },
+  required: ['id'],
+});
+NullableObjectRequired.type; // $ExpectType { id: string; name?: string } | null
+
+// Type array - nullable array
+const NullableArray = schema({
+  type: ['array', 'null'],
+  items: { type: 'number' },
+});
+NullableArray.type; // $ExpectType number[] | null
+
+// Type array - object or array
+const ObjectOrArray = schema({
+  type: ['object', 'array'],
+  properties: {
+    value: { type: 'string' },
+  },
+  items: { type: 'number' },
+});
+ObjectOrArray.type; // $ExpectType { value?: string } | number[]
+
+// Type array - string or object
+const StringOrObject = schema({
+  type: ['string', 'object'],
+  properties: {
+    data: { type: 'boolean' },
+  },
+});
+StringOrObject.type; // $ExpectType string | { data?: boolean }

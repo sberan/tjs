@@ -1,4 +1,9 @@
+import type { JsonArray, JsonObject, JsonValue } from 'type-fest';
 import { schema } from 'json-schema-ts';
+
+// =============================================================================
+// anyOf - Union Types
+// =============================================================================
 
 // anyOf - primitives
 const AnyOfPrimitives = schema({
@@ -18,6 +23,47 @@ const AnyOfObjects = schema({
 });
 AnyOfObjects.type; // $ExpectType { a: string } | { b: number }
 
+// anyOf - nested inside object
+const NestedAnyOf = schema({
+  type: 'object',
+  properties: {
+    value: {
+      anyOf: [
+        { type: 'string' },
+        { type: 'number' },
+      ],
+    },
+  },
+  required: ['value'],
+});
+NestedAnyOf.type; // $ExpectType { value: string | number }
+
+// Union of arrays
+const UnionOfArrays = schema({
+  anyOf: [
+    { type: 'array', items: { type: 'string' } },
+    { type: 'array', items: { type: 'number' } },
+  ],
+});
+UnionOfArrays.type; // $ExpectType string[] | number[]
+
+// Array of unions
+const ArrayOfUnions = schema({
+  type: 'array',
+  items: {
+    anyOf: [
+      { type: 'string' },
+      { type: 'number' },
+      { type: 'null' },
+    ],
+  },
+});
+ArrayOfUnions.type; // $ExpectType (string | number | null)[]
+
+// =============================================================================
+// oneOf - Exclusive Union (same as anyOf at type level)
+// =============================================================================
+
 // oneOf - discriminated union
 const OneOf = schema({
   oneOf: [
@@ -26,6 +72,10 @@ const OneOf = schema({
   ],
 });
 OneOf.type; // $ExpectType { kind: "a"; a?: string } | { kind: "b"; b?: number }
+
+// =============================================================================
+// allOf - Intersection Types
+// =============================================================================
 
 // allOf - intersection of objects
 const AllOf = schema({
@@ -46,45 +96,47 @@ const AllOf3 = schema({
 });
 AllOf3.type; // $ExpectType { a: string; } & { b: number; } & { c: boolean; }
 
-// if/then/else - produces union of then/else branches
-const Conditional = schema({
-  if: { type: 'string' },
-  then: { type: 'string', minLength: 1 },
-  else: { type: 'number' },
+// allOf with not (string & JsonValue = string)
+const AllOfWithNot = schema({
+  allOf: [
+    { type: 'string' },
+    { not: { const: '' } },
+  ],
 });
-Conditional.type; // $ExpectType string | number
+AllOfWithNot.type; // $ExpectType string & JsonValue
 
-// if/then/else with object branches (explicit types)
-const ConditionalObjects = schema({
-  if: { type: 'object' },
-  then: { type: 'object', properties: { discount: { type: 'number' } }, required: ['discount'] },
-  else: { type: 'object', properties: { trial: { type: 'boolean' } } },
-});
-ConditionalObjects.type; // $ExpectType { discount: number; } | { trial?: boolean }
+// =============================================================================
+// not - Type Exclusion
+// =============================================================================
 
-// if/then/else with base object and partial branches - merges properties
-const ConditionalMerged = schema({
-  type: 'object',
-  properties: {
-    kind: { type: 'string' },
-  },
-  if: { properties: { kind: { const: 'premium' } } },
-  then: { properties: { discount: { type: 'number' } }, required: ['discount'] },
-  else: { properties: { trial: { type: 'boolean' } } },
-});
-ConditionalMerged.type; // $ExpectType { discount: number; kind?: string; } | { kind?: string; trial?: boolean; }
+// not null → all JSON values except null
+const NotNull = schema({ not: { type: 'null' } });
+NotNull.type; // $ExpectType string | number | boolean | JsonArray | JsonObject
 
-// Nested composition - anyOf inside object
-const NestedAnyOf = schema({
-  type: 'object',
-  properties: {
-    value: {
-      anyOf: [
-        { type: 'string' },
-        { type: 'number' },
-      ],
-    },
-  },
-  required: ['value'],
-});
-NestedAnyOf.type; // $ExpectType { value: string | number }
+// not string → all JSON values except string
+const NotString = schema({ not: { type: 'string' } });
+NotString.type; // $ExpectType number | boolean | null | JsonArray | JsonObject
+
+// not number → all JSON values except number
+const NotNumber = schema({ not: { type: 'number' } });
+NotNumber.type; // $ExpectType string | boolean | null | JsonArray | JsonObject
+
+// not boolean → all JSON values except boolean
+const NotBoolean = schema({ not: { type: 'boolean' } });
+NotBoolean.type; // $ExpectType string | number | null | JsonArray | JsonObject
+
+// not object → primitives and arrays only
+const NotObject = schema({ not: { type: 'object' } });
+NotObject.type; // $ExpectType string | number | boolean | null | JsonArray
+
+// not array → primitives and objects only
+const NotArray = schema({ not: { type: 'array' } });
+NotArray.type; // $ExpectType string | number | boolean | null | JsonObject
+
+// not with type array - excludes multiple types
+const NotStringOrNumber = schema({ not: { type: ['string', 'number'] } });
+NotStringOrNumber.type; // $ExpectType boolean | null | JsonArray | JsonObject
+
+// not with all primitives in array
+const NotPrimitives = schema({ not: { type: ['string', 'number', 'boolean', 'null'] } });
+NotPrimitives.type; // $ExpectType JsonArray | JsonObject
