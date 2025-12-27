@@ -34,8 +34,7 @@ const AllOf = schema({
     { type: 'object', properties: { age: { type: 'number' } }, required: ['age'] },
   ],
 });
-AllOf.type.name; // $ExpectType string
-AllOf.type.age; // $ExpectType number
+AllOf.type; // $ExpectType { name: string; } & { age: number; }
 
 // allOf - three schemas
 const AllOf3 = schema({
@@ -45,12 +44,20 @@ const AllOf3 = schema({
     { type: 'object', properties: { c: { type: 'boolean' } }, required: ['c'] },
   ],
 });
-AllOf3.type.a; // $ExpectType string
-AllOf3.type.b; // $ExpectType number
-AllOf3.type.c; // $ExpectType boolean
+AllOf3.type; // $ExpectType { a: string; } & { b: number; } & { c: boolean; }
 
-// if/then/else - results in union (then | else branches)
+// if/then/else - when then/else have explicit types, produces union
 const Conditional = schema({
+  if: { type: 'string' },
+  then: { type: 'string', minLength: 1 },
+  else: { type: 'number' },
+});
+Conditional.type; // $ExpectType string | number
+
+
+// if/then/else - without explicit types in branches, falls back to unknown
+// (partial object schemas without type don't infer structure)
+const ConditionalPartial = schema({
   type: 'object',
   properties: {
     kind: { type: 'string' },
@@ -59,10 +66,7 @@ const Conditional = schema({
   then: { properties: { discount: { type: 'number' } }, required: ['discount'] },
   else: { properties: { trial: { type: 'boolean' } } },
 });
-type ConditionalType = typeof Conditional.type;
-// Verify both branches are valid
-const _cond1: ConditionalType = { discount: 10 };
-const _cond2: ConditionalType = {};
+ConditionalPartial.type; // $ExpectType unknown
 
 // Nested composition - anyOf inside object
 const NestedAnyOf = schema({

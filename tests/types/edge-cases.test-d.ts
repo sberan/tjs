@@ -233,9 +233,9 @@ IfThenWithBaseType.type; // $ExpectType number
 // MEDIUM PRIORITY FIXES - Type inference holes
 // =============================================================================
 
-// FIX #3: Circular $ref now returns `unknown` instead of causing TS recursion error
+// FIX #3: Circular $ref now expands to depth limit instead of causing TS recursion error
 // Previously: TypeScript would crash with "Type instantiation is excessively deep"
-// Now: Returns `unknown` after hitting depth limit of 15
+// Now: Expands to depth 15 levels before stopping
 const CircularRef = schema({
   $defs: {
     Node: {
@@ -248,11 +248,9 @@ const CircularRef = schema({
   },
   $ref: '#/$defs/Node',
 });
-// The type should not cause a compilation error
-// After depth limit, circular refs resolve to `unknown`
-type CircularRefType = typeof CircularRef.type;
-// We can at least verify it compiles and has some structure
-const _circularTest: CircularRefType = { value: 'test' };
+// Verify structure at first level (full expansion is ~15 levels deep)
+CircularRef.type.value; // $ExpectType string | undefined
+CircularRef.type.next?.value; // $ExpectType  string | undefined
 
 // Self-referential definition (direct cycle)
 const DirectCycle = schema({
@@ -285,12 +283,12 @@ const MultipleMissingRequired = schema({
 });
 MultipleMissingRequired.type; // $ExpectType { id: number; foo: unknown; bar: unknown; baz: unknown }
 
-// All required properties missing from properties
+// All required properties missing from properties - now properly tracked
 const AllMissingRequired = schema({
   type: 'object',
   required: ['a', 'b'],
 });
-AllMissingRequired.type; // $ExpectType Record<string, unknown>
+AllMissingRequired.type; // $ExpectType { a: unknown; b: unknown; }
 
 // Mix of defined and undefined required with optional
 const MixedRequired = schema({
