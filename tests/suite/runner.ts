@@ -64,7 +64,9 @@ export function runTestSuite(files: TestFile[], options: RunnerOptions = {}): Co
       let validator: Validator<unknown>;
 
       try {
-        validator = new Validator(group.schema as JsonSchema);
+        // Use formatAssertion: false for test suite compliance
+        // (JSON Schema spec treats format as annotation-only by default)
+        validator = new Validator(group.schema as JsonSchema, { formatAssertion: false });
       } catch (err) {
         // Schema construction failed - all tests in this group fail
         for (const test of group.tests) {

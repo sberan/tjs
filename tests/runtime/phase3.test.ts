@@ -425,63 +425,47 @@ describe('unevaluatedItems', () => {
   });
 });
 
-describe('contentEncoding', () => {
+// Per JSON Schema spec (draft 2020-12), contentEncoding, contentMediaType,
+// and contentSchema are ANNOTATIONS by default, not assertions.
+// They do not cause validation failures.
+// See: https://json-schema.org/understanding-json-schema/reference/non_json_data
+describe('contentEncoding (annotation-only by default)', () => {
   const Base64String = schema({
     type: 'string',
     contentEncoding: 'base64',
   });
 
-  it('accepts valid base64 strings', () => {
-    expect(Base64String.validate('SGVsbG8gV29ybGQ=')).toBe(true); // "Hello World"
-    expect(Base64String.validate('dGVzdA==')).toBe(true); // "test"
-    expect(Base64String.validate('')).toBe(true); // empty is valid base64
-  });
-
-  it('rejects invalid base64 strings', () => {
-    expect(Base64String.validate('not valid base64!!!')).toBe(false);
-    expect(Base64String.validate('SGVsbG8@V29ybGQ=')).toBe(false); // invalid char @
-  });
-
-  it('returns correct error message', () => {
-    const result = Base64String.parse('invalid!!!');
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.errors.some((e) => e.keyword === 'contentEncoding')).toBe(true);
-    }
+  it('accepts all strings (content keywords are annotation-only)', () => {
+    expect(Base64String.validate('SGVsbG8gV29ybGQ=')).toBe(true); // valid base64
+    expect(Base64String.validate('dGVzdA==')).toBe(true); // valid base64
+    expect(Base64String.validate('')).toBe(true); // empty string
+    // Per spec, invalid content still passes validation
+    expect(Base64String.validate('not valid base64!!!')).toBe(true);
+    expect(Base64String.validate('SGVsbG8@V29ybGQ=')).toBe(true); // invalid char @
   });
 });
 
-describe('contentMediaType', () => {
+describe('contentMediaType (annotation-only by default)', () => {
   const JsonString = schema({
     type: 'string',
     contentMediaType: 'application/json',
   });
 
-  it('accepts valid JSON strings', () => {
-    expect(JsonString.validate('{"name":"Alice"}')).toBe(true);
-    expect(JsonString.validate('[1,2,3]')).toBe(true);
-    expect(JsonString.validate('"hello"')).toBe(true);
-    expect(JsonString.validate('42')).toBe(true);
-    expect(JsonString.validate('null')).toBe(true);
-  });
-
-  it('rejects invalid JSON strings', () => {
-    expect(JsonString.validate('{invalid json}')).toBe(false);
-    expect(JsonString.validate('{"unclosed": ')).toBe(false);
-    expect(JsonString.validate('undefined')).toBe(false);
-  });
-
-  it('returns correct error message', () => {
-    const result = JsonString.parse('{invalid}');
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.errors.some((e) => e.keyword === 'contentMediaType')).toBe(true);
-    }
+  it('accepts all strings (content keywords are annotation-only)', () => {
+    expect(JsonString.validate('{"name":"Alice"}')).toBe(true); // valid JSON
+    expect(JsonString.validate('[1,2,3]')).toBe(true); // valid JSON
+    expect(JsonString.validate('"hello"')).toBe(true); // valid JSON
+    expect(JsonString.validate('42')).toBe(true); // valid JSON
+    expect(JsonString.validate('null')).toBe(true); // valid JSON
+    // Per spec, invalid content still passes validation
+    expect(JsonString.validate('{invalid json}')).toBe(true);
+    expect(JsonString.validate('{"unclosed": ')).toBe(true);
+    expect(JsonString.validate('undefined')).toBe(true);
   });
 });
 
-describe('contentSchema', () => {
-  // JSON string that must match a schema
+describe('contentSchema (annotation-only by default)', () => {
+  // JSON string with schema annotation
   const JsonWithSchema = schema({
     type: 'string',
     contentMediaType: 'application/json',
@@ -495,17 +479,15 @@ describe('contentSchema', () => {
     },
   });
 
-  it('validates JSON content against schema', () => {
+  it('accepts all strings (content keywords are annotation-only)', () => {
     expect(JsonWithSchema.validate('{"name":"Alice","age":30}')).toBe(true);
     expect(JsonWithSchema.validate('{"name":"Bob"}')).toBe(true);
+    // Per spec, invalid content still passes validation
+    expect(JsonWithSchema.validate('{"age":30}')).toBe(true);
+    expect(JsonWithSchema.validate('{"name":123}')).toBe(true);
   });
 
-  it('rejects JSON that does not match schema', () => {
-    expect(JsonWithSchema.validate('{"age":30}')).toBe(false); // missing required 'name'
-    expect(JsonWithSchema.validate('{"name":123}')).toBe(false); // name should be string
-  });
-
-  // Base64 encoded JSON with schema
+  // Base64 encoded JSON with schema annotation
   const Base64JsonWithSchema = schema({
     type: 'string',
     contentEncoding: 'base64',
@@ -519,17 +501,11 @@ describe('contentSchema', () => {
     },
   });
 
-  it('validates base64-encoded JSON against schema', () => {
-    // {"id":42} encoded as base64
+  it('accepts all strings (content keywords are annotation-only)', () => {
+    // {"id":42} encoded as base64 - valid
     expect(Base64JsonWithSchema.validate('eyJpZCI6NDJ9')).toBe(true);
-  });
-
-  it('rejects invalid base64 before checking JSON', () => {
-    expect(Base64JsonWithSchema.validate('not-base64!!!')).toBe(false);
-  });
-
-  it('rejects invalid JSON after decoding base64', () => {
-    // "not json" encoded as base64
-    expect(Base64JsonWithSchema.validate('bm90IGpzb24=')).toBe(false);
+    // Per spec, invalid content still passes validation
+    expect(Base64JsonWithSchema.validate('not-base64!!!')).toBe(true);
+    expect(Base64JsonWithSchema.validate('bm90IGpzb24=')).toBe(true); // "not json" encoded
   });
 });
