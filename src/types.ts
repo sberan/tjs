@@ -1,7 +1,14 @@
 import type { JsonValue, JsonObject, JsonArray } from 'type-fest';
 
 // Primitive type names
-export type JsonSchemaType = 'string' | 'number' | 'integer' | 'boolean' | 'null' | 'array' | 'object';
+export type JsonSchemaType =
+  | 'string'
+  | 'number'
+  | 'integer'
+  | 'boolean'
+  | 'null'
+  | 'array'
+  | 'object';
 
 // Base schema interface
 export interface JsonSchemaBase {

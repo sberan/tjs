@@ -46,7 +46,7 @@ describe('patternProperties', () => {
       type: 'object',
       patternProperties: {
         '^a': { type: 'string' },
-        'b$': { minLength: 2 },
+        b$: { minLength: 2 },
       },
     });
 
@@ -122,16 +122,20 @@ describe('$anchor', () => {
   });
 
   it('resolves anchor references', () => {
-    expect(WithAnchor.validate({
-      home: { street: '123 Main', city: 'Boston' },
-      work: { street: '456 Oak', city: 'Cambridge' },
-    })).toBe(true);
+    expect(
+      WithAnchor.validate({
+        home: { street: '123 Main', city: 'Boston' },
+        work: { street: '456 Oak', city: 'Cambridge' },
+      })
+    ).toBe(true);
   });
 
   it('validates against anchor schema', () => {
-    expect(WithAnchor.validate({
-      home: { street: '123 Main' }, // missing city
-    })).toBe(false);
+    expect(
+      WithAnchor.validate({
+        home: { street: '123 Main' }, // missing city
+      })
+    ).toBe(false);
   });
 
   it('works with nested anchors', () => {
@@ -180,9 +184,11 @@ describe('$anchor', () => {
       },
     });
 
-    expect(WithBothRefs.validate({
-      byDef: { name: 'foo' },
-      byAnchor: { name: 'bar' },
-    })).toBe(true);
+    expect(
+      WithBothRefs.validate({
+        byDef: { name: 'foo' },
+        byAnchor: { name: 'bar' },
+      })
+    ).toBe(true);
   });
 });

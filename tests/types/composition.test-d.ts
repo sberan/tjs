@@ -7,10 +7,7 @@ import { schema } from 'json-schema-ts';
 
 // anyOf - primitives
 const AnyOfPrimitives = schema({
-  anyOf: [
-    { type: 'string' },
-    { type: 'number' },
-  ],
+  anyOf: [{ type: 'string' }, { type: 'number' }],
 });
 AnyOfPrimitives.type; // $ExpectType string | number
 
@@ -28,10 +25,7 @@ const NestedAnyOf = schema({
   type: 'object',
   properties: {
     value: {
-      anyOf: [
-        { type: 'string' },
-        { type: 'number' },
-      ],
+      anyOf: [{ type: 'string' }, { type: 'number' }],
     },
   },
   required: ['value'],
@@ -51,11 +45,7 @@ UnionOfArrays.type; // $ExpectType string[] | number[]
 const ArrayOfUnions = schema({
   type: 'array',
   items: {
-    anyOf: [
-      { type: 'string' },
-      { type: 'number' },
-      { type: 'null' },
-    ],
+    anyOf: [{ type: 'string' }, { type: 'number' }, { type: 'null' }],
   },
 });
 ArrayOfUnions.type; // $ExpectType (string | number | null)[]
@@ -67,8 +57,16 @@ ArrayOfUnions.type; // $ExpectType (string | number | null)[]
 // oneOf - discriminated union
 const OneOf = schema({
   oneOf: [
-    { type: 'object', properties: { kind: { const: 'a' }, a: { type: 'string' } }, required: ['kind'] },
-    { type: 'object', properties: { kind: { const: 'b' }, b: { type: 'number' } }, required: ['kind'] },
+    {
+      type: 'object',
+      properties: { kind: { const: 'a' }, a: { type: 'string' } },
+      required: ['kind'],
+    },
+    {
+      type: 'object',
+      properties: { kind: { const: 'b' }, b: { type: 'number' } },
+      required: ['kind'],
+    },
   ],
 });
 OneOf.type; // $ExpectType { kind: "a"; a?: string } | { kind: "b"; b?: number }
@@ -98,10 +96,7 @@ AllOf3.type; // $ExpectType { a: string; } & { b: number; } & { c: boolean; }
 
 // allOf with not (string & JsonValue = string)
 const AllOfWithNot = schema({
-  allOf: [
-    { type: 'string' },
-    { not: { const: '' } },
-  ],
+  allOf: [{ type: 'string' }, { not: { const: '' } }],
 });
 AllOfWithNot.type; // $ExpectType string & JsonValue
 

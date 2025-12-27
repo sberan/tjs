@@ -18,7 +18,10 @@
     "build": "tsc",
     "test": "npm run test:types && npm run test:runtime",
     "test:types": "eslint tests/types/",
-    "test:runtime": "vitest run"
+    "test:runtime": "vitest run",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "husky"
   },
   "keywords": [
     "json-schema",
@@ -34,10 +37,16 @@
     "@typescript-eslint/parser": "^8.50.1",
     "eslint": "^9.39.2",
     "eslint-plugin-expect-type": "^0.6.2",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
+    "prettier": "^3.7.4",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"
   },
   "dependencies": {
     "type-fest": "^4.30.0"
+  },
+  "lint-staged": {
+    "*.{ts,js,json}": "prettier --write"
   }
 }

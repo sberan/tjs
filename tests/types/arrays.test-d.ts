@@ -42,10 +42,7 @@ EmptyTuple.type; // $ExpectType []
 // Tuple - fixed length
 const Tuple = schema({
   type: 'array',
-  prefixItems: [
-    { type: 'string' },
-    { type: 'number' },
-  ],
+  prefixItems: [{ type: 'string' }, { type: 'number' }],
   items: false,
 });
 Tuple.type; // $ExpectType [string, number]
@@ -53,11 +50,7 @@ Tuple.type; // $ExpectType [string, number]
 // Tuple - three elements
 const Tuple3 = schema({
   type: 'array',
-  prefixItems: [
-    { type: 'string' },
-    { type: 'number' },
-    { type: 'boolean' },
-  ],
+  prefixItems: [{ type: 'string' }, { type: 'number' }, { type: 'boolean' }],
   items: false,
 });
 Tuple3.type; // $ExpectType [string, number, boolean]
@@ -65,9 +58,7 @@ Tuple3.type; // $ExpectType [string, number, boolean]
 // Tuple with rest elements
 const TupleRest = schema({
   type: 'array',
-  prefixItems: [
-    { type: 'string' },
-  ],
+  prefixItems: [{ type: 'string' }],
   items: { type: 'number' },
 });
 TupleRest.type; // $ExpectType [string, ...number[]]
@@ -75,10 +66,7 @@ TupleRest.type; // $ExpectType [string, ...number[]]
 // Tuple with multiple prefix and rest
 const TupleMultiRest = schema({
   type: 'array',
-  prefixItems: [
-    { type: 'string' },
-    { type: 'boolean' },
-  ],
+  prefixItems: [{ type: 'string' }, { type: 'boolean' }],
   items: { type: 'number' },
 });
 TupleMultiRest.type; // $ExpectType [string, boolean, ...number[]]
