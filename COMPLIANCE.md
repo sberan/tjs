@@ -3,8 +3,8 @@
 ## Summary
 
 - **Total Tests**: 1271
-- **Passed**: 1200 (94.4%)
-- **Failed**: 71
+- **Passed**: 1204 (94.7%)
+- **Failed**: 67
 - **Skipped**: 0
 
 ## By Keyword
@@ -51,7 +51,7 @@
 | propertyNames | 19 | 1 | 0 | 95% |
 | ref | 77 | 2 | 0 | 97% |
 | refRemote | 30 | 1 | 0 | 97% |
-| required | 12 | 4 | 0 | 75% |
+| required | 16 | 0 | 0 | 100% |
 | type | 80 | 0 | 0 | 100% |
 | unevaluatedItems | 59 | 12 | 0 | 83% |
 | unevaluatedProperties | 95 | 30 | 0 | 76% |
@@ -204,30 +204,6 @@
 **Expected**: invalid
 **Actual**: valid
 
-### required / required properties whose names are Javascript object property names
-
-**Test**: none of the properties mentioned
-**Expected**: invalid
-**Actual**: valid
-
-### required / required properties whose names are Javascript object property names
-
-**Test**: __proto__ present
-**Expected**: invalid
-**Actual**: valid
-
-### required / required properties whose names are Javascript object property names
-
-**Test**: toString present
-**Expected**: invalid
-**Actual**: valid
-
-### required / required properties whose names are Javascript object property names
-
-**Test**: constructor present
-**Expected**: invalid
-**Actual**: valid
-
 ### unevaluatedItems / unevaluatedItems with nested items
 
 **Test**: with invalid additional item
@@ -360,4 +336,28 @@
 **Expected**: valid
 **Actual**: invalid
 
-... and 21 more failures
+### unevaluatedProperties / nested unevaluatedProperties, outer false, inner true, properties outside
+
+**Test**: with nested unevaluated properties
+**Expected**: valid
+**Actual**: invalid
+
+### unevaluatedProperties / nested unevaluatedProperties, outer false, inner true, properties inside
+
+**Test**: with nested unevaluated properties
+**Expected**: valid
+**Actual**: invalid
+
+### unevaluatedProperties / in-place applicator siblings, anyOf has unevaluated
+
+**Test**: base case: both properties present
+**Expected**: invalid
+**Actual**: valid
+
+### unevaluatedProperties / in-place applicator siblings, anyOf has unevaluated
+
+**Test**: in place applicator siblings, bar is missing
+**Expected**: invalid
+**Actual**: valid
+
+... and 17 more failures

@@ -496,8 +496,9 @@ export function generateObjectChecks(
       if (schema.required && schema.required.length > 0) {
         for (const prop of schema.required) {
           const propStr = escapeString(prop);
-          const propPathExpr = pathExpr === "''" ? `'${propStr}'` : `${pathExpr} + '.${propStr}'`;
-          code.if(`!('${propStr}' in ${dataVar})`, () => {
+          // Use Object.hasOwn for accurate property check (handles __proto__, toString, etc.)
+          code.if(`!Object.hasOwn(${dataVar}, '${propStr}')`, () => {
+            const propPathExpr = pathExpr === "''" ? `'${propStr}'` : `${pathExpr} + '.${propStr}'`;
             code.line(
               `if (errors) errors.push({ path: ${propPathExpr}, message: 'Required property missing', keyword: 'required' });`
             );
