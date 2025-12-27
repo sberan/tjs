@@ -7,7 +7,6 @@ import { ajvAdapter } from './adapters/ajv.js';
 // Keywords to skip (not implemented or have known issues)
 const SKIP_KEYWORDS = new Set([
   'refRemote', // Remote $ref requires file I/O to load schemas (tested in compliance suite)
-  'vocabulary', // Vocabulary not implemented
   'unknownKeyword', // Meta-schema validation not implemented
   'infinite-loop-detection', // Causes stack overflow in some validators
 ]);

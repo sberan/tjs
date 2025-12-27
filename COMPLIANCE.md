@@ -3,9 +3,9 @@
 ## Summary
 
 - **Total Tests**: 1271
-- **Passed**: 1266 (99.6%)
+- **Passed**: 1271 (100.0%)
 - **Failed**: 0
-- **Skipped**: 5
+- **Skipped**: 0
 
 ## By Keyword
 
@@ -56,4 +56,4 @@
 | unevaluatedItems | 71 | 0 | 0 | 100% |
 | unevaluatedProperties | 125 | 0 | 0 | 100% |
 | uniqueItems | 69 | 0 | 0 | 100% |
-| vocabulary | 0 | 0 | 5 | N/A |
+| vocabulary | 5 | 0 | 0 | 100% |

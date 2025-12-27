@@ -15,7 +15,6 @@ export interface RunnerOptions {
 
 // Keywords that are not yet implemented or have known issues
 const UNIMPLEMENTED_KEYWORDS = [
-  'vocabulary', // Vocabulary not implemented
   'unknownKeyword', // Meta-schema validation not implemented
 ];
 
