@@ -1,4 +1,4 @@
-import type { JsonSchema, JsonSchemaBase, JsonValue } from './types.js';
+import type { JsonSchema, JsonSchemaBase } from './types.js';
 
 export interface ValidationError {
   path: string;
@@ -10,6 +10,13 @@ export interface ValidationError {
 export type ParseResult<T> =
   | { ok: true; data: T }
   | { ok: false; errors: ValidationError[] };
+
+// Internal result type that tracks evaluated properties/items for unevaluated* keywords
+interface ValidationResult {
+  errors: ValidationError[];
+  evaluatedProperties?: Set<string>;
+  evaluatedItems?: Set<number>;
+}
 
 export class Validator<T> {
   readonly #schema: JsonSchema;
@@ -55,6 +62,12 @@ export class Validator<T> {
     if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
       this.#collectAnchors(schema.additionalProperties);
     }
+    if (schema.unevaluatedProperties && typeof schema.unevaluatedProperties === 'object') {
+      this.#collectAnchors(schema.unevaluatedProperties);
+    }
+    if (schema.unevaluatedItems && typeof schema.unevaluatedItems === 'object') {
+      this.#collectAnchors(schema.unevaluatedItems);
+    }
     if (schema.anyOf) {
       for (const sub of schema.anyOf) {
         this.#collectAnchors(sub);
@@ -88,37 +101,47 @@ export class Validator<T> {
     if (schema.propertyNames) {
       this.#collectAnchors(schema.propertyNames);
     }
+    if (schema.dependentSchemas) {
+      for (const dep of Object.values(schema.dependentSchemas)) {
+        this.#collectAnchors(dep);
+      }
+    }
+    if (schema.contentSchema) {
+      this.#collectAnchors(schema.contentSchema);
+    }
   }
 
   validate(data: unknown): data is T {
-    return this.#validate(data, this.#schema, '').length === 0;
+    return this.#validate(data, this.#schema, '').errors.length === 0;
   }
 
   assert(data: unknown): T {
-    const errors = this.#validate(data, this.#schema, '');
-    if (errors.length > 0) {
-      const message = errors.map(e => `${e.path}: ${e.message}`).join('\n');
+    const result = this.#validate(data, this.#schema, '');
+    if (result.errors.length > 0) {
+      const message = result.errors.map(e => `${e.path}: ${e.message}`).join('\n');
       throw new Error(`Validation failed:\n${message}`);
     }
     return data as T;
   }
 
   parse(data: unknown): ParseResult<T> {
-    const errors = this.#validate(data, this.#schema, '');
-    if (errors.length === 0) {
+    const result = this.#validate(data, this.#schema, '');
+    if (result.errors.length === 0) {
       return { ok: true, data: data as T };
     }
-    return { ok: false, errors };
+    return { ok: false, errors: result.errors };
   }
 
-  #validate(data: unknown, schema: JsonSchema, path: string): ValidationError[] {
+  #validate(data: unknown, schema: JsonSchema, path: string): ValidationResult {
     // Boolean schemas
-    if (schema === true) return [];
+    if (schema === true) return { errors: [] };
     if (schema === false) {
-      return [{ path, message: 'Schema is false, no value is valid', keyword: 'false' }];
+      return { errors: [{ path, message: 'Schema is false, no value is valid', keyword: 'false' }] };
     }
 
     const errors: ValidationError[] = [];
+    let evaluatedProperties: Set<string> | undefined;
+    let evaluatedItems: Set<number> | undefined;
 
     // Handle $ref
     if (schema.$ref) {
@@ -126,7 +149,7 @@ export class Validator<T> {
       if (refSchema) {
         return this.#validate(data, refSchema, path);
       }
-      return [{ path, message: `Unresolved $ref: ${schema.$ref}`, keyword: '$ref' }];
+      return { errors: [{ path, message: `Unresolved $ref: ${schema.$ref}`, keyword: '$ref' }] };
     }
 
     // Handle const
@@ -134,7 +157,7 @@ export class Validator<T> {
       if (!this.#deepEqual(data, schema.const)) {
         errors.push({ path, message: `Expected const ${JSON.stringify(schema.const)}`, keyword: 'const', value: data });
       }
-      return errors;
+      return { errors };
     }
 
     // Handle enum
@@ -142,52 +165,140 @@ export class Validator<T> {
       if (!schema.enum.some(v => this.#deepEqual(data, v))) {
         errors.push({ path, message: `Value must be one of: ${JSON.stringify(schema.enum)}`, keyword: 'enum', value: data });
       }
-      return errors;
+      return { errors };
     }
 
-    // Handle anyOf
+    // Handle anyOf - merge evaluated props from the first valid subschema
     if (schema.anyOf) {
-      const anyValid = schema.anyOf.some(s => this.#validate(data, s, path).length === 0);
+      let anyValid = false;
+      for (const s of schema.anyOf) {
+        const result = this.#validate(data, s, path);
+        if (result.errors.length === 0) {
+          anyValid = true;
+          // Merge evaluated properties from matching subschema
+          if (result.evaluatedProperties) {
+            evaluatedProperties = evaluatedProperties ?? new Set();
+            for (const key of result.evaluatedProperties) {
+              evaluatedProperties.add(key);
+            }
+          }
+          if (result.evaluatedItems) {
+            evaluatedItems = evaluatedItems ?? new Set();
+            for (const idx of result.evaluatedItems) {
+              evaluatedItems.add(idx);
+            }
+          }
+          break;
+        }
+      }
       if (!anyValid) {
         errors.push({ path, message: 'Value does not match any of the schemas in anyOf', keyword: 'anyOf', value: data });
       }
-      return errors;
+      // Check unevaluatedProperties after composition
+      if (schema.unevaluatedProperties !== undefined && typeof data === 'object' && data !== null && !Array.isArray(data)) {
+        this.#checkUnevaluatedProperties(data as Record<string, unknown>, schema, path, evaluatedProperties ?? new Set(), errors);
+      }
+      // Check unevaluatedItems after composition
+      if (schema.unevaluatedItems !== undefined && Array.isArray(data)) {
+        this.#checkUnevaluatedItems(data, schema, path, evaluatedItems ?? new Set(), errors);
+      }
+      return { errors, evaluatedProperties, evaluatedItems };
     }
 
-    // Handle oneOf
+    // Handle oneOf - merge evaluated props from the single valid subschema
     if (schema.oneOf) {
-      const validCount = schema.oneOf.filter(s => this.#validate(data, s, path).length === 0).length;
+      let validResult: ValidationResult | null = null;
+      let validCount = 0;
+      for (const s of schema.oneOf) {
+        const result = this.#validate(data, s, path);
+        if (result.errors.length === 0) {
+          validCount++;
+          validResult = result;
+        }
+      }
       if (validCount !== 1) {
         errors.push({ path, message: `Value must match exactly one schema in oneOf, matched ${validCount}`, keyword: 'oneOf', value: data });
+      } else if (validResult) {
+        // Merge evaluated properties from the single matching subschema
+        evaluatedProperties = validResult.evaluatedProperties;
+        evaluatedItems = validResult.evaluatedItems;
       }
-      return errors;
+      // Check unevaluatedProperties after composition
+      if (schema.unevaluatedProperties !== undefined && typeof data === 'object' && data !== null && !Array.isArray(data)) {
+        this.#checkUnevaluatedProperties(data as Record<string, unknown>, schema, path, evaluatedProperties ?? new Set(), errors);
+      }
+      // Check unevaluatedItems after composition
+      if (schema.unevaluatedItems !== undefined && Array.isArray(data)) {
+        this.#checkUnevaluatedItems(data, schema, path, evaluatedItems ?? new Set(), errors);
+      }
+      return { errors, evaluatedProperties, evaluatedItems };
     }
 
-    // Handle allOf
+    // Handle allOf - merge evaluated props from ALL subschemas
     if (schema.allOf) {
       for (const subSchema of schema.allOf) {
-        errors.push(...this.#validate(data, subSchema, path));
+        const result = this.#validate(data, subSchema, path);
+        errors.push(...result.errors);
+        // Merge evaluated properties from all subschemas
+        if (result.evaluatedProperties) {
+          evaluatedProperties = evaluatedProperties ?? new Set();
+          for (const key of result.evaluatedProperties) {
+            evaluatedProperties.add(key);
+          }
+        }
+        if (result.evaluatedItems) {
+          evaluatedItems = evaluatedItems ?? new Set();
+          for (const idx of result.evaluatedItems) {
+            evaluatedItems.add(idx);
+          }
+        }
       }
-      return errors;
+      // Check unevaluatedProperties after composition
+      if (schema.unevaluatedProperties !== undefined && typeof data === 'object' && data !== null && !Array.isArray(data)) {
+        this.#checkUnevaluatedProperties(data as Record<string, unknown>, schema, path, evaluatedProperties ?? new Set(), errors);
+      }
+      // Check unevaluatedItems after composition
+      if (schema.unevaluatedItems !== undefined && Array.isArray(data)) {
+        this.#checkUnevaluatedItems(data, schema, path, evaluatedItems ?? new Set(), errors);
+      }
+      return { errors, evaluatedProperties, evaluatedItems };
     }
 
-    // Handle not
+    // Handle not - no evaluated properties from 'not'
     if (schema.not) {
-      if (this.#validate(data, schema.not, path).length === 0) {
+      if (this.#validate(data, schema.not, path).errors.length === 0) {
         errors.push({ path, message: 'Value must not match the schema in not', keyword: 'not', value: data });
       }
-      return errors;
+      return { errors };
     }
 
-    // Handle if/then/else
+    // Handle if/then/else - merge evaluated props from the branch taken
     if (schema.if) {
-      const ifValid = this.#validate(data, schema.if, path).length === 0;
+      const ifResult = this.#validate(data, schema.if, path);
+      const ifValid = ifResult.errors.length === 0;
       if (ifValid && schema.then) {
-        errors.push(...this.#validate(data, schema.then, path));
+        const thenResult = this.#validate(data, schema.then, path);
+        errors.push(...thenResult.errors);
+        evaluatedProperties = thenResult.evaluatedProperties;
+        evaluatedItems = thenResult.evaluatedItems;
       } else if (!ifValid && schema.else) {
-        errors.push(...this.#validate(data, schema.else, path));
+        const elseResult = this.#validate(data, schema.else, path);
+        errors.push(...elseResult.errors);
+        evaluatedProperties = elseResult.evaluatedProperties;
+        evaluatedItems = elseResult.evaluatedItems;
       }
-      return errors;
+      // Check unevaluatedProperties after if/then/else - also include properties from base schema
+      if (schema.unevaluatedProperties !== undefined && typeof data === 'object' && data !== null && !Array.isArray(data)) {
+        // Also evaluate base properties
+        const baseEvaluated = new Set(evaluatedProperties);
+        if (schema.properties) {
+          for (const key of Object.keys(schema.properties)) {
+            if (key in data) baseEvaluated.add(key);
+          }
+        }
+        this.#checkUnevaluatedProperties(data as Record<string, unknown>, schema, path, baseEvaluated, errors);
+      }
+      return { errors, evaluatedProperties, evaluatedItems };
     }
 
     // Handle type
@@ -196,7 +307,7 @@ export class Validator<T> {
       const typeValid = types.some(t => this.#checkType(data, t));
       if (!typeValid) {
         errors.push({ path, message: `Expected type ${types.join(' | ')}, got ${typeof data}`, keyword: 'type', value: data });
-        return errors;
+        return { errors };
       }
     }
 
@@ -206,12 +317,16 @@ export class Validator<T> {
     } else if (typeof data === 'number') {
       errors.push(...this.#validateNumber(data, schema, path));
     } else if (Array.isArray(data)) {
-      errors.push(...this.#validateArray(data, schema, path));
+      const arrayResult = this.#validateArray(data, schema, path);
+      errors.push(...arrayResult.errors);
+      evaluatedItems = arrayResult.evaluatedItems;
     } else if (typeof data === 'object' && data !== null) {
-      errors.push(...this.#validateObject(data as Record<string, unknown>, schema, path));
+      const objectResult = this.#validateObject(data as Record<string, unknown>, schema, path);
+      errors.push(...objectResult.errors);
+      evaluatedProperties = objectResult.evaluatedProperties;
     }
 
-    return errors;
+    return { errors, evaluatedProperties, evaluatedItems };
   }
 
   #checkType(data: unknown, type: string): boolean {
@@ -242,6 +357,12 @@ export class Validator<T> {
     if (schema.format !== undefined) {
       const formatError = this.#validateFormat(data, schema.format, path);
       if (formatError) errors.push(formatError);
+    }
+
+    // Content validation (contentEncoding, contentMediaType, contentSchema)
+    if (schema.contentEncoding || schema.contentMediaType || schema.contentSchema) {
+      const contentErrors = this.#validateContent(data, schema, path);
+      errors.push(...contentErrors);
     }
 
     return errors;
@@ -288,6 +409,67 @@ export class Validator<T> {
     return null;
   }
 
+  #validateContent(data: string, schema: JsonSchemaBase, path: string): ValidationError[] {
+    const errors: ValidationError[] = [];
+    let decoded: string | unknown = data;
+
+    // Step 1: Decode contentEncoding
+    if (schema.contentEncoding) {
+      if (schema.contentEncoding === 'base64') {
+        try {
+          // Validate base64 format and decode
+          // Check for valid base64 characters
+          if (!/^[A-Za-z0-9+/]*={0,2}$/.test(data)) {
+            errors.push({
+              path,
+              message: 'Invalid base64 encoding',
+              keyword: 'contentEncoding',
+              value: data,
+            });
+            return errors; // Can't proceed without valid encoding
+          }
+          // Decode base64 - use atob in browser, Buffer in Node
+          decoded = typeof atob === 'function' ? atob(data) : Buffer.from(data, 'base64').toString('utf-8');
+        } catch {
+          errors.push({
+            path,
+            message: 'Invalid base64 encoding',
+            keyword: 'contentEncoding',
+            value: data,
+          });
+          return errors; // Can't proceed without decoding
+        }
+      }
+      // Other encodings could be added here (quoted-printable, etc.)
+    }
+
+    // Step 2: Parse contentMediaType
+    if (schema.contentMediaType) {
+      if (schema.contentMediaType === 'application/json') {
+        try {
+          decoded = JSON.parse(decoded as string);
+        } catch {
+          errors.push({
+            path,
+            message: 'Invalid JSON content',
+            keyword: 'contentMediaType',
+            value: data,
+          });
+          return errors; // Can't validate schema without parsing
+        }
+      }
+      // Other media types could be added here (text/plain, etc.)
+    }
+
+    // Step 3: Validate against contentSchema
+    if (schema.contentSchema) {
+      const result = this.#validate(decoded, schema.contentSchema, path);
+      errors.push(...result.errors);
+    }
+
+    return errors;
+  }
+
   #validateNumber(data: number, schema: JsonSchemaBase, path: string): ValidationError[] {
     const errors: ValidationError[] = [];
 
@@ -310,8 +492,9 @@ export class Validator<T> {
     return errors;
   }
 
-  #validateArray(data: unknown[], schema: JsonSchemaBase, path: string): ValidationError[] {
+  #validateArray(data: unknown[], schema: JsonSchemaBase, path: string): ValidationResult {
     const errors: ValidationError[] = [];
+    const evaluatedItems = new Set<number>();
 
     if (schema.minItems !== undefined && data.length < schema.minItems) {
       errors.push({ path, message: `Array must have at least ${schema.minItems} items`, keyword: 'minItems', value: data });
@@ -332,8 +515,9 @@ export class Validator<T> {
       if (minContains > 0) {
         let matchCount = 0;
         for (let i = 0; i < data.length; i++) {
-          if (this.#validate(data[i], schema.contains, `${path}[${i}]`).length === 0) {
+          if (this.#validate(data[i], schema.contains, `${path}[${i}]`).errors.length === 0) {
             matchCount++;
+            evaluatedItems.add(i);
           }
         }
 
@@ -360,7 +544,9 @@ export class Validator<T> {
     if (schema.prefixItems) {
       for (let i = 0; i < schema.prefixItems.length; i++) {
         if (i < data.length) {
-          errors.push(...this.#validate(data[i], schema.prefixItems[i], `${path}[${i}]`));
+          evaluatedItems.add(i);
+          const result = this.#validate(data[i], schema.prefixItems[i], `${path}[${i}]`);
+          errors.push(...result.errors);
         }
       }
       // Validate remaining items
@@ -371,7 +557,9 @@ export class Validator<T> {
         }
       } else if (typeof schema.items === 'object') {
         for (let i = restStart; i < data.length; i++) {
-          errors.push(...this.#validate(data[i], schema.items, `${path}[${i}]`));
+          evaluatedItems.add(i);
+          const result = this.#validate(data[i], schema.items, `${path}[${i}]`);
+          errors.push(...result.errors);
         }
       }
     } else if (schema.items === false) {
@@ -380,18 +568,40 @@ export class Validator<T> {
       }
     } else if (typeof schema.items === 'object') {
       for (let i = 0; i < data.length; i++) {
-        errors.push(...this.#validate(data[i], schema.items, `${path}[${i}]`));
+        evaluatedItems.add(i);
+        const result = this.#validate(data[i], schema.items, `${path}[${i}]`);
+        errors.push(...result.errors);
       }
     }
 
-    return errors;
+    // Check unevaluatedItems - items not evaluated by prefixItems, items, or contains
+    if (schema.unevaluatedItems !== undefined) {
+      for (let i = 0; i < data.length; i++) {
+        if (!evaluatedItems.has(i)) {
+          if (schema.unevaluatedItems === false) {
+            errors.push({
+              path: `${path}[${i}]`,
+              message: 'Unevaluated item is not allowed',
+              keyword: 'unevaluatedItems',
+              value: data[i],
+            });
+          } else if (typeof schema.unevaluatedItems === 'object') {
+            const result = this.#validate(data[i], schema.unevaluatedItems, `${path}[${i}]`);
+            errors.push(...result.errors);
+          }
+        }
+      }
+    }
+
+    return { errors, evaluatedItems };
   }
 
-  #validateObject(data: Record<string, unknown>, schema: JsonSchemaBase, path: string): ValidationError[] {
+  #validateObject(data: Record<string, unknown>, schema: JsonSchemaBase, path: string): ValidationResult {
     const errors: ValidationError[] = [];
     const properties = schema.properties ?? {};
     const required = schema.required ?? [];
     const keys = Object.keys(data);
+    const evaluatedProperties = new Set<string>();
 
     // Check minProperties/maxProperties
     if (schema.minProperties !== undefined && keys.length < schema.minProperties) {
@@ -425,11 +635,28 @@ export class Validator<T> {
       }
     }
 
+    // Check dependentSchemas - apply additional schema constraints when trigger property exists
+    if (schema.dependentSchemas) {
+      for (const [trigger, dependentSchema] of Object.entries(schema.dependentSchemas)) {
+        if (trigger in data) {
+          // The dependent schema applies to the entire object, not just the trigger
+          const result = this.#validate(data, dependentSchema, path);
+          errors.push(...result.errors);
+          // Merge evaluated properties from dependent schema
+          if (result.evaluatedProperties) {
+            for (const key of result.evaluatedProperties) {
+              evaluatedProperties.add(key);
+            }
+          }
+        }
+      }
+    }
+
     // Validate propertyNames
     if (schema.propertyNames) {
       for (const key of keys) {
         const keyErrors = this.#validate(key, schema.propertyNames, `${path}[propertyName:${key}]`);
-        for (const err of keyErrors) {
+        for (const err of keyErrors.errors) {
           errors.push({
             path: path ? `${path}.${key}` : key,
             message: `Property name "${key}" is invalid: ${err.message}`,
@@ -440,43 +667,108 @@ export class Validator<T> {
       }
     }
 
-    // Validate known properties
+    // Validate known properties and mark them as evaluated
     for (const [key, propSchema] of Object.entries(properties)) {
       if (key in data) {
-        errors.push(...this.#validate(data[key], propSchema, path ? `${path}.${key}` : key));
+        evaluatedProperties.add(key);
+        const result = this.#validate(data[key], propSchema, path ? `${path}.${key}` : key);
+        errors.push(...result.errors);
       }
     }
 
-    // Track keys matched by properties or patternProperties (for additionalProperties)
-    const evaluatedKeys = new Set(Object.keys(properties));
-
-    // Validate patternProperties
+    // Validate patternProperties and mark matching keys as evaluated
     if (schema.patternProperties) {
       for (const [pattern, propSchema] of Object.entries(schema.patternProperties)) {
         const regex = new RegExp(pattern);
         for (const [key, value] of Object.entries(data)) {
           if (regex.test(key)) {
-            evaluatedKeys.add(key);
-            errors.push(...this.#validate(value, propSchema, path ? `${path}.${key}` : key));
+            evaluatedProperties.add(key);
+            const result = this.#validate(value, propSchema, path ? `${path}.${key}` : key);
+            errors.push(...result.errors);
           }
         }
       }
     }
 
-    // Validate additional properties
+    // Validate additional properties and mark them as evaluated
     if (schema.additionalProperties !== undefined) {
       for (const [key, value] of Object.entries(data)) {
-        if (!evaluatedKeys.has(key)) {
+        if (!evaluatedProperties.has(key)) {
           if (schema.additionalProperties === false) {
             errors.push({ path: path ? `${path}.${key}` : key, message: 'Additional property is not allowed', keyword: 'additionalProperties', value });
           } else if (typeof schema.additionalProperties === 'object') {
-            errors.push(...this.#validate(value, schema.additionalProperties, path ? `${path}.${key}` : key));
+            evaluatedProperties.add(key);
+            const result = this.#validate(value, schema.additionalProperties, path ? `${path}.${key}` : key);
+            errors.push(...result.errors);
           }
         }
       }
     }
 
-    return errors;
+    // Validate unevaluatedProperties - checks properties not evaluated by any other keyword
+    if (schema.unevaluatedProperties !== undefined) {
+      for (const [key, value] of Object.entries(data)) {
+        if (!evaluatedProperties.has(key)) {
+          if (schema.unevaluatedProperties === false) {
+            errors.push({ path: path ? `${path}.${key}` : key, message: 'Unevaluated property is not allowed', keyword: 'unevaluatedProperties', value });
+          } else if (typeof schema.unevaluatedProperties === 'object') {
+            // Validate against the unevaluatedProperties schema but don't add to evaluated set
+            const result = this.#validate(value, schema.unevaluatedProperties, path ? `${path}.${key}` : key);
+            errors.push(...result.errors);
+          }
+        }
+      }
+    }
+
+    return { errors, evaluatedProperties };
+  }
+
+  #checkUnevaluatedItems(
+    data: unknown[],
+    schema: JsonSchemaBase,
+    path: string,
+    evaluatedItems: Set<number>,
+    errors: ValidationError[]
+  ): void {
+    for (let i = 0; i < data.length; i++) {
+      if (!evaluatedItems.has(i)) {
+        if (schema.unevaluatedItems === false) {
+          errors.push({
+            path: `${path}[${i}]`,
+            message: 'Unevaluated item is not allowed',
+            keyword: 'unevaluatedItems',
+            value: data[i],
+          });
+        } else if (typeof schema.unevaluatedItems === 'object') {
+          const result = this.#validate(data[i], schema.unevaluatedItems, `${path}[${i}]`);
+          errors.push(...result.errors);
+        }
+      }
+    }
+  }
+
+  #checkUnevaluatedProperties(
+    data: Record<string, unknown>,
+    schema: JsonSchemaBase,
+    path: string,
+    evaluatedProperties: Set<string>,
+    errors: ValidationError[]
+  ): void {
+    for (const [key, value] of Object.entries(data)) {
+      if (!evaluatedProperties.has(key)) {
+        if (schema.unevaluatedProperties === false) {
+          errors.push({
+            path: path ? `${path}.${key}` : key,
+            message: 'Unevaluated property is not allowed',
+            keyword: 'unevaluatedProperties',
+            value,
+          });
+        } else if (typeof schema.unevaluatedProperties === 'object') {
+          const result = this.#validate(value, schema.unevaluatedProperties, path ? `${path}.${key}` : key);
+          errors.push(...result.errors);
+        }
+      }
+    }
   }
 
   #resolveRef(ref: string): JsonSchema | undefined {

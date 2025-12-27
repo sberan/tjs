@@ -42,10 +42,17 @@ export interface JsonSchemaBase {
   minProperties?: number;
   maxProperties?: number;
   dependentRequired?: Record<string, readonly string[]>;
+  dependentSchemas?: Record<string, JsonSchema>;
+  unevaluatedProperties?: boolean | JsonSchema;
   // Array constraints
   contains?: JsonSchema;
   minContains?: number;
   maxContains?: number;
+  unevaluatedItems?: boolean | JsonSchema;
+  // Content keywords (for validating encoded content)
+  contentEncoding?: string;
+  contentMediaType?: string;
+  contentSchema?: JsonSchema;
   // Annotations (metadata only, no validation)
   title?: string;
   description?: string;
