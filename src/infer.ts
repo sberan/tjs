@@ -42,14 +42,17 @@ type InferSchema<S extends JsonSchemaBase, Defs> =
                   ? Infer<T, Defs> | Infer<E, Defs>
                   : S extends { if: JsonSchema; then: infer T extends JsonSchema }
                     ? Infer<T, Defs> | InferType<S, Defs>
-                    // Handle type
-                    : InferType<S, Defs>;
+                    // Handle if/else (no then) - if matches → base type applies, else → E
+                    : S extends { if: JsonSchema; else: infer E extends JsonSchema }
+                      ? InferType<S, Defs> | Infer<E, Defs>
+                      // Handle type
+                      : InferType<S, Defs>;
 
 // Infer from type field
 type InferType<S extends JsonSchemaBase, Defs> =
   S extends { type: infer T }
     ? T extends readonly (infer U extends JsonSchemaType)[]
-      ? MapType<U>
+      ? InferTypeUnion<U, S, Defs>
       : T extends 'object'
         ? InferObject<S, Defs>
         : T extends 'array'
@@ -58,6 +61,14 @@ type InferType<S extends JsonSchemaBase, Defs> =
             ? PrimitiveTypeMap[T]
             : unknown
     : unknown;
+
+// Handle type arrays like ['object', 'null'] - preserve structure for object/array
+type InferTypeUnion<U extends JsonSchemaType, S extends JsonSchemaBase, Defs> =
+  U extends 'object'
+    ? InferObject<S, Defs>
+    : U extends 'array'
+      ? InferArray<S, Defs>
+      : MapType<U>;
 
 // Map JSON Schema types to TS types
 type JsonSchemaType = 'string' | 'number' | 'integer' | 'boolean' | 'null' | 'array' | 'object';
