@@ -204,17 +204,15 @@ const IfThenElse = schema({
 });
 IfThenElse.type; // $ExpectType string | number
 
-// Verify if/then still works (regression test)
-// Note: then schema has no type, so Infer<then> returns unknown
-// Result is Infer<then> | InferType<S> = unknown | string = unknown
+// if/then with base type - branch without properties uses base type
 const IfThenOnly = schema({
   type: 'string',
   if: { minLength: 5 },
   then: { pattern: '^[A-Z]' },
 });
-IfThenOnly.type; // $ExpectType unknown
+IfThenOnly.type; // $ExpectType string
 
-// if/then with explicit types - properly narrows
+// if/then without base type - then branch merges with unknown base
 const IfThenTyped = schema({
   if: { type: 'string' },
   then: { type: 'string' },
