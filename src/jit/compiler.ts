@@ -1132,8 +1132,13 @@ export function generateDynamicRefCheck(
 
 /**
  * Collect all property names that are evaluated by a schema (recursively)
+ * @param visited Set of schemas already visited to prevent infinite recursion
  */
-function collectEvaluatedProperties(schema: JsonSchema): {
+function collectEvaluatedProperties(
+  schema: JsonSchema,
+  ctx: CompileContext,
+  visited: Set<JsonSchema> = new Set()
+): {
   props: string[];
   patterns: string[];
   hasAdditional: boolean;
@@ -1142,9 +1147,37 @@ function collectEvaluatedProperties(schema: JsonSchema): {
     return { props: [], patterns: [], hasAdditional: false };
   }
 
+  // Prevent infinite recursion for circular refs
+  if (visited.has(schema)) {
+    return { props: [], patterns: [], hasAdditional: false };
+  }
+  visited.add(schema);
+
   const props: string[] = [];
   const patterns: string[] = [];
   let hasAdditional = false;
+
+  // Follow $ref - properties from referenced schema are evaluated
+  if (schema.$ref) {
+    const refSchema = ctx.resolveRef(schema.$ref, schema);
+    if (refSchema) {
+      const collected = collectEvaluatedProperties(refSchema, ctx, visited);
+      props.push(...collected.props);
+      patterns.push(...collected.patterns);
+      if (collected.hasAdditional) hasAdditional = true;
+    }
+  }
+
+  // Follow $dynamicRef
+  if (schema.$dynamicRef) {
+    const refSchema = ctx.resolveRef(schema.$dynamicRef, schema);
+    if (refSchema) {
+      const collected = collectEvaluatedProperties(refSchema, ctx, visited);
+      props.push(...collected.props);
+      patterns.push(...collected.patterns);
+      if (collected.hasAdditional) hasAdditional = true;
+    }
+  }
 
   // Direct properties
   if (schema.properties) {
@@ -1164,7 +1197,7 @@ function collectEvaluatedProperties(schema: JsonSchema): {
   // allOf - all subschemas' properties are evaluated
   if (schema.allOf) {
     for (const sub of schema.allOf) {
-      const collected = collectEvaluatedProperties(sub);
+      const collected = collectEvaluatedProperties(sub, ctx, visited);
       props.push(...collected.props);
       patterns.push(...collected.patterns);
       if (collected.hasAdditional) hasAdditional = true;
@@ -1174,7 +1207,7 @@ function collectEvaluatedProperties(schema: JsonSchema): {
   // anyOf - properties from all branches are potentially evaluated
   if (schema.anyOf) {
     for (const sub of schema.anyOf) {
-      const collected = collectEvaluatedProperties(sub);
+      const collected = collectEvaluatedProperties(sub, ctx, visited);
       props.push(...collected.props);
       patterns.push(...collected.patterns);
       if (collected.hasAdditional) hasAdditional = true;
@@ -1184,7 +1217,7 @@ function collectEvaluatedProperties(schema: JsonSchema): {
   // oneOf - properties from all branches are potentially evaluated
   if (schema.oneOf) {
     for (const sub of schema.oneOf) {
-      const collected = collectEvaluatedProperties(sub);
+      const collected = collectEvaluatedProperties(sub, ctx, visited);
       props.push(...collected.props);
       patterns.push(...collected.patterns);
       if (collected.hasAdditional) hasAdditional = true;
@@ -1214,7 +1247,11 @@ export function generateUnevaluatedPropertiesCheck(
   if (schema.unevaluatedProperties === undefined) return;
 
   // Collect all property names that are "evaluated" by other keywords
-  const { props: evaluatedProps, patterns, hasAdditional } = collectEvaluatedProperties(schema);
+  const {
+    props: evaluatedProps,
+    patterns,
+    hasAdditional,
+  } = collectEvaluatedProperties(schema, ctx);
 
   // If additionalProperties is set, all properties are evaluated
   if (hasAdditional) {
@@ -1230,12 +1267,12 @@ export function generateUnevaluatedPropertiesCheck(
 
   if (hasIfThenElse) {
     if (schema.then) {
-      const collected = collectEvaluatedProperties(schema.then);
+      const collected = collectEvaluatedProperties(schema.then, ctx);
       thenProps = collected.props;
       thenPatterns = collected.patterns;
     }
     if (schema.else) {
-      const collected = collectEvaluatedProperties(schema.else);
+      const collected = collectEvaluatedProperties(schema.else, ctx);
       elseProps = collected.props;
       elsePatterns = collected.patterns;
     }
@@ -1366,7 +1403,11 @@ export function generateUnevaluatedPropertiesCheck(
 /**
  * Collect the highest evaluated item index from a schema (recursively)
  */
-function collectEvaluatedItems(schema: JsonSchema): {
+function collectEvaluatedItems(
+  schema: JsonSchema,
+  ctx: CompileContext,
+  visited: Set<JsonSchema> = new Set()
+): {
   prefixCount: number;
   hasItems: boolean;
   containsSchema: JsonSchema | null;
@@ -1375,14 +1416,42 @@ function collectEvaluatedItems(schema: JsonSchema): {
     return { prefixCount: 0, hasItems: false, containsSchema: null };
   }
 
+  // Prevent infinite recursion for circular refs
+  if (visited.has(schema)) {
+    return { prefixCount: 0, hasItems: false, containsSchema: null };
+  }
+  visited.add(schema);
+
   let prefixCount = schema.prefixItems?.length ?? 0;
   let hasItems = schema.items !== undefined && schema.items !== false;
   let containsSchema: JsonSchema | null = schema.contains ?? null;
 
+  // Follow $ref
+  if (schema.$ref) {
+    const refSchema = ctx.resolveRef(schema.$ref, schema);
+    if (refSchema) {
+      const collected = collectEvaluatedItems(refSchema, ctx, visited);
+      prefixCount = Math.max(prefixCount, collected.prefixCount);
+      if (collected.hasItems) hasItems = true;
+      if (collected.containsSchema) containsSchema = collected.containsSchema;
+    }
+  }
+
+  // Follow $dynamicRef
+  if (schema.$dynamicRef) {
+    const refSchema = ctx.resolveRef(schema.$dynamicRef, schema);
+    if (refSchema) {
+      const collected = collectEvaluatedItems(refSchema, ctx, visited);
+      prefixCount = Math.max(prefixCount, collected.prefixCount);
+      if (collected.hasItems) hasItems = true;
+      if (collected.containsSchema) containsSchema = collected.containsSchema;
+    }
+  }
+
   // allOf - take maximum prefix count
   if (schema.allOf) {
     for (const sub of schema.allOf) {
-      const collected = collectEvaluatedItems(sub);
+      const collected = collectEvaluatedItems(sub, ctx, visited);
       prefixCount = Math.max(prefixCount, collected.prefixCount);
       if (collected.hasItems) hasItems = true;
       if (collected.containsSchema) containsSchema = collected.containsSchema;
@@ -1392,7 +1461,7 @@ function collectEvaluatedItems(schema: JsonSchema): {
   // anyOf - take maximum prefix count
   if (schema.anyOf) {
     for (const sub of schema.anyOf) {
-      const collected = collectEvaluatedItems(sub);
+      const collected = collectEvaluatedItems(sub, ctx, visited);
       prefixCount = Math.max(prefixCount, collected.prefixCount);
       if (collected.hasItems) hasItems = true;
       if (collected.containsSchema) containsSchema = collected.containsSchema;
@@ -1402,7 +1471,7 @@ function collectEvaluatedItems(schema: JsonSchema): {
   // oneOf - take maximum prefix count
   if (schema.oneOf) {
     for (const sub of schema.oneOf) {
-      const collected = collectEvaluatedItems(sub);
+      const collected = collectEvaluatedItems(sub, ctx, visited);
       prefixCount = Math.max(prefixCount, collected.prefixCount);
       if (collected.hasItems) hasItems = true;
       if (collected.containsSchema) containsSchema = collected.containsSchema;
@@ -1411,13 +1480,13 @@ function collectEvaluatedItems(schema: JsonSchema): {
 
   // if/then/else
   if (schema.then) {
-    const collected = collectEvaluatedItems(schema.then);
+    const collected = collectEvaluatedItems(schema.then, ctx, visited);
     prefixCount = Math.max(prefixCount, collected.prefixCount);
     if (collected.hasItems) hasItems = true;
     if (collected.containsSchema) containsSchema = collected.containsSchema;
   }
   if (schema.else) {
-    const collected = collectEvaluatedItems(schema.else);
+    const collected = collectEvaluatedItems(schema.else, ctx, visited);
     prefixCount = Math.max(prefixCount, collected.prefixCount);
     if (collected.hasItems) hasItems = true;
     if (collected.containsSchema) containsSchema = collected.containsSchema;
@@ -1442,7 +1511,7 @@ export function generateUnevaluatedItemsCheck(
   if (schema.unevaluatedItems === undefined) return;
 
   // Collect info about evaluated items from the schema tree
-  const { prefixCount, hasItems, containsSchema } = collectEvaluatedItems(schema);
+  const { prefixCount, hasItems, containsSchema } = collectEvaluatedItems(schema, ctx);
 
   // If items is defined and not false anywhere, all items are evaluated
   if (hasItems) {
