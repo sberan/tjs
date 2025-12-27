@@ -181,10 +181,10 @@ describe('JSON Schema Test Suite Compliance', () => {
     console.log(`Skipped: ${report.skipped}`);
     console.log(`Failed: ${report.failed}`);
 
-    // Log first 10 failures for debugging
+    // Log all failures for debugging
     if (failures.length > 0) {
-      console.log('\nFirst 10 failures:');
-      for (const f of failures.slice(0, 10)) {
+      console.log('\nFailures:');
+      for (const f of failures) {
         console.log(`  ${f}`);
       }
     }

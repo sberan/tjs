@@ -410,10 +410,13 @@ export function generateNumberChecks(
     }
 
     if (schema.multipleOf !== undefined) {
-      // Handle floating point precision issues
+      // Handle floating point precision issues and potential infinity overflow
       const multipleOf = schema.multipleOf;
+      const divVar = code.genVar('div');
+      code.line(`const ${divVar} = ${dataVar} / ${multipleOf};`);
+      // Check for infinity (overflow) or non-integer result
       code.if(
-        `Math.abs(${dataVar} / ${multipleOf} - Math.round(${dataVar} / ${multipleOf})) > 1e-10`,
+        `!Number.isFinite(${divVar}) || Math.abs(${divVar} - Math.round(${divVar})) > 1e-10`,
         () => {
           genError(
             code,
@@ -565,14 +568,29 @@ export function generatePropertiesChecks(
             pathExpr === "''"
               ? `'${escapeString(propName)}'`
               : `${pathExpr} + '.${escapeString(propName)}'`;
-          code.if(`'${escapeString(propName)}' in ${dataVar}`, () => {
+          // Use Object.hasOwn for accurate property check (handles __proto__, toString, etc.)
+          code.if(`Object.hasOwn(${dataVar}, '${escapeString(propName)}')`, () => {
             generateSchemaValidator(code, propSchema, propAccessed, propPathExpr, ctx);
           });
         }
       }
 
-      // Handle additionalProperties and patternProperties
-      if (hasAdditionalProps || hasPatternProps) {
+      // Handle patternProperties - applies to ALL properties (including defined ones)
+      if (hasPatternProps && schema.patternProperties) {
+        code.forIn('key', dataVar, () => {
+          const keyPathExpr = pathExpr === "''" ? 'key' : `${pathExpr} + '.' + key`;
+          for (const [pattern, patternSchema] of Object.entries(schema.patternProperties!)) {
+            const escapedPattern = escapeString(pattern);
+            code.if(`/${escapedPattern}/.test(key)`, () => {
+              const propAccessed = `${dataVar}[key]`;
+              generateSchemaValidator(code, patternSchema, propAccessed, keyPathExpr, ctx);
+            });
+          }
+        });
+      }
+
+      // Handle additionalProperties - only applies to undefined properties not matching patterns
+      if (hasAdditionalProps) {
         const definedProps = schema.properties ? Object.keys(schema.properties) : [];
         const patterns = schema.patternProperties ? Object.keys(schema.patternProperties) : [];
 
@@ -584,54 +602,20 @@ export function generatePropertiesChecks(
         }
 
         code.forIn('key', dataVar, () => {
-          // Check if it's a defined property using Set.has() for O(1) lookup
-          if (propsSetName) {
-            code.if(`${propsSetName}.has(key)`, () => {
-              code.line('continue;');
-            });
-          }
-
-          // Dynamic path expression for key
           const keyPathExpr = pathExpr === "''" ? 'key' : `${pathExpr} + '.' + key`;
+          const addPropsSchema = schema.additionalProperties!;
 
-          // Check pattern properties
-          if (hasPatternProps && schema.patternProperties) {
-            for (const [pattern, patternSchema] of Object.entries(schema.patternProperties)) {
-              const escapedPattern = escapeString(pattern);
-              code.if(`/${escapedPattern}/.test(key)`, () => {
-                const propAccessed = `${dataVar}[key]`;
-                generateSchemaValidator(code, patternSchema, propAccessed, keyPathExpr, ctx);
-              });
-            }
+          // Build condition: not a defined prop and not matching any pattern
+          const conditions: string[] = [];
+          if (propsSetName) {
+            conditions.push(`!${propsSetName}.has(key)`);
+          }
+          for (const pattern of patterns) {
+            conditions.push(`!/${escapeString(pattern)}/.test(key)`);
           }
 
-          // Handle additionalProperties
-          if (schema.additionalProperties !== undefined) {
-            const addPropsSchema = schema.additionalProperties;
-
-            // Build condition: not a defined prop and not matching any pattern
-            let condition = 'true';
-            if (definedProps.length > 0) {
-              condition = `!${stringify(definedProps)}.includes(key)`;
-            }
-            if (patterns.length > 0) {
-              const patternChecks = patterns
-                .map((p) => `!/${escapeString(p)}/.test(key)`)
-                .join(' && ');
-              condition = condition === 'true' ? patternChecks : `${condition} && ${patternChecks}`;
-            }
-
-            if (condition !== 'true') {
-              code.if(condition, () => {
-                generateAdditionalPropsCheck(
-                  code,
-                  addPropsSchema,
-                  `${dataVar}[key]`,
-                  keyPathExpr,
-                  ctx
-                );
-              });
-            } else {
+          if (conditions.length > 0) {
+            code.if(conditions.join(' && '), () => {
               generateAdditionalPropsCheck(
                 code,
                 addPropsSchema,
@@ -639,7 +623,9 @@ export function generatePropertiesChecks(
                 keyPathExpr,
                 ctx
               );
-            }
+            });
+          } else {
+            generateAdditionalPropsCheck(code, addPropsSchema, `${dataVar}[key]`, keyPathExpr, ctx);
           }
         });
       }
@@ -837,9 +823,28 @@ export function generatePropertyNamesCheck(
   pathExpr: string,
   ctx: CompileContext
 ): void {
-  if (!schema.propertyNames) return;
+  if (schema.propertyNames === undefined) return;
 
   const propNamesSchema = schema.propertyNames;
+
+  // Handle boolean schema for propertyNames
+  if (propNamesSchema === true) {
+    // All property names are valid - no check needed
+    return;
+  }
+
+  if (propNamesSchema === false) {
+    // No property names are valid - object must be empty
+    code.if(
+      `typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
+      () => {
+        code.if(`Object.keys(${dataVar}).length > 0`, () => {
+          genError(code, pathExpr, 'propertyNames', 'No properties allowed');
+        });
+      }
+    );
+    return;
+  }
 
   code.if(
     `typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
@@ -914,19 +919,8 @@ export function generateCompositionChecks(
     for (const subSchema of schema.anyOf) {
       // Try each subschema, set result to true if any passes
       code.if(`!${resultVar}`, () => {
-        if (subSchema === true) {
-          code.line(`${resultVar} = true;`);
-        } else if (subSchema === false) {
-          // Skip - false schema never validates
-        } else {
-          // Generate inline check wrapped in IIFE to catch early returns
-          const checkVar = code.genVar('check');
-          code.line(`${resultVar} = (function() {`);
-          code.line(`  const ${checkVar} = ${dataVar};`);
-          generateSchemaValidatorForAnyOf(code, subSchema, checkVar, ctx);
-          code.line(`  return true;`);
-          code.line(`})();`);
-        }
+        const checkExpr = generateSubschemaCheck(subSchema, dataVar, ctx);
+        code.line(`${resultVar} = ${checkExpr};`);
       });
     }
 
@@ -941,18 +935,8 @@ export function generateCompositionChecks(
     code.line(`let ${countVar} = 0;`);
 
     for (const subSchema of schema.oneOf) {
-      if (subSchema === true) {
-        code.line(`${countVar}++;`);
-      } else if (subSchema === false) {
-        // Skip - false schema never validates
-      } else {
-        code.line(`if ((function() {`);
-        const checkVar = code.genVar('check');
-        code.line(`  const ${checkVar} = ${dataVar};`);
-        generateSchemaValidatorForAnyOf(code, subSchema, checkVar, ctx);
-        code.line(`  return true;`);
-        code.line(`})()) ${countVar}++;`);
-      }
+      const checkExpr = generateSubschemaCheck(subSchema, dataVar, ctx);
+      code.line(`if (${checkExpr}) ${countVar}++;`);
 
       // Early exit if more than one matches
       code.if(`${countVar} > 1`, () => {
@@ -968,21 +952,10 @@ export function generateCompositionChecks(
   // not - subschema must NOT validate
   if (schema.not !== undefined) {
     const notSchema = schema.not;
-    if (notSchema === true) {
-      // not true = always fails
+    const checkExpr = generateSubschemaCheck(notSchema, dataVar, ctx);
+    code.if(checkExpr, () => {
       genError(code, pathExpr, 'not', 'Value must not match schema');
-    } else if (notSchema === false) {
-      // not false = always passes, no code needed
-    } else {
-      code.line(`if ((function() {`);
-      const checkVar = code.genVar('check');
-      code.line(`  const ${checkVar} = ${dataVar};`);
-      generateSchemaValidatorForAnyOf(code, notSchema, checkVar, ctx);
-      code.line(`  return true;`);
-      code.line(`})()) {`);
-      genError(code, pathExpr, 'not', 'Value must not match schema');
-      code.line(`}`);
-    }
+    });
   }
 
   // if-then-else
@@ -993,19 +966,8 @@ export function generateCompositionChecks(
 
     // Check if condition matches
     const condVar = code.genVar('ifCond');
-
-    if (ifSchema === true) {
-      code.line(`const ${condVar} = true;`);
-    } else if (ifSchema === false) {
-      code.line(`const ${condVar} = false;`);
-    } else {
-      code.line(`const ${condVar} = (function() {`);
-      const checkVar = code.genVar('check');
-      code.line(`  const ${checkVar} = ${dataVar};`);
-      generateSchemaValidatorForAnyOf(code, ifSchema, checkVar, ctx);
-      code.line(`  return true;`);
-      code.line(`})();`);
-    }
+    const checkExpr = generateSubschemaCheck(ifSchema, dataVar, ctx);
+    code.line(`const ${condVar} = ${checkExpr};`);
 
     // Apply then or else based on condition
     if (thenSchema !== undefined) {
@@ -1031,34 +993,16 @@ export function generateCompositionChecks(
 }
 
 /**
- * Generate schema validator for use in anyOf/oneOf/not (returns early instead of returning false)
- * Note: This doesn't collect errors since it's used for boolean checks only
+ * Generate a call to validate against a subschema for anyOf/oneOf/not
+ * Returns a code expression that evaluates to true if the subschema matches
  */
-function generateSchemaValidatorForAnyOf(
-  code: CodeBuilder,
-  schema: JsonSchema,
-  dataVar: string,
-  ctx: CompileContext
-): void {
-  if (schema === true) return;
-  if (schema === false) {
-    code.line('return false;');
-    return;
-  }
+function generateSubschemaCheck(schema: JsonSchema, dataVar: string, ctx: CompileContext): string {
+  if (schema === true) return 'true';
+  if (schema === false) return 'false';
 
-  // Generate checks that return false on failure (which means the subschema didn't match)
-  // Use empty path since we don't collect errors in anyOf/oneOf/not checks
-  const dummyPath = "''";
-  generateTypeCheck(code, schema, dataVar, dummyPath, ctx);
-  generateConstCheck(code, schema, dataVar, dummyPath, ctx);
-  generateEnumCheck(code, schema, dataVar, dummyPath, ctx);
-  generateStringChecks(code, schema, dataVar, dummyPath, ctx);
-  generateNumberChecks(code, schema, dataVar, dummyPath, ctx);
-  generateArrayChecks(code, schema, dataVar, dummyPath, ctx);
-  generateObjectChecks(code, schema, dataVar, dummyPath, ctx);
-  generatePropertiesChecks(code, schema, dataVar, dummyPath, ctx);
-  generateItemsChecks(code, schema, dataVar, dummyPath, ctx);
-  // Note: We don't recurse into composition here to avoid deep nesting
+  // Compile the subschema as a separate function to handle all keywords including composition
+  const funcName = ctx.queueCompile(schema);
+  return `${funcName}(${dataVar}, null, '')`;
 }
 
 /**
@@ -1305,19 +1249,8 @@ export function generateUnevaluatedPropertiesCheck(
       if (hasIfThenElse) {
         const ifSchema = schema.if!;
         const condVar = code.genVar('ifCond');
-
-        if (ifSchema === true) {
-          code.line(`const ${condVar} = true;`);
-        } else if (ifSchema === false) {
-          code.line(`const ${condVar} = false;`);
-        } else {
-          code.line(`const ${condVar} = (function() {`);
-          const checkVar = code.genVar('check');
-          code.line(`  const ${checkVar} = ${dataVar};`);
-          generateSchemaValidatorForAnyOf(code, ifSchema, checkVar, ctx);
-          code.line(`  return true;`);
-          code.line(`})();`);
-        }
+        const checkExpr = generateSubschemaCheck(ifSchema, dataVar, ctx);
+        code.line(`const ${condVar} = ${checkExpr};`);
 
         // Build runtime-evaluated property lists
         code.line(`const evaluatedPropsRuntime = ${stringify(evaluatedProps)}.slice();`);
@@ -1540,12 +1473,8 @@ export function generateUnevaluatedItemsCheck(
       // Check each item against contains and mark matched ones as evaluated
       const iVar = code.genVar('i');
       code.for(`let ${iVar} = 0`, `${iVar} < ${dataVar}.length`, `${iVar}++`, () => {
-        code.line(`if ((function() {`);
-        const checkVar = code.genVar('check');
-        code.line(`  const ${checkVar} = ${dataVar}[${iVar}];`);
-        generateSchemaValidatorForAnyOf(code, containsSchema, checkVar, ctx);
-        code.line(`  return true;`);
-        code.line(`})()) ${evaluatedSetVar}.add(${iVar});`);
+        const checkExpr = generateSubschemaCheck(containsSchema, `${dataVar}[${iVar}]`, ctx);
+        code.line(`if (${checkExpr}) ${evaluatedSetVar}.add(${iVar});`);
       });
 
       // Now validate unevaluated items
