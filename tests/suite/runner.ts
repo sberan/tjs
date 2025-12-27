@@ -15,7 +15,6 @@ export interface RunnerOptions {
 const UNIMPLEMENTED_KEYWORDS = [
   'dynamicRef', // $dynamicRef / $dynamicAnchor not implemented
   'refRemote', // Remote $ref not implemented
-  'id', // $id resolution not fully implemented
   'vocabulary', // Vocabulary not implemented
   'unknownKeyword', // Meta-schema validation not implemented
 ];
