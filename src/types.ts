@@ -23,6 +23,8 @@ export interface JsonSchemaBase {
   required?: readonly string[];
   additionalProperties?: boolean | JsonSchema;
   $anchor?: string;
+  $dynamicAnchor?: string;
+  $dynamicRef?: string;
   items?: boolean | JsonSchema;
   prefixItems?: readonly JsonSchema[];
   anyOf?: readonly JsonSchema[];

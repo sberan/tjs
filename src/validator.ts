@@ -75,6 +75,15 @@ export class Validator<T> {
       this.#anchors.set(schema.$anchor, schema);
     }
 
+    // Register $dynamicAnchor like $anchor (for basic support)
+    if (schema.$dynamicAnchor) {
+      const anchorUri = currentBaseUri
+        ? `${currentBaseUri}#${schema.$dynamicAnchor}`
+        : `#${schema.$dynamicAnchor}`;
+      this.#anchors.set(anchorUri, schema);
+      this.#anchors.set(schema.$dynamicAnchor, schema);
+    }
+
     // Recurse into all subschemas with the current base URI
     if (schema.$defs) {
       for (const def of Object.values(schema.$defs)) {
@@ -272,6 +281,33 @@ export class Validator<T> {
         // Continue to validate sibling keywords (don't return early)
       } else {
         errors.push({ path, message: `Unresolved $ref: ${schema.$ref}`, keyword: '$ref' });
+      }
+    }
+
+    // Handle $dynamicRef - treat like $ref for basic support
+    if (schema.$dynamicRef) {
+      const refSchema = this.#resolveRef(schema.$dynamicRef, schema);
+      if (refSchema) {
+        const refResult = this.#validate(data, refSchema, path);
+        errors.push(...refResult.errors);
+        if (refResult.evaluatedProperties) {
+          evaluatedProperties = evaluatedProperties ?? new Set();
+          for (const key of refResult.evaluatedProperties) {
+            evaluatedProperties.add(key);
+          }
+        }
+        if (refResult.evaluatedItems) {
+          evaluatedItems = evaluatedItems ?? new Set();
+          for (const idx of refResult.evaluatedItems) {
+            evaluatedItems.add(idx);
+          }
+        }
+      } else {
+        errors.push({
+          path,
+          message: `Unresolved $dynamicRef: ${schema.$dynamicRef}`,
+          keyword: '$dynamicRef',
+        });
       }
     }
 
