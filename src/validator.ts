@@ -571,7 +571,11 @@ export class Validator<T> {
   #validateString(data: string, schema: JsonSchemaBase, path: string): ValidationError[] {
     const errors: ValidationError[] = [];
 
-    if (schema.minLength !== undefined && data.length < schema.minLength) {
+    // Use code point count (not code unit count) for length validation
+    // This handles surrogate pairs correctly (e.g., emoji like 💩)
+    const codePointLength = [...data].length;
+
+    if (schema.minLength !== undefined && codePointLength < schema.minLength) {
       errors.push({
         path,
         message: `String must have at least ${schema.minLength} characters`,
@@ -579,7 +583,7 @@ export class Validator<T> {
         value: data,
       });
     }
-    if (schema.maxLength !== undefined && data.length > schema.maxLength) {
+    if (schema.maxLength !== undefined && codePointLength > schema.maxLength) {
       errors.push({
         path,
         message: `String must have at most ${schema.maxLength} characters`,
