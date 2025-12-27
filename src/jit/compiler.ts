@@ -457,23 +457,15 @@ export function generateArrayChecks(
     }
 
     if (schema.uniqueItems === true) {
-      // Use a Set for primitive values, fall back to O(n²) for objects
-      code.line(`const seen = new Set();`);
-      code.line(`const objects = [];`);
-      code.forOf('item', dataVar, () => {
-        code.if(`typeof item === 'object' && item !== null`, () => {
-          code.forOf('obj', 'objects', () => {
-            code.if(`deepEqual(item, obj)`, () => {
-              genError(code, pathExpr, 'uniqueItems', `Array items must be unique`);
-            });
-          });
-          code.line('objects.push(item);');
-        });
-        code.else(() => {
-          code.if(`seen.has(item)`, () => {
+      // O(n²) comparison using deepEqual - same approach as AJV's fallback
+      // This handles all types correctly including object key ordering
+      const iVar = code.genVar('i');
+      const jVar = code.genVar('j');
+      code.block(`outer: for (let ${iVar} = ${dataVar}.length; ${iVar}--;)`, () => {
+        code.block(`for (let ${jVar} = ${iVar}; ${jVar}--;)`, () => {
+          code.if(`deepEqual(${dataVar}[${iVar}], ${dataVar}[${jVar}])`, () => {
             genError(code, pathExpr, 'uniqueItems', `Array items must be unique`);
           });
-          code.line('seen.add(item);');
         });
       });
     }
