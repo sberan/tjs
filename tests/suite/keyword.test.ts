@@ -87,5 +87,5 @@ testKeyword('unevaluatedProperties');
 testKeyword('content');
 
 // Not implemented - expected to fail
-// testKeyword('dynamicRef');
-// testKeyword('refRemote');
+testKeyword('dynamicRef');
+testKeyword('refRemote');
