@@ -161,17 +161,23 @@ type InferRef<R extends string, Defs, Depth extends unknown[]> =
     : unknown;
 
 // Handle not (exclude from JsonValue)
+// Supports both single types and type arrays
+// Uses explicit union building instead of Exclude for cleaner type output
 type InferNot<N> =
-  N extends { type: 'null' }
-    ? string | number | boolean | JsonArray | JsonObject
-    : N extends { type: 'string' }
-      ? number | boolean | null | JsonArray | JsonObject
-      : N extends { type: 'number' } | { type: 'integer' }
-        ? string | boolean | null | JsonArray | JsonObject
-        : N extends { type: 'boolean' }
-          ? string | number | null | JsonArray | JsonObject
-          : N extends { type: 'object' }
-            ? string | number | boolean | null | JsonArray
-            : N extends { type: 'array' }
-              ? string | number | boolean | null | JsonObject
-              : JsonValue;
+  N extends { type: readonly string[] }
+    ? BuildNotType<N['type']>
+    : N extends { type: string }
+      ? BuildNotType<readonly [N['type']]>
+      : JsonValue;
+
+// Build the "not" type by including only types NOT in the excluded set
+// Note: 'integer' and 'number' both map to TS number, so excluding either excludes number
+type ExcludesNumber<T extends readonly string[]> = 'number' extends T[number] ? true : 'integer' extends T[number] ? true : false;
+
+type BuildNotType<Excluded extends readonly string[]> =
+  | ('string' extends Excluded[number] ? never : string)
+  | (ExcludesNumber<Excluded> extends true ? never : number)
+  | ('boolean' extends Excluded[number] ? never : boolean)
+  | ('null' extends Excluded[number] ? never : null)
+  | ('array' extends Excluded[number] ? never : JsonArray)
+  | ('object' extends Excluded[number] ? never : JsonObject);
