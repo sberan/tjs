@@ -1,4 +1,4 @@
-import { expectTypeOf } from 'expect-type';
+import type { Equal, Expect } from './test-utils.js';
 import { schema } from 'json-schema-ts';
 
 // Simple $ref
@@ -13,7 +13,7 @@ const WithDefs = schema({
   type: 'array',
   items: { $ref: '#/$defs/Item' },
 });
-expectTypeOf<typeof WithDefs.type>().toEqualTypeOf<{ id: string }[]>();
+type _WithDefs = Expect<Equal<typeof WithDefs.type, { id: string }[]>>;
 
 // Multiple refs to same definition
 const MultiRef = schema({
@@ -33,10 +33,10 @@ const MultiRef = schema({
     work: { $ref: '#/$defs/Address' },
   },
 });
-expectTypeOf<typeof MultiRef.type>().toEqualTypeOf<{
+type _MultiRef = Expect<Equal<typeof MultiRef.type, {
   home?: { street: string; city: string };
   work?: { street: string; city: string };
-}>();
+}>>;
 
 // Multiple definitions
 const MultipleDefs = schema({
@@ -60,10 +60,10 @@ const MultipleDefs = schema({
   },
   required: ['name', 'age'],
 });
-expectTypeOf<typeof MultipleDefs.type>().toEqualTypeOf<{
+type _MultipleDefs = Expect<Equal<typeof MultipleDefs.type, {
   name: { first: string; last: string };
   age: number;
-}>();
+}>>;
 
 // Ref in anyOf
 const RefInAnyOf = schema({
@@ -76,7 +76,7 @@ const RefInAnyOf = schema({
     { $ref: '#/$defs/NumberType' },
   ],
 });
-expectTypeOf<typeof RefInAnyOf.type>().toEqualTypeOf<string | number>();
+type _RefInAnyOf = Expect<Equal<typeof RefInAnyOf.type, string | number>>;
 
 // Nested object with refs
 const NestedWithRefs = schema({
@@ -97,7 +97,7 @@ const NestedWithRefs = schema({
   },
   required: ['start', 'end'],
 });
-expectTypeOf<typeof NestedWithRefs.type>().toEqualTypeOf<{
+type _NestedWithRefs = Expect<Equal<typeof NestedWithRefs.type, {
   start: { x: number; y: number };
   end: { x: number; y: number };
-}>();
+}>>;

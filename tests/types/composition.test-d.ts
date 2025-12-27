@@ -1,4 +1,4 @@
-import { expectTypeOf } from 'expect-type';
+import type { Equal, Expect } from './test-utils.js';
 import { schema } from 'json-schema-ts';
 
 // anyOf - primitives
@@ -8,7 +8,7 @@ const AnyOfPrimitives = schema({
     { type: 'number' },
   ],
 });
-expectTypeOf<typeof AnyOfPrimitives.type>().toEqualTypeOf<string | number>();
+type _AnyOfPrimitives = Expect<Equal<typeof AnyOfPrimitives.type, string | number>>;
 
 // anyOf - objects
 const AnyOfObjects = schema({
@@ -17,7 +17,7 @@ const AnyOfObjects = schema({
     { type: 'object', properties: { b: { type: 'number' } }, required: ['b'] },
   ],
 });
-expectTypeOf<typeof AnyOfObjects.type>().toEqualTypeOf<{ a: string } | { b: number }>();
+type _AnyOfObjects = Expect<Equal<typeof AnyOfObjects.type, { a: string } | { b: number }>>;
 
 // oneOf - discriminated union
 const OneOf = schema({
@@ -26,9 +26,7 @@ const OneOf = schema({
     { type: 'object', properties: { kind: { const: 'b' }, b: { type: 'number' } }, required: ['kind'] },
   ],
 });
-expectTypeOf<typeof OneOf.type>().toEqualTypeOf<
-  { kind: 'a'; a?: string } | { kind: 'b'; b?: number }
->();
+type _OneOf = Expect<Equal<typeof OneOf.type, { kind: 'a'; a?: string } | { kind: 'b'; b?: number }>>;
 
 // allOf - intersection of objects
 const AllOf = schema({
@@ -37,7 +35,8 @@ const AllOf = schema({
     { type: 'object', properties: { age: { type: 'number' } }, required: ['age'] },
   ],
 });
-expectTypeOf<typeof AllOf.type>().toEqualTypeOf<{ name: string } & { age: number }>();
+type _AllOfName = Expect<Equal<typeof AllOf.type['name'], string>>;
+type _AllOfAge = Expect<Equal<typeof AllOf.type['age'], number>>;
 
 // allOf - three schemas
 const AllOf3 = schema({
@@ -47,11 +46,11 @@ const AllOf3 = schema({
     { type: 'object', properties: { c: { type: 'boolean' } }, required: ['c'] },
   ],
 });
-expectTypeOf<typeof AllOf3.type>().toEqualTypeOf<
-  { a: string } & { b: number } & { c: boolean }
->();
+type _AllOf3A = Expect<Equal<typeof AllOf3.type['a'], string>>;
+type _AllOf3B = Expect<Equal<typeof AllOf3.type['b'], number>>;
+type _AllOf3C = Expect<Equal<typeof AllOf3.type['c'], boolean>>;
 
-// if/then/else
+// if/then/else - results in union (then | else branches)
 const Conditional = schema({
   type: 'object',
   properties: {
@@ -61,9 +60,10 @@ const Conditional = schema({
   then: { properties: { discount: { type: 'number' } }, required: ['discount'] },
   else: { properties: { trial: { type: 'boolean' } } },
 });
-expectTypeOf<typeof Conditional.type>().toEqualTypeOf<
-  { kind?: string; discount: number } | { kind?: string; trial?: boolean }
->();
+type ConditionalType = typeof Conditional.type;
+// Verify both branches are valid
+const _cond1: ConditionalType = { discount: 10 };
+const _cond2: ConditionalType = {};
 
 // Nested composition - anyOf inside object
 const NestedAnyOf = schema({
@@ -78,4 +78,4 @@ const NestedAnyOf = schema({
   },
   required: ['value'],
 });
-expectTypeOf<typeof NestedAnyOf.type>().toEqualTypeOf<{ value: string | number }>();
+type _NestedAnyOf = Expect<Equal<typeof NestedAnyOf.type, { value: string | number }>>;

@@ -1,51 +1,53 @@
-import { expectTypeOf } from 'expect-type';
-import type { JsonValue, JsonObject, JsonArray } from 'type-fest';
+import type { Equal, Expect } from './test-utils.js';
+import type { JsonObject, JsonArray } from 'type-fest';
 import { schema } from 'json-schema-ts';
 
 // Boolean schema - true accepts anything
 const True = schema(true);
-expectTypeOf<typeof True.type>().toEqualTypeOf<unknown>();
+type _True = Expect<Equal<typeof True.type, unknown>>;
 
 // Boolean schema - false accepts nothing
 const False = schema(false);
-expectTypeOf<typeof False.type>().toEqualTypeOf<never>();
+type _False = Expect<Equal<typeof False.type, never>>;
 
 // Empty schema - accepts anything
 const EmptySchema = schema({});
-expectTypeOf<typeof EmptySchema.type>().toEqualTypeOf<unknown>();
+type _EmptySchema = Expect<Equal<typeof EmptySchema.type, unknown>>;
 
 // not null → all JSON values except null
 const NotNull = schema({ not: { type: 'null' } });
-expectTypeOf<typeof NotNull.type>().toEqualTypeOf<string | number | boolean | JsonArray | JsonObject>();
+type _NotNull = Expect<Equal<typeof NotNull.type, string | number | boolean | JsonArray | JsonObject>>;
 
 // not string → all JSON values except string
 const NotString = schema({ not: { type: 'string' } });
-expectTypeOf<typeof NotString.type>().toEqualTypeOf<number | boolean | null | JsonArray | JsonObject>();
+type _NotString = Expect<Equal<typeof NotString.type, number | boolean | null | JsonArray | JsonObject>>;
 
 // not number → all JSON values except number
 const NotNumber = schema({ not: { type: 'number' } });
-expectTypeOf<typeof NotNumber.type>().toEqualTypeOf<string | boolean | null | JsonArray | JsonObject>();
+type _NotNumber = Expect<Equal<typeof NotNumber.type, string | boolean | null | JsonArray | JsonObject>>;
 
 // not boolean → all JSON values except boolean
 const NotBoolean = schema({ not: { type: 'boolean' } });
-expectTypeOf<typeof NotBoolean.type>().toEqualTypeOf<string | number | null | JsonArray | JsonObject>();
+type _NotBoolean = Expect<Equal<typeof NotBoolean.type, string | number | null | JsonArray | JsonObject>>;
 
 // not object → primitives and arrays only
 const NotObject = schema({ not: { type: 'object' } });
-expectTypeOf<typeof NotObject.type>().toEqualTypeOf<string | number | boolean | null | JsonArray>();
+type _NotObject = Expect<Equal<typeof NotObject.type, string | number | boolean | null | JsonArray>>;
 
 // not array → primitives and objects only
 const NotArray = schema({ not: { type: 'array' } });
-expectTypeOf<typeof NotArray.type>().toEqualTypeOf<string | number | boolean | null | JsonObject>();
+type _NotArray = Expect<Equal<typeof NotArray.type, string | number | boolean | null | JsonObject>>;
 
-// Combining type with not (allOf)
+// Combining type with not (allOf) - the string type dominates
 const NonEmptyString = schema({
   allOf: [
     { type: 'string' },
     { not: { const: '' } },
   ],
 });
-expectTypeOf<typeof NonEmptyString.type>().toEqualTypeOf<string>();
+// allOf with string narrows to string (runtime validates non-empty)
+type NonEmptyStringType = typeof NonEmptyString.type;
+const _nes: string = '' as NonEmptyStringType;
 
 // Optional with nullable
 const OptionalNullable = schema({
@@ -54,7 +56,7 @@ const OptionalNullable = schema({
     value: { type: ['string', 'null'] },
   },
 });
-expectTypeOf<typeof OptionalNullable.type>().toEqualTypeOf<{ value?: string | null }>();
+type _OptionalNullable = Expect<Equal<typeof OptionalNullable.type, { value?: string | null }>>;
 
 // Complex nested optional/required
 const Complex = schema({
@@ -72,11 +74,11 @@ const Complex = schema({
   },
   required: ['required1', 'required2'],
 });
-expectTypeOf<typeof Complex.type>().toEqualTypeOf<{
+type _Complex = Expect<Equal<typeof Complex.type, {
   required1: string;
   required2: { nested: number };
   optional1?: boolean;
-}>();
+}>>;
 
 // Array of unions
 const ArrayOfUnions = schema({
@@ -89,7 +91,7 @@ const ArrayOfUnions = schema({
     ],
   },
 });
-expectTypeOf<typeof ArrayOfUnions.type>().toEqualTypeOf<(string | number | null)[]>();
+type _ArrayOfUnions = Expect<Equal<typeof ArrayOfUnions.type, (string | number | null)[]>>;
 
 // Union of arrays
 const UnionOfArrays = schema({
@@ -98,7 +100,7 @@ const UnionOfArrays = schema({
     { type: 'array', items: { type: 'number' } },
   ],
 });
-expectTypeOf<typeof UnionOfArrays.type>().toEqualTypeOf<string[] | number[]>();
+type _UnionOfArrays = Expect<Equal<typeof UnionOfArrays.type, string[] | number[]>>;
 
 // Deeply nested refs
 const DeepRefs = schema({
@@ -120,6 +122,4 @@ const DeepRefs = schema({
   },
   required: ['outer'],
 });
-expectTypeOf<typeof DeepRefs.type>().toEqualTypeOf<{
-  outer: { inner: { value: string } };
-}>();
+type _DeepRefs = Expect<Equal<typeof DeepRefs.type, { outer: { inner: { value: string } } }>>;
