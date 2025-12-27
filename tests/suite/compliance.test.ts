@@ -153,7 +153,8 @@ describe('JSON Schema Test Suite Compliance', () => {
 
   // Pre-fetch any missing remote schemas (e.g., metaschema dependencies)
   beforeAll(async () => {
-    await fetchRemoteSchemas([], remotes);
+    // Explicitly fetch the draft 2020-12 metaschema which some tests reference
+    await fetchRemoteSchemas(['https://json-schema.org/draft/2020-12/schema'], remotes);
   }, 30000); // 30 second timeout for network requests
 
   it('runs all required tests and generates report', () => {
