@@ -40,14 +40,14 @@ type InferSchema<S extends JsonSchemaBase, Defs, Depth extends unknown[]> =
               // Handle not
               : S extends { not: infer N }
                 ? InferNot<N>
-                // Handle if/then/else
+                // Handle if/then/else - merge base schema with branch schemas
                 : S extends { if: JsonSchema; then: infer T extends JsonSchema; else: infer E extends JsonSchema }
-                  ? Infer<T, Defs, Depth> | Infer<E, Defs, Depth>
+                  ? InferConditionalBranch<S, T, Defs, Depth> | InferConditionalBranch<S, E, Defs, Depth>
                   : S extends { if: JsonSchema; then: infer T extends JsonSchema }
-                    ? Infer<T, Defs, Depth> | InferType<S, Defs, Depth>
+                    ? InferConditionalBranch<S, T, Defs, Depth> | InferType<S, Defs, Depth>
                     // Handle if/else (no then) - if matches → base type applies, else → E
                     : S extends { if: JsonSchema; else: infer E extends JsonSchema }
-                      ? InferType<S, Defs, Depth> | Infer<E, Defs, Depth>
+                      ? InferType<S, Defs, Depth> | InferConditionalBranch<S, E, Defs, Depth>
                       // Handle type
                       : InferType<S, Defs, Depth>;
 
@@ -144,6 +144,45 @@ type InferTupleFromArray<T extends readonly JsonSchema[], Defs, Depth extends un
   T extends readonly [infer Head extends JsonSchema, ...infer Tail extends readonly JsonSchema[]]
     ? [Infer<Head, Defs, Depth>, ...InferTupleFromArray<Tail, Defs, Depth>]
     : [];
+
+// Infer a conditional branch (then/else) by merging with base schema
+// If branch has its own type, use it directly. Otherwise merge base properties with branch properties.
+type InferConditionalBranch<Base extends JsonSchemaBase, Branch extends JsonSchema, Defs, Depth extends unknown[]> =
+  Branch extends { type: JsonSchemaType | JsonSchemaType[] }
+    // Branch has explicit type - infer it directly
+    ? Infer<Branch, Defs, Depth>
+    // Branch is partial - merge with base schema
+    : Branch extends { properties: infer BP extends Record<string, JsonSchema> }
+      ? Base extends { type: 'object'; properties: infer BaseP extends Record<string, JsonSchema> }
+        // Merge base properties with branch properties, branch required takes precedence
+        ? Branch extends { required: readonly string[] }
+          ? InferMergedObject<BaseP, BP, Branch['required'], Defs, Depth>
+          : InferMergedObject<BaseP, BP, [], Defs, Depth>
+        // Base is object type but no properties - just use branch properties
+        : Base extends { type: 'object' }
+          ? Branch extends { required: readonly string[] }
+            ? BuildObject<BP, Branch['required'], Defs, Depth>
+            : BuildObject<BP, [], Defs, Depth>
+          // Base is not object - try to infer branch directly
+          : Infer<Branch, Defs, Depth>
+      // Branch has no properties - use base type
+      : InferType<Base, Defs, Depth>;
+
+// Merge base object properties with branch properties
+type InferMergedObject<
+  BaseP extends Record<string, JsonSchema>,
+  BranchP extends Record<string, JsonSchema>,
+  R extends readonly string[],
+  Defs,
+  Depth extends unknown[]
+> = Simplify<
+  // Required properties from merged set
+  { [K in keyof (BaseP & BranchP) as K extends R[number] ? K : never]: Infer<(BaseP & BranchP)[K], Defs, Depth> } &
+  // Optional properties from merged set
+  { [K in keyof (BaseP & BranchP) as K extends R[number] ? never : K]?: Infer<(BaseP & BranchP)[K], Defs, Depth> } &
+  // Required properties NOT in merged set get type `unknown`
+  { [K in R[number] as K extends keyof (BaseP & BranchP) ? never : K]: unknown }
+>;
 
 // Handle allOf (intersection)
 type InferAllOf<T extends readonly JsonSchema[], Defs, Depth extends unknown[]> =
