@@ -3,8 +3,8 @@
 ## Summary
 
 - **Total Tests**: 1271
-- **Passed**: 1185 (93.2%)
-- **Failed**: 6
+- **Passed**: 1187 (93.4%)
+- **Failed**: 4
 - **Skipped**: 80
 
 ## By Keyword
@@ -33,12 +33,12 @@
 | items | 29 | 0 | 0 | 100% |
 | maxContains | 12 | 0 | 0 | 100% |
 | maxItems | 6 | 0 | 0 | 100% |
-| maxLength | 6 | 1 | 0 | 86% |
+| maxLength | 7 | 0 | 0 | 100% |
 | maxProperties | 10 | 0 | 0 | 100% |
 | maximum | 8 | 0 | 0 | 100% |
 | minContains | 28 | 0 | 0 | 100% |
 | minItems | 6 | 0 | 0 | 100% |
-| minLength | 6 | 1 | 0 | 86% |
+| minLength | 7 | 0 | 0 | 100% |
 | minProperties | 8 | 0 | 0 | 100% |
 | minimum | 11 | 0 | 0 | 100% |
 | multipleOf | 10 | 0 | 0 | 100% |
@@ -65,18 +65,6 @@
 **Test**: valid definition schema
 **Expected**: valid
 **Actual**: invalid
-
-### maxLength / maxLength validation
-
-**Test**: two graphemes is long enough
-**Expected**: valid
-**Actual**: invalid
-
-### minLength / minLength validation
-
-**Test**: one grapheme is not long enough
-**Expected**: invalid
-**Actual**: valid
 
 ### ref / remote ref, containing refs itself
 
