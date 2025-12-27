@@ -38,6 +38,14 @@ type _NotObject = Expect<Equal<typeof NotObject.type, string | number | boolean 
 const NotArray = schema({ not: { type: 'array' } });
 type _NotArray = Expect<Equal<typeof NotArray.type, string | number | boolean | null | JsonObject>>;
 
+// not with type array - excludes multiple types
+const NotStringOrNumber = schema({ not: { type: ['string', 'number'] } });
+type _NotStringOrNumber = Expect<Equal<typeof NotStringOrNumber.type, boolean | null | JsonArray | JsonObject>>;
+
+// not with all primitives in array
+const NotPrimitives = schema({ not: { type: ['string', 'number', 'boolean', 'null'] } });
+type _NotPrimitives = Expect<Equal<typeof NotPrimitives.type, JsonArray | JsonObject>>;
+
 // Combining type with not (allOf) - the string type dominates
 const NonEmptyString = schema({
   allOf: [
