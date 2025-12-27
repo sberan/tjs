@@ -17,6 +17,12 @@ export interface ValidatorOptions {
    * @default true
    */
   formatAssertion?: boolean;
+  /**
+   * Remote schemas to make available for $ref resolution.
+   * Keys should be the URI that the schema is registered under.
+   * The schema's $id will be used if present, otherwise the key.
+   */
+  remotes?: Record<string, JsonSchema>;
 }
 
 // Internal result type that tracks evaluated properties/items for unevaluated* keywords
@@ -31,7 +37,8 @@ export class Validator<T> {
   readonly #anchors: Map<string, JsonSchema>;
   readonly #schemasById: Map<string, JsonSchema>;
   readonly #schemaToBaseUri: Map<JsonSchema, string>;
-  readonly #options: Required<ValidatorOptions>;
+  readonly #dynamicAnchors: Map<string, JsonSchema[]>; // anchor name -> all schemas with that $dynamicAnchor
+  readonly #options: { formatAssertion: boolean };
 
   // Phantom type for type inference
   declare readonly type: T;
@@ -41,9 +48,23 @@ export class Validator<T> {
     this.#anchors = new Map();
     this.#schemasById = new Map();
     this.#schemaToBaseUri = new Map();
+    this.#dynamicAnchors = new Map();
     this.#options = {
       formatAssertion: options.formatAssertion ?? true,
     };
+
+    // Load remote schemas first (so they're available for $ref resolution)
+    if (options.remotes) {
+      for (const [uri, remoteSchema] of Object.entries(options.remotes)) {
+        // Use the schema's $id if present, otherwise use the key
+        const schemaId =
+          typeof remoteSchema === 'object' && remoteSchema !== null && remoteSchema.$id
+            ? remoteSchema.$id
+            : uri;
+        this.#collectAnchors(remoteSchema, schemaId);
+      }
+    }
+
     // Get root $id as base URI, or empty string
     const rootBaseUri =
       typeof schema === 'object' && schema !== null && schema.$id ? schema.$id : '';
@@ -82,6 +103,11 @@ export class Validator<T> {
         : `#${schema.$dynamicAnchor}`;
       this.#anchors.set(anchorUri, schema);
       this.#anchors.set(schema.$dynamicAnchor, schema);
+
+      // Also track in dynamicAnchors map for dynamic scope resolution
+      const existing = this.#dynamicAnchors.get(schema.$dynamicAnchor) ?? [];
+      existing.push(schema);
+      this.#dynamicAnchors.set(schema.$dynamicAnchor, existing);
     }
 
     // Recurse into all subschemas with the current base URI
@@ -246,13 +272,30 @@ export class Validator<T> {
     return { ok: false, errors: result.errors };
   }
 
-  #validate(data: unknown, schema: JsonSchema, path: string): ValidationResult {
+  #validate(
+    data: unknown,
+    schema: JsonSchema,
+    path: string,
+    dynamicScope: JsonSchema[] = []
+  ): ValidationResult {
     // Boolean schemas
     if (schema === true) return { errors: [] };
     if (schema === false) {
       return {
         errors: [{ path, message: 'Schema is false, no value is valid', keyword: 'false' }],
       };
+    }
+
+    // Build new dynamic scope:
+    // - Add schema resources (schemas with $id) to track the dynamic scope chain
+    // - The dynamic scope is used by $dynamicRef to find $dynamicAnchor
+    let newDynamicScope = dynamicScope;
+    if (schema.$id !== undefined) {
+      // Entering a new schema resource - add it to dynamic scope
+      newDynamicScope = [schema, ...dynamicScope];
+    } else if (schema.$dynamicAnchor !== undefined && dynamicScope.length === 0) {
+      // Root schema with $dynamicAnchor but no $id - treat as a resource
+      newDynamicScope = [schema, ...dynamicScope];
     }
 
     const errors: ValidationError[] = [];
@@ -263,7 +306,9 @@ export class Validator<T> {
     if (schema.$ref) {
       const refSchema = this.#resolveRef(schema.$ref, schema);
       if (refSchema) {
-        const refResult = this.#validate(data, refSchema, path);
+        // When following a $ref to a different resource, that resource enters the dynamic scope
+        const refDynamicScope = this.#buildRefDynamicScope(schema.$ref, schema, newDynamicScope);
+        const refResult = this.#validate(data, refSchema, path, refDynamicScope);
         errors.push(...refResult.errors);
         // Merge evaluated properties/items from $ref
         if (refResult.evaluatedProperties) {
@@ -280,15 +325,22 @@ export class Validator<T> {
         }
         // Continue to validate sibling keywords (don't return early)
       } else {
-        errors.push({ path, message: `Unresolved $ref: ${schema.$ref}`, keyword: '$ref' });
+        // Get the base URI for better error messages
+        const currentBaseUri = this.#schemaToBaseUri.get(schema) ?? '';
+        const resolvedUri = this.#resolveUri(schema.$ref, currentBaseUri);
+        errors.push({
+          path,
+          message: `Unresolved $ref: ${schema.$ref} (resolved to: ${resolvedUri})`,
+          keyword: '$ref',
+        });
       }
     }
 
-    // Handle $dynamicRef - treat like $ref for basic support
+    // Handle $dynamicRef - resolve using dynamic scope
     if (schema.$dynamicRef) {
-      const refSchema = this.#resolveRef(schema.$dynamicRef, schema);
+      const refSchema = this.#resolveDynamicRef(schema.$dynamicRef, schema, newDynamicScope);
       if (refSchema) {
-        const refResult = this.#validate(data, refSchema, path);
+        const refResult = this.#validate(data, refSchema, path, newDynamicScope);
         errors.push(...refResult.errors);
         if (refResult.evaluatedProperties) {
           evaluatedProperties = evaluatedProperties ?? new Set();
@@ -341,7 +393,7 @@ export class Validator<T> {
     if (schema.anyOf) {
       let anyValid = false;
       for (const s of schema.anyOf) {
-        const result = this.#validate(data, s, path);
+        const result = this.#validate(data, s, path, newDynamicScope);
         if (result.errors.length === 0) {
           anyValid = true;
           // Merge evaluated properties from ALL matching subschemas (don't break)
@@ -376,7 +428,7 @@ export class Validator<T> {
       let validResult: ValidationResult | null = null;
       let validCount = 0;
       for (const s of schema.oneOf) {
-        const result = this.#validate(data, s, path);
+        const result = this.#validate(data, s, path, newDynamicScope);
         if (result.errors.length === 0) {
           validCount++;
           validResult = result;
@@ -410,7 +462,7 @@ export class Validator<T> {
     // Handle allOf - merge evaluated props from ALL subschemas
     if (schema.allOf) {
       for (const subSchema of schema.allOf) {
-        const result = this.#validate(data, subSchema, path);
+        const result = this.#validate(data, subSchema, path, newDynamicScope);
         errors.push(...result.errors);
         // Merge evaluated properties from all subschemas
         if (result.evaluatedProperties) {
@@ -431,7 +483,7 @@ export class Validator<T> {
 
     // Handle not - no evaluated properties from 'not'
     if (schema.not) {
-      if (this.#validate(data, schema.not, path).errors.length === 0) {
+      if (this.#validate(data, schema.not, path, newDynamicScope).errors.length === 0) {
         errors.push({
           path,
           message: 'Value must not match the schema in not',
@@ -445,7 +497,7 @@ export class Validator<T> {
     // Handle if/then/else - merge evaluated props based on which branch is taken
     // Check !== undefined to handle if: false
     if (schema.if !== undefined) {
-      const ifResult = this.#validate(data, schema.if, path);
+      const ifResult = this.#validate(data, schema.if, path, newDynamicScope);
       const ifValid = ifResult.errors.length === 0;
 
       if (ifValid) {
@@ -464,7 +516,7 @@ export class Validator<T> {
         }
 
         if (schema.then !== undefined) {
-          const thenResult = this.#validate(data, schema.then, path);
+          const thenResult = this.#validate(data, schema.then, path, newDynamicScope);
           errors.push(...thenResult.errors);
           if (thenResult.evaluatedProperties) {
             evaluatedProperties = evaluatedProperties ?? new Set();
@@ -482,7 +534,7 @@ export class Validator<T> {
       } else {
         // When if is FALSE: merge from else (if exists), NOT from if
         if (schema.else !== undefined) {
-          const elseResult = this.#validate(data, schema.else, path);
+          const elseResult = this.#validate(data, schema.else, path, newDynamicScope);
           errors.push(...elseResult.errors);
           if (elseResult.evaluatedProperties) {
             evaluatedProperties = evaluatedProperties ?? new Set();
@@ -522,7 +574,7 @@ export class Validator<T> {
     } else if (typeof data === 'number') {
       errors.push(...this.#validateNumber(data, schema, path));
     } else if (Array.isArray(data)) {
-      const arrayResult = this.#validateArray(data, schema, path);
+      const arrayResult = this.#validateArray(data, schema, path, newDynamicScope);
       errors.push(...arrayResult.errors);
       // Merge evaluated items from array validation with those from composition
       if (arrayResult.evaluatedItems) {
@@ -532,7 +584,7 @@ export class Validator<T> {
         }
       }
     } else if (typeof data === 'object' && data !== null) {
-      const objectResult = this.#validateObject(data as Record<string, unknown>, schema, path);
+      const objectResult = this.#validateObject(data as Record<string, unknown>, schema, path, newDynamicScope);
       errors.push(...objectResult.errors);
       // Merge evaluated properties from object validation with those from composition
       if (objectResult.evaluatedProperties) {
@@ -555,7 +607,8 @@ export class Validator<T> {
         schema,
         path,
         evaluatedProperties ?? new Set(),
-        errors
+        errors,
+        newDynamicScope
       );
       // When unevaluatedProperties is true or a schema (not false), mark all properties as evaluated
       // This is important for parent schemas that also have unevaluatedProperties
@@ -569,7 +622,7 @@ export class Validator<T> {
 
     // Check unevaluatedItems after all validation (composition + base schema)
     if (schema.unevaluatedItems !== undefined && Array.isArray(data)) {
-      this.#checkUnevaluatedItems(data, schema, path, evaluatedItems ?? new Set(), errors);
+      this.#checkUnevaluatedItems(data, schema, path, evaluatedItems ?? new Set(), errors, newDynamicScope);
       // When unevaluatedItems is true or a schema (not false), mark all items as evaluated
       // This is important for parent schemas that also have unevaluatedItems
       if (schema.unevaluatedItems !== false) {
@@ -762,7 +815,7 @@ export class Validator<T> {
     return errors;
   }
 
-  #validateArray(data: unknown[], schema: JsonSchemaBase, path: string): ValidationResult {
+  #validateArray(data: unknown[], schema: JsonSchemaBase, path: string, dynamicScope: JsonSchema[]): ValidationResult {
     const errors: ValidationError[] = [];
     const evaluatedItems = new Set<number>();
 
@@ -799,7 +852,7 @@ export class Validator<T> {
       // Count matching items
       let matchCount = 0;
       for (let i = 0; i < data.length; i++) {
-        if (this.#validate(data[i], schema.contains, `${path}[${i}]`).errors.length === 0) {
+        if (this.#validate(data[i], schema.contains, `${path}[${i}]`, dynamicScope).errors.length === 0) {
           matchCount++;
           evaluatedItems.add(i);
         }
@@ -829,7 +882,7 @@ export class Validator<T> {
       for (let i = 0; i < schema.prefixItems.length; i++) {
         if (i < data.length) {
           evaluatedItems.add(i);
-          const result = this.#validate(data[i], schema.prefixItems[i], `${path}[${i}]`);
+          const result = this.#validate(data[i], schema.prefixItems[i], `${path}[${i}]`, dynamicScope);
           errors.push(...result.errors);
         }
       }
@@ -852,7 +905,7 @@ export class Validator<T> {
       } else if (typeof schema.items === 'object') {
         for (let i = restStart; i < data.length; i++) {
           evaluatedItems.add(i);
-          const result = this.#validate(data[i], schema.items, `${path}[${i}]`);
+          const result = this.#validate(data[i], schema.items, `${path}[${i}]`, dynamicScope);
           errors.push(...result.errors);
         }
       }
@@ -868,7 +921,7 @@ export class Validator<T> {
     } else if (typeof schema.items === 'object') {
       for (let i = 0; i < data.length; i++) {
         evaluatedItems.add(i);
-        const result = this.#validate(data[i], schema.items, `${path}[${i}]`);
+        const result = this.#validate(data[i], schema.items, `${path}[${i}]`, dynamicScope);
         errors.push(...result.errors);
       }
     }
@@ -882,7 +935,8 @@ export class Validator<T> {
   #validateObject(
     data: Record<string, unknown>,
     schema: JsonSchemaBase,
-    path: string
+    path: string,
+    dynamicScope: JsonSchema[]
   ): ValidationResult {
     const errors: ValidationError[] = [];
     const properties = schema.properties ?? {};
@@ -945,7 +999,7 @@ export class Validator<T> {
       for (const [trigger, dependentSchema] of Object.entries(schema.dependentSchemas)) {
         if (Object.hasOwn(data, trigger)) {
           // The dependent schema applies to the entire object, not just the trigger
-          const result = this.#validate(data, dependentSchema, path);
+          const result = this.#validate(data, dependentSchema, path, dynamicScope);
           errors.push(...result.errors);
           // Track evaluated properties for unevaluatedProperties (not additionalProperties)
           if (result.evaluatedProperties) {
@@ -960,7 +1014,7 @@ export class Validator<T> {
     // Validate propertyNames (check !== undefined to handle propertyNames: false)
     if (schema.propertyNames !== undefined) {
       for (const key of keys) {
-        const keyErrors = this.#validate(key, schema.propertyNames, `${path}[propertyName:${key}]`);
+        const keyErrors = this.#validate(key, schema.propertyNames, `${path}[propertyName:${key}]`, dynamicScope);
         for (const err of keyErrors.errors) {
           errors.push({
             path: path ? `${path}.${key}` : key,
@@ -976,7 +1030,7 @@ export class Validator<T> {
     for (const [key, propSchema] of Object.entries(properties)) {
       if (Object.hasOwn(data, key)) {
         evaluatedProperties.add(key);
-        const result = this.#validate(data[key], propSchema, path ? `${path}.${key}` : key);
+        const result = this.#validate(data[key], propSchema, path ? `${path}.${key}` : key, dynamicScope);
         errors.push(...result.errors);
       }
     }
@@ -988,7 +1042,7 @@ export class Validator<T> {
         for (const [key, value] of Object.entries(data)) {
           if (regex.test(key)) {
             evaluatedProperties.add(key);
-            const result = this.#validate(value, propSchema, path ? `${path}.${key}` : key);
+            const result = this.#validate(value, propSchema, path ? `${path}.${key}` : key, dynamicScope);
             errors.push(...result.errors);
           }
         }
@@ -1014,7 +1068,8 @@ export class Validator<T> {
             const result = this.#validate(
               value,
               schema.additionalProperties,
-              path ? `${path}.${key}` : key
+              path ? `${path}.${key}` : key,
+              dynamicScope
             );
             errors.push(...result.errors);
           }
@@ -1039,7 +1094,8 @@ export class Validator<T> {
     schema: JsonSchemaBase,
     path: string,
     evaluatedItems: Set<number>,
-    errors: ValidationError[]
+    errors: ValidationError[],
+    dynamicScope: JsonSchema[]
   ): void {
     for (let i = 0; i < data.length; i++) {
       if (!evaluatedItems.has(i)) {
@@ -1051,7 +1107,7 @@ export class Validator<T> {
             value: data[i],
           });
         } else if (typeof schema.unevaluatedItems === 'object') {
-          const result = this.#validate(data[i], schema.unevaluatedItems, `${path}[${i}]`);
+          const result = this.#validate(data[i], schema.unevaluatedItems, `${path}[${i}]`, dynamicScope);
           errors.push(...result.errors);
         }
       }
@@ -1063,7 +1119,8 @@ export class Validator<T> {
     schema: JsonSchemaBase,
     path: string,
     evaluatedProperties: Set<string>,
-    errors: ValidationError[]
+    errors: ValidationError[],
+    dynamicScope: JsonSchema[]
   ): void {
     for (const [key, value] of Object.entries(data)) {
       if (!evaluatedProperties.has(key)) {
@@ -1078,7 +1135,8 @@ export class Validator<T> {
           const result = this.#validate(
             value,
             schema.unevaluatedProperties,
-            path ? `${path}.${key}` : key
+            path ? `${path}.${key}` : key,
+            dynamicScope
           );
           errors.push(...result.errors);
         }
@@ -1163,13 +1221,178 @@ export class Validator<T> {
     return this.#schemasById.get(ref);
   }
 
+  #buildRefDynamicScope(
+    ref: string,
+    fromSchema: JsonSchemaBase,
+    currentScope: JsonSchema[]
+  ): JsonSchema[] {
+    // When a $ref points to a different schema resource (one with $id),
+    // that resource should enter the dynamic scope
+    const fragmentIndex = ref.indexOf('#');
+    const refUri = fragmentIndex !== -1 ? ref.slice(0, fragmentIndex) : ref;
+
+    if (!refUri) {
+      // Local ref (just a fragment), same resource
+      return currentScope;
+    }
+
+    // Resolve the URI to find the target resource
+    const currentBaseUri = this.#schemaToBaseUri.get(fromSchema) ?? '';
+    const resolvedUri = this.#resolveUri(refUri, currentBaseUri);
+    const targetResource = this.#schemasById.get(resolvedUri);
+
+    if (targetResource && typeof targetResource === 'object' && targetResource !== null) {
+      // Check if this resource (or any of its subschemas) has a $dynamicAnchor
+      // If so, add it to the dynamic scope
+      if (this.#resourceHasDynamicAnchor(targetResource)) {
+        return [targetResource, ...currentScope];
+      }
+    }
+
+    return currentScope;
+  }
+
+  #resourceHasDynamicAnchor(schema: JsonSchema): boolean {
+    if (typeof schema !== 'object' || schema === null) return false;
+
+    if (schema.$dynamicAnchor !== undefined) return true;
+
+    // Search in all subschemas, but STOP at schemas with their own $id
+    const searchIn = [
+      ...(schema.$defs ? Object.values(schema.$defs) : []),
+      ...(schema.properties ? Object.values(schema.properties) : []),
+      ...(schema.prefixItems ?? []),
+      ...(schema.anyOf ?? []),
+      ...(schema.oneOf ?? []),
+      ...(schema.allOf ?? []),
+      schema.items,
+      schema.additionalProperties,
+      schema.unevaluatedProperties,
+      schema.unevaluatedItems,
+      schema.not,
+      schema.if,
+      schema.then,
+      schema.else,
+      schema.contains,
+      schema.propertyNames,
+      ...(schema.dependentSchemas ? Object.values(schema.dependentSchemas) : []),
+      schema.contentSchema,
+      ...(schema.patternProperties ? Object.values(schema.patternProperties) : []),
+    ];
+
+    for (const subSchema of searchIn) {
+      if (typeof subSchema === 'object' && subSchema !== null) {
+        // Skip subschemas that have their own $id - they are separate resources
+        if (subSchema.$id !== undefined) continue;
+        if (this.#resourceHasDynamicAnchor(subSchema)) return true;
+      }
+    }
+
+    return false;
+  }
+
+  #resolveDynamicRef(
+    ref: string,
+    fromSchema: JsonSchemaBase,
+    dynamicScope: JsonSchema[]
+  ): JsonSchema | undefined {
+    // Extract anchor name from fragment (handles both "#anchor" and "uri#anchor")
+    let anchorName: string | undefined;
+    const fragmentIndex = ref.indexOf('#');
+    if (fragmentIndex !== -1) {
+      const fragment = ref.slice(fragmentIndex + 1);
+      // Check if it's a plain anchor name (not a JSON pointer starting with /)
+      if (fragment && !fragment.startsWith('/') && /^[a-zA-Z][a-zA-Z0-9_-]*$/.test(fragment)) {
+        anchorName = fragment;
+      }
+    }
+
+    if (anchorName) {
+      // First resolve the ref statically (like a regular $ref)
+      const staticTarget = this.#resolveRef(ref, fromSchema);
+
+      // For $dynamicRef to use dynamic scope resolution, the static target
+      // must have a matching $dynamicAnchor (this is the "bookending" requirement)
+      if (
+        staticTarget &&
+        typeof staticTarget === 'object' &&
+        staticTarget.$dynamicAnchor === anchorName
+      ) {
+        // Look through the dynamic scope (schema resources) for the OUTERMOST
+        // resource that contains a $dynamicAnchor with this name
+        // The dynamic scope is ordered innermost-first, so we search from the end
+        for (let i = dynamicScope.length - 1; i >= 0; i--) {
+          const resourceSchema = dynamicScope[i];
+          if (typeof resourceSchema === 'object' && resourceSchema !== null) {
+            // Search this resource for a $dynamicAnchor with the given name
+            const found = this.#findDynamicAnchorInResource(resourceSchema, anchorName);
+            if (found) {
+              return found;
+            }
+          }
+        }
+      }
+
+      // If no dynamic anchor match in scope, use the static target
+      return staticTarget;
+    }
+
+    // Fall back to regular $ref resolution for non-anchor refs
+    return this.#resolveRef(ref, fromSchema);
+  }
+
+  #findDynamicAnchorInResource(schema: JsonSchema, anchorName: string): JsonSchema | undefined {
+    if (typeof schema !== 'object' || schema === null) return undefined;
+
+    // Check if this schema has the $dynamicAnchor we're looking for
+    if (schema.$dynamicAnchor === anchorName) {
+      return schema;
+    }
+
+    // Search in all subschemas, but STOP at schemas with their own $id (different resource)
+    const searchIn = [
+      ...(schema.$defs ? Object.values(schema.$defs) : []),
+      ...(schema.properties ? Object.values(schema.properties) : []),
+      ...(schema.prefixItems ?? []),
+      ...(schema.anyOf ?? []),
+      ...(schema.oneOf ?? []),
+      ...(schema.allOf ?? []),
+      schema.items,
+      schema.additionalProperties,
+      schema.unevaluatedProperties,
+      schema.unevaluatedItems,
+      schema.not,
+      schema.if,
+      schema.then,
+      schema.else,
+      schema.contains,
+      schema.propertyNames,
+      ...(schema.dependentSchemas ? Object.values(schema.dependentSchemas) : []),
+      schema.contentSchema,
+      ...(schema.patternProperties ? Object.values(schema.patternProperties) : []),
+    ];
+
+    for (const subSchema of searchIn) {
+      if (typeof subSchema === 'object' && subSchema !== null) {
+        // Skip subschemas that have their own $id - they are separate resources
+        if (subSchema.$id !== undefined) continue;
+
+        const found = this.#findDynamicAnchorInResource(subSchema, anchorName);
+        if (found) return found;
+      }
+    }
+
+    return undefined;
+  }
+
   #findAnchorInSchema(schema: JsonSchema, anchorName: string): JsonSchema | undefined {
     if (typeof schema !== 'object' || schema === null) return undefined;
 
     // Get the base URI for this schema to track scope
     const baseUri = this.#schemaToBaseUri.get(schema);
 
-    if (schema.$anchor === anchorName) {
+    // $dynamicAnchor also creates an anchor that can be referenced like $anchor
+    if (schema.$anchor === anchorName || schema.$dynamicAnchor === anchorName) {
       return schema;
     }
 
