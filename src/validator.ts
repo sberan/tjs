@@ -30,6 +30,7 @@ export class Validator<T> {
   readonly #schema: JsonSchema;
   readonly #anchors: Map<string, JsonSchema>;
   readonly #schemasById: Map<string, JsonSchema>;
+  readonly #schemaToBaseUri: Map<JsonSchema, string>;
   readonly #options: Required<ValidatorOptions>;
 
   // Phantom type for type inference
@@ -39,88 +40,180 @@ export class Validator<T> {
     this.#schema = schema;
     this.#anchors = new Map();
     this.#schemasById = new Map();
+    this.#schemaToBaseUri = new Map();
     this.#options = {
       formatAssertion: options.formatAssertion ?? true,
     };
-    this.#collectAnchors(schema);
+    // Get root $id as base URI, or empty string
+    const rootBaseUri =
+      typeof schema === 'object' && schema !== null && schema.$id ? schema.$id : '';
+    this.#collectAnchors(schema, rootBaseUri);
   }
 
-  #collectAnchors(schema: JsonSchema): void {
+  #collectAnchors(schema: JsonSchema, baseUri: string): void {
     if (typeof schema !== 'object' || schema === null) return;
 
+    // If this schema has $id, it establishes a new base URI
+    let currentBaseUri = baseUri;
+    if (schema.$id) {
+      // Resolve $id against the current base URI
+      currentBaseUri = this.#resolveUri(schema.$id, baseUri);
+      this.#schemasById.set(currentBaseUri, schema);
+    }
+
+    // Store the base URI for this schema (used when resolving $ref)
+    this.#schemaToBaseUri.set(schema, currentBaseUri);
+
+    // Register $anchor with the current base URI
     if (schema.$anchor) {
+      // Store as baseUri#anchor for lookup
+      const anchorUri = currentBaseUri
+        ? `${currentBaseUri}#${schema.$anchor}`
+        : `#${schema.$anchor}`;
+      this.#anchors.set(anchorUri, schema);
+      // Also store by just the anchor name for simple lookups
       this.#anchors.set(schema.$anchor, schema);
     }
 
-    // Recurse into all subschemas
+    // Recurse into all subschemas with the current base URI
     if (schema.$defs) {
       for (const def of Object.values(schema.$defs)) {
-        this.#collectAnchors(def);
+        this.#collectAnchors(def, currentBaseUri);
       }
     }
     if (schema.properties) {
       for (const prop of Object.values(schema.properties)) {
-        this.#collectAnchors(prop);
+        this.#collectAnchors(prop, currentBaseUri);
       }
     }
     if (schema.items && typeof schema.items === 'object') {
-      this.#collectAnchors(schema.items);
+      this.#collectAnchors(schema.items, currentBaseUri);
     }
     if (schema.prefixItems) {
       for (const item of schema.prefixItems) {
-        this.#collectAnchors(item);
+        this.#collectAnchors(item, currentBaseUri);
       }
     }
     if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
-      this.#collectAnchors(schema.additionalProperties);
+      this.#collectAnchors(schema.additionalProperties, currentBaseUri);
     }
     if (schema.unevaluatedProperties && typeof schema.unevaluatedProperties === 'object') {
-      this.#collectAnchors(schema.unevaluatedProperties);
+      this.#collectAnchors(schema.unevaluatedProperties, currentBaseUri);
     }
     if (schema.unevaluatedItems && typeof schema.unevaluatedItems === 'object') {
-      this.#collectAnchors(schema.unevaluatedItems);
+      this.#collectAnchors(schema.unevaluatedItems, currentBaseUri);
     }
     if (schema.anyOf) {
       for (const sub of schema.anyOf) {
-        this.#collectAnchors(sub);
+        this.#collectAnchors(sub, currentBaseUri);
       }
     }
     if (schema.oneOf) {
       for (const sub of schema.oneOf) {
-        this.#collectAnchors(sub);
+        this.#collectAnchors(sub, currentBaseUri);
       }
     }
     if (schema.allOf) {
       for (const sub of schema.allOf) {
-        this.#collectAnchors(sub);
+        this.#collectAnchors(sub, currentBaseUri);
       }
     }
     if (schema.not) {
-      this.#collectAnchors(schema.not);
+      this.#collectAnchors(schema.not, currentBaseUri);
     }
     if (schema.if) {
-      this.#collectAnchors(schema.if);
+      this.#collectAnchors(schema.if, currentBaseUri);
     }
     if (schema.then) {
-      this.#collectAnchors(schema.then);
+      this.#collectAnchors(schema.then, currentBaseUri);
     }
     if (schema.else) {
-      this.#collectAnchors(schema.else);
+      this.#collectAnchors(schema.else, currentBaseUri);
     }
     if (schema.contains) {
-      this.#collectAnchors(schema.contains);
+      this.#collectAnchors(schema.contains, currentBaseUri);
     }
     if (schema.propertyNames) {
-      this.#collectAnchors(schema.propertyNames);
+      this.#collectAnchors(schema.propertyNames, currentBaseUri);
     }
     if (schema.dependentSchemas) {
       for (const dep of Object.values(schema.dependentSchemas)) {
-        this.#collectAnchors(dep);
+        this.#collectAnchors(dep, currentBaseUri);
       }
     }
     if (schema.contentSchema) {
-      this.#collectAnchors(schema.contentSchema);
+      this.#collectAnchors(schema.contentSchema, currentBaseUri);
     }
+  }
+
+  #resolveUri(ref: string, baseUri: string): string {
+    // If ref is already absolute (has scheme), return as-is
+    if (/^[a-z][a-z0-9+.-]*:/i.test(ref)) {
+      return ref;
+    }
+
+    // If ref starts with /, it's an absolute path - combine with base URI's scheme+host
+    if (ref.startsWith('/')) {
+      const match = baseUri.match(/^([a-z][a-z0-9+.-]*:\/\/[^/]+)/i);
+      if (match) {
+        return match[1] + ref;
+      }
+      return ref;
+    }
+
+    // If no base URI, return as-is
+    if (!baseUri) {
+      return ref;
+    }
+
+    // Relative URI - resolve against base
+    // Remove fragment from base URI
+    const baseWithoutFragment = baseUri.split('#')[0];
+
+    // Remove the last path segment from base and append ref
+    const lastSlash = baseWithoutFragment.lastIndexOf('/');
+    if (lastSlash !== -1) {
+      let resolved = baseWithoutFragment.slice(0, lastSlash + 1) + ref;
+      // Normalize ./ and ../ in the path
+      resolved = this.#normalizeUriPath(resolved);
+      return resolved;
+    }
+
+    return ref;
+  }
+
+  #normalizeUriPath(uri: string): string {
+    // Find the scheme and authority part (e.g., "https://example.com")
+    const match = uri.match(/^([a-z][a-z0-9+.-]*:\/\/[^/]*)(\/.*)?$/i);
+    if (!match) {
+      // For URNs or other non-path URIs, just return as-is
+      return uri;
+    }
+
+    const authority = match[1];
+    let path = match[2] || '/';
+
+    // Split path into segments
+    const segments = path.split('/');
+    const normalized: string[] = [];
+
+    for (const segment of segments) {
+      if (segment === '.' || segment === '') {
+        // Skip current directory markers and empty segments (except keeping leading /)
+        if (normalized.length === 0) normalized.push('');
+        continue;
+      }
+      if (segment === '..') {
+        // Go up one directory (but not above root)
+        if (normalized.length > 1) {
+          normalized.pop();
+        }
+      } else {
+        normalized.push(segment);
+      }
+    }
+
+    return authority + normalized.join('/');
   }
 
   validate(data: unknown): data is T {
@@ -159,7 +252,7 @@ export class Validator<T> {
 
     // Handle $ref - in draft 2020-12, $ref applies alongside sibling keywords
     if (schema.$ref) {
-      const refSchema = this.#resolveRef(schema.$ref);
+      const refSchema = this.#resolveRef(schema.$ref, schema);
       if (refSchema) {
         const refResult = this.#validate(data, refSchema, path);
         errors.push(...refResult.errors);
@@ -428,6 +521,14 @@ export class Validator<T> {
         evaluatedProperties ?? new Set(),
         errors
       );
+      // When unevaluatedProperties is true or a schema (not false), mark all properties as evaluated
+      // This is important for parent schemas that also have unevaluatedProperties
+      if (schema.unevaluatedProperties !== false) {
+        evaluatedProperties = evaluatedProperties ?? new Set();
+        for (const key of Object.keys(data as Record<string, unknown>)) {
+          evaluatedProperties.add(key);
+        }
+      }
     }
 
     // Check unevaluatedItems after all validation (composition + base schema)
@@ -945,31 +1046,56 @@ export class Validator<T> {
     }
   }
 
-  #resolveRef(ref: string): JsonSchema | undefined {
+  #resolveRef(ref: string, fromSchema: JsonSchemaBase): JsonSchema | undefined {
+    // Get the base URI of the schema containing this $ref
+    const currentBaseUri = this.#schemaToBaseUri.get(fromSchema) ?? '';
+
     // Handle root reference: #
     if (ref === '#') {
+      // If we have a current base URI, return the schema with that $id
+      // Otherwise return the root schema
+      if (currentBaseUri) {
+        return this.#schemasById.get(currentBaseUri) ?? this.#schema;
+      }
       return this.#schema;
     }
 
     // Handle JSON Pointer: #/path/to/something
     if (ref.startsWith('#/')) {
+      // Resolve relative to the current base URI's schema
+      if (currentBaseUri) {
+        const baseSchema = this.#schemasById.get(currentBaseUri);
+        if (baseSchema) {
+          return this.#resolveJsonPointerInSchema(baseSchema, ref.slice(1));
+        }
+      }
       return this.#resolveJsonPointer(ref.slice(1));
     }
 
     // Handle anchor reference: #anchorName
     const anchorMatch = ref.match(/^#([a-zA-Z][a-zA-Z0-9_-]*)$/);
     if (anchorMatch) {
+      // Try with full base URI first
+      if (currentBaseUri) {
+        const fullAnchorUri = `${currentBaseUri}#${anchorMatch[1]}`;
+        const result = this.#anchors.get(fullAnchorUri);
+        if (result) return result;
+      }
+      // Fall back to simple anchor lookup
       return this.#anchors.get(anchorMatch[1]);
     }
 
     // Handle URN or URI with fragment (e.g., "urn:uuid:xxx#/path" or "http://example.com/schema#anchor")
     const fragmentIndex = ref.indexOf('#');
     if (fragmentIndex !== -1) {
-      const baseUri = ref.slice(0, fragmentIndex);
+      const refBaseUri = ref.slice(0, fragmentIndex);
       const fragment = ref.slice(fragmentIndex);
 
-      // Look up the schema by base URI
-      const baseSchema = this.#schemasById.get(baseUri);
+      // Resolve the base URI relative to current base
+      const resolvedUri = this.#resolveUri(refBaseUri, currentBaseUri);
+
+      // Look up the schema by resolved URI
+      const baseSchema = this.#schemasById.get(resolvedUri);
       if (baseSchema) {
         // If there's a fragment, resolve it within that schema
         if (fragment === '#') {
@@ -986,22 +1112,28 @@ export class Validator<T> {
     }
 
     // Handle plain URI/URN reference (without fragment)
-    const schema = this.#schemasById.get(ref);
+    // Resolve relative to current base URI
+    const resolvedRef = this.#resolveUri(ref, currentBaseUri);
+    const schema = this.#schemasById.get(resolvedRef);
     if (schema) {
       return schema;
     }
 
-    return undefined;
+    // Also try the original ref in case it's already absolute
+    return this.#schemasById.get(ref);
   }
 
   #findAnchorInSchema(schema: JsonSchema, anchorName: string): JsonSchema | undefined {
     if (typeof schema !== 'object' || schema === null) return undefined;
 
+    // Get the base URI for this schema to track scope
+    const baseUri = this.#schemaToBaseUri.get(schema);
+
     if (schema.$anchor === anchorName) {
       return schema;
     }
 
-    // Search in all subschemas
+    // Search in all subschemas, but skip those with their own $id (they create new scope)
     const searchIn = [
       ...(schema.$defs ? Object.values(schema.$defs) : []),
       ...(schema.properties ? Object.values(schema.properties) : []),
@@ -1025,8 +1157,13 @@ export class Validator<T> {
 
     for (const subSchema of searchIn) {
       if (typeof subSchema === 'object' && subSchema !== null) {
-        const found = this.#findAnchorInSchema(subSchema, anchorName);
-        if (found) return found;
+        // Skip subschemas that have their own $id - they create a different scope
+        // Only search in subschemas that share the same base URI
+        const subBaseUri = this.#schemaToBaseUri.get(subSchema);
+        if (subBaseUri === baseUri) {
+          const found = this.#findAnchorInSchema(subSchema, anchorName);
+          if (found) return found;
+        }
       }
     }
 

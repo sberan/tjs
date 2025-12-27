@@ -3,8 +3,8 @@
 ## Summary
 
 - **Total Tests**: 1271
-- **Passed**: 1162 (91.4%)
-- **Failed**: 29
+- **Passed**: 1185 (93.2%)
+- **Failed**: 6
 - **Skipped**: 80
 
 ## By Keyword
@@ -13,7 +13,7 @@
 |---------|--------|--------|---------|------|
 | additionalProperties | 21 | 0 | 0 | 100% |
 | allOf | 30 | 0 | 0 | 100% |
-| anchor | 5 | 3 | 0 | 63% |
+| anchor | 8 | 0 | 0 | 100% |
 | anyOf | 18 | 0 | 0 | 100% |
 | boolean_schema | 18 | 0 | 0 | 100% |
 | const | 54 | 0 | 0 | 100% |
@@ -49,34 +49,16 @@
 | prefixItems | 11 | 0 | 0 | 100% |
 | properties | 28 | 0 | 0 | 100% |
 | propertyNames | 20 | 0 | 0 | 100% |
-| ref | 63 | 16 | 0 | 80% |
+| ref | 78 | 1 | 0 | 99% |
 | refRemote | 0 | 0 | 31 | N/A |
 | required | 16 | 0 | 0 | 100% |
 | type | 80 | 0 | 0 | 100% |
 | unevaluatedItems | 70 | 1 | 0 | 99% |
-| unevaluatedProperties | 119 | 6 | 0 | 95% |
+| unevaluatedProperties | 124 | 1 | 0 | 99% |
 | uniqueItems | 69 | 0 | 0 | 100% |
 | vocabulary | 0 | 0 | 5 | N/A |
 
 ## Failures
-
-### anchor / Location-independent identifier with absolute URI
-
-**Test**: match
-**Expected**: valid
-**Actual**: invalid
-
-### anchor / Location-independent identifier with base URI change in subschema
-
-**Test**: match
-**Expected**: valid
-**Actual**: invalid
-
-### anchor / same $anchor with different base uri
-
-**Test**: $ref resolves to /$defs/A/allOf/1
-**Expected**: valid
-**Actual**: invalid
 
 ### defs / validate definition against metaschema
 
@@ -102,134 +84,14 @@
 **Expected**: valid
 **Actual**: invalid
 
-### ref / Recursive references between schemas
-
-**Test**: valid tree
-**Expected**: valid
-**Actual**: invalid
-
-### ref / refs with relative uris and defs
-
-**Test**: valid on both fields
-**Expected**: valid
-**Actual**: invalid
-
-### ref / relative refs with absolute uris and defs
-
-**Test**: valid on both fields
-**Expected**: valid
-**Actual**: invalid
-
-### ref / $id must be resolved against nearest parent, not just immediate parent
-
-**Test**: number is valid
-**Expected**: valid
-**Actual**: invalid
-
-### ref / order of evaluation: $id and $ref
-
-**Test**: data is valid against first definition
-**Expected**: valid
-**Actual**: invalid
-
-### ref / order of evaluation: $id and $anchor and $ref
-
-**Test**: data is valid against first definition
-**Expected**: valid
-**Actual**: invalid
-
-### ref / order of evaluation: $id and $ref on nested schema
-
-**Test**: data is valid against nested sibling
-**Expected**: valid
-**Actual**: invalid
-
-### ref / simple URN base URI with $ref via the URN
-
-**Test**: valid under the URN IDed schema
-**Expected**: valid
-**Actual**: invalid
-
-### ref / URN base URI with URN and JSON pointer ref
-
-**Test**: a string is valid
-**Expected**: valid
-**Actual**: invalid
-
-### ref / URN base URI with URN and anchor ref
-
-**Test**: a string is valid
-**Expected**: valid
-**Actual**: invalid
-
-### ref / URN ref with nested pointer ref
-
-**Test**: a string is valid
-**Expected**: valid
-**Actual**: invalid
-
-### ref / ref to if
-
-**Test**: an integer is valid
-**Expected**: valid
-**Actual**: invalid
-
-### ref / ref to then
-
-**Test**: an integer is valid
-**Expected**: valid
-**Actual**: invalid
-
-### ref / ref to else
-
-**Test**: an integer is valid
-**Expected**: valid
-**Actual**: invalid
-
-### ref / ref with absolute-path-reference
-
-**Test**: a string is valid
-**Expected**: valid
-**Actual**: invalid
-
 ### unevaluatedItems / unevaluatedItems with $dynamicRef
 
 **Test**: with no unevaluated items
 **Expected**: valid
 **Actual**: invalid
 
-### unevaluatedProperties / unevaluatedProperties with nested unevaluatedProperties
-
-**Test**: with nested unevaluated properties
-**Expected**: valid
-**Actual**: invalid
-
 ### unevaluatedProperties / unevaluatedProperties with $dynamicRef
 
 **Test**: with no unevaluated properties
-**Expected**: valid
-**Actual**: invalid
-
-### unevaluatedProperties / nested unevaluatedProperties, outer false, inner true, properties outside
-
-**Test**: with nested unevaluated properties
-**Expected**: valid
-**Actual**: invalid
-
-### unevaluatedProperties / nested unevaluatedProperties, outer false, inner true, properties inside
-
-**Test**: with nested unevaluated properties
-**Expected**: valid
-**Actual**: invalid
-
-### unevaluatedProperties / dynamic evalation inside nested refs
-
-**Test**: all is valid
-**Expected**: valid
-**Actual**: invalid
-
-### unevaluatedProperties / dynamic evalation inside nested refs
-
-**Test**: all + foo is valid
 **Expected**: valid
 **Actual**: invalid
