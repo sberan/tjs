@@ -11,33 +11,46 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Load remote schemas for the test suite
 function loadRemoteSchemas(): Record<string, JsonSchema> {
   const remotes: Record<string, JsonSchema> = {};
-  const remotesDir = path.join(__dirname, '../../test-suite/remotes/draft2020-12');
 
-  if (fs.existsSync(remotesDir)) {
-    const loadDir = (dir: string, baseUrl: string) => {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
-      for (const entry of entries) {
-        const fullPath = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-          loadDir(fullPath, `${baseUrl}${entry.name}/`);
-        } else if (entry.name.endsWith('.json')) {
-          try {
-            const content = fs.readFileSync(fullPath, 'utf-8');
-            const schema = JSON.parse(content) as JsonSchema;
-            // Use the schema's $id if present, otherwise construct URL
-            const schemaId =
-              typeof schema === 'object' && schema !== null && schema.$id
-                ? schema.$id
-                : `${baseUrl}${entry.name}`;
-            remotes[schemaId] = schema;
-          } catch {
-            // Skip invalid JSON files
+  const loadDir = (dir: string, baseUrl: string) => {
+    if (!fs.existsSync(dir)) return;
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      // Skip other draft directories (we only support draft2020-12)
+      if (
+        entry.isDirectory() &&
+        (entry.name.startsWith('draft') || entry.name === 'draft2019-09')
+      ) {
+        continue;
+      }
+      if (entry.isDirectory()) {
+        loadDir(fullPath, `${baseUrl}${entry.name}/`);
+      } else if (entry.name.endsWith('.json')) {
+        try {
+          const content = fs.readFileSync(fullPath, 'utf-8');
+          const schema = JSON.parse(content) as JsonSchema;
+          // Always register by URL path
+          const urlPath = `${baseUrl}${entry.name}`;
+          remotes[urlPath] = schema;
+          // Also register by $id if present
+          if (typeof schema === 'object' && schema !== null && schema.$id) {
+            remotes[schema.$id] = schema;
           }
+        } catch {
+          // Skip invalid JSON files
         }
       }
-    };
-    loadDir(remotesDir, 'http://localhost:1234/draft2020-12/');
-  }
+    }
+  };
+
+  // Load from root remotes directory
+  const remotesDir = path.join(__dirname, '../../test-suite/remotes');
+  loadDir(remotesDir, 'http://localhost:1234/');
+
+  // Also load from draft2020-12 subdirectory with that base URL
+  const draft2020Dir = path.join(remotesDir, 'draft2020-12');
+  loadDir(draft2020Dir, 'http://localhost:1234/draft2020-12/');
 
   return remotes;
 }
