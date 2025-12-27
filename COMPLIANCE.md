@@ -3,8 +3,8 @@
 ## Summary
 
 - **Total Tests**: 1271
-- **Passed**: 1150 (90.5%)
-- **Failed**: 41
+- **Passed**: 1157 (91.0%)
+- **Failed**: 34
 - **Skipped**: 80
 
 ## By Keyword
@@ -53,9 +53,9 @@
 | refRemote | 0 | 0 | 31 | N/A |
 | required | 16 | 0 | 0 | 100% |
 | type | 80 | 0 | 0 | 100% |
-| unevaluatedItems | 65 | 6 | 0 | 92% |
-| unevaluatedProperties | 115 | 10 | 0 | 92% |
-| uniqueItems | 67 | 2 | 0 | 97% |
+| unevaluatedItems | 68 | 3 | 0 | 96% |
+| unevaluatedProperties | 117 | 8 | 0 | 94% |
+| uniqueItems | 69 | 0 | 0 | 100% |
 | vocabulary | 0 | 0 | 5 | N/A |
 
 ## Failures
@@ -210,29 +210,11 @@
 **Expected**: valid
 **Actual**: invalid
 
-### unevaluatedItems / unevaluatedItems and contains interact to control item dependency relationship
-
-**Test**: only a's are valid
-**Expected**: valid
-**Actual**: invalid
-
-### unevaluatedItems / unevaluatedItems and contains interact to control item dependency relationship
-
-**Test**: a's and b's are valid
-**Expected**: valid
-**Actual**: invalid
-
-### unevaluatedItems / unevaluatedItems and contains interact to control item dependency relationship
-
-**Test**: a's, b's and c's are valid
-**Expected**: valid
-**Actual**: invalid
-
 ### unevaluatedItems / unevaluatedItems can see annotations from if without then and else
 
-**Test**: valid in case if is evaluated
-**Expected**: valid
-**Actual**: invalid
+**Test**: invalid in case if is evaluated
+**Expected**: invalid
+**Actual**: valid
 
 ### unevaluatedProperties / unevaluatedProperties with nested unevaluatedProperties
 
@@ -242,21 +224,15 @@
 
 ### unevaluatedProperties / unevaluatedProperties with if/then/else
 
-**Test**: when if is true and has no unevaluated properties
-**Expected**: valid
-**Actual**: invalid
+**Test**: when if is false and has unevaluated properties
+**Expected**: invalid
+**Actual**: valid
 
 ### unevaluatedProperties / unevaluatedProperties with if/then/else, then not defined
 
-**Test**: when if is true and has no unevaluated properties
-**Expected**: valid
-**Actual**: invalid
-
-### unevaluatedProperties / unevaluatedProperties with if/then/else, else not defined
-
-**Test**: when if is true and has no unevaluated properties
-**Expected**: valid
-**Actual**: invalid
+**Test**: when if is false and has unevaluated properties
+**Expected**: invalid
+**Actual**: valid
 
 ### unevaluatedProperties / unevaluatedProperties with $dynamicRef
 
@@ -287,21 +263,3 @@
 **Test**: all + foo is valid
 **Expected**: valid
 **Actual**: invalid
-
-### unevaluatedProperties / unevaluatedProperties can see annotations from if without then and else
-
-**Test**: valid in case if is evaluated
-**Expected**: valid
-**Actual**: invalid
-
-### uniqueItems / uniqueItems validation
-
-**Test**: property order of array of objects is ignored
-**Expected**: invalid
-**Actual**: valid
-
-### uniqueItems / uniqueItems validation
-
-**Test**: objects are non-unique despite key order
-**Expected**: invalid
-**Actual**: valid
