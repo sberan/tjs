@@ -72,8 +72,12 @@ describe('dependentRequired', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.errors.length).toBe(2);
-      expect(result.errors.some(e => e.keyword === 'dependentRequired' && e.path === 'bar')).toBe(true);
-      expect(result.errors.some(e => e.keyword === 'dependentRequired' && e.path === 'baz')).toBe(true);
+      expect(result.errors.some((e) => e.keyword === 'dependentRequired' && e.path === 'bar')).toBe(
+        true
+      );
+      expect(result.errors.some((e) => e.keyword === 'dependentRequired' && e.path === 'baz')).toBe(
+        true
+      );
     }
   });
 });
@@ -276,7 +280,9 @@ describe('annotation keywords', () => {
     });
 
     // Annotations don't affect validation
-    expect(Schema.validate({ name: 'Alice', email: 'alice@example.com', role: 'admin' })).toBe(true);
+    expect(Schema.validate({ name: 'Alice', email: 'alice@example.com', role: 'admin' })).toBe(
+      true
+    );
     expect(Schema.validate({})).toBe(true);
   });
 });

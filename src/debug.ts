@@ -16,11 +16,10 @@ declare const x: Actual;
 x.a; // check if optional
 x.b;
 
-
 const NotStringNumber = schema({
   not: {
     type: ['string', 'number'],
-  }
+  },
 });
 
 type NotStringNumberType = typeof NotStringNumber.type;

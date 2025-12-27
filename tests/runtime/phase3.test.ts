@@ -25,7 +25,9 @@ describe('dependentSchemas', () => {
 
   it('passes when trigger and required dependent are present', () => {
     expect(Payment.validate({ creditCard: '1234', billingAddress: '123 Main St' })).toBe(true);
-    expect(Payment.validate({ name: 'Alice', creditCard: '1234', billingAddress: '123 Main St' })).toBe(true);
+    expect(
+      Payment.validate({ name: 'Alice', creditCard: '1234', billingAddress: '123 Main St' })
+    ).toBe(true);
   });
 
   it('fails when trigger is present but dependent required is missing', () => {
@@ -37,7 +39,9 @@ describe('dependentSchemas', () => {
     const result = Payment.parse({ creditCard: '1234' });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.errors.some(e => e.keyword === 'required' && e.path === 'billingAddress')).toBe(true);
+      expect(
+        result.errors.some((e) => e.keyword === 'required' && e.path === 'billingAddress')
+      ).toBe(true);
     }
   });
 
@@ -158,7 +162,9 @@ describe('unevaluatedProperties', () => {
     const result = Strict.parse({ name: 'Alice', extra: 'value' });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.errors.some(e => e.keyword === 'unevaluatedProperties' && e.path === 'extra')).toBe(true);
+      expect(
+        result.errors.some((e) => e.keyword === 'unevaluatedProperties' && e.path === 'extra')
+      ).toBe(true);
     }
   });
 
@@ -304,10 +310,7 @@ describe('unevaluatedItems', () => {
   // Basic tuple with unevaluatedItems: false - strict tuple
   const StrictTuple = schema({
     type: 'array',
-    prefixItems: [
-      { type: 'string' },
-      { type: 'number' },
-    ],
+    prefixItems: [{ type: 'string' }, { type: 'number' }],
     unevaluatedItems: false,
   });
 
@@ -325,16 +328,16 @@ describe('unevaluatedItems', () => {
     const result = StrictTuple.parse(['hello', 42, 'extra']);
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.errors.some(e => e.keyword === 'unevaluatedItems' && e.path === '[2]')).toBe(true);
+      expect(result.errors.some((e) => e.keyword === 'unevaluatedItems' && e.path === '[2]')).toBe(
+        true
+      );
     }
   });
 
   // unevaluatedItems with schema (not just false)
   const WithSchema = schema({
     type: 'array',
-    prefixItems: [
-      { type: 'string' },
-    ],
+    prefixItems: [{ type: 'string' }],
     unevaluatedItems: { type: 'number' },
   });
 
@@ -443,7 +446,7 @@ describe('contentEncoding', () => {
     const result = Base64String.parse('invalid!!!');
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.errors.some(e => e.keyword === 'contentEncoding')).toBe(true);
+      expect(result.errors.some((e) => e.keyword === 'contentEncoding')).toBe(true);
     }
   });
 });
@@ -472,7 +475,7 @@ describe('contentMediaType', () => {
     const result = JsonString.parse('{invalid}');
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.errors.some(e => e.keyword === 'contentMediaType')).toBe(true);
+      expect(result.errors.some((e) => e.keyword === 'contentMediaType')).toBe(true);
     }
   });
 });

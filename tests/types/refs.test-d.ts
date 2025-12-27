@@ -68,10 +68,7 @@ const RefInAnyOf = schema({
     StringType: { type: 'string' },
     NumberType: { type: 'number' },
   },
-  anyOf: [
-    { $ref: '#/$defs/StringType' },
-    { $ref: '#/$defs/NumberType' },
-  ],
+  anyOf: [{ $ref: '#/$defs/StringType' }, { $ref: '#/$defs/NumberType' }],
 });
 RefInAnyOf.type; // $ExpectType string | number
 
