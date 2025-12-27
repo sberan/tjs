@@ -12,11 +12,7 @@ export function schema<const T extends JsonSchema>(
 // Re-export types
 export type { JsonSchema, JsonSchemaBase, JsonValue, JsonObject, JsonArray } from './types.js';
 export type { Infer } from './infer.js';
-export type { ValidationError } from './keywords/types.js';
-export type { ParseResult, JITOptions as ValidatorOptions } from './jit/index.js';
+export type { ValidationError, ParseResult, JITOptions as ValidatorOptions } from './jit/index.js';
 
-// Default export is JIT validator
+// Export JIT validator as the main Validator
 export { ValidatorJIT as Validator } from './jit/index.js';
-
-// Also export interpreter for special cases (error collection, unevaluated keywords)
-export { Validator as ValidatorInterpreter } from './validator.js';

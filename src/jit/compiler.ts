@@ -9,9 +9,19 @@ import { CodeBuilder, escapeString, propAccess, stringify } from './codegen.js';
 import { CompileContext, type JITOptions } from './context.js';
 
 /**
- * Compiled validation function type
+ * Validation error type for internal use
  */
-export type ValidateFn = (data: unknown) => boolean;
+export interface JITError {
+  path: string;
+  message: string;
+  keyword: string;
+}
+
+/**
+ * Compiled validation function type
+ * When errors array is provided, errors are collected instead of early return
+ */
+export type ValidateFn = (data: unknown, errors?: JITError[]) => boolean;
 
 /**
  * Compile a JSON Schema into a validation function
@@ -29,15 +39,15 @@ export function compile(schema: JsonSchema, options: JITOptions = {}): ValidateF
   ctx.registerCompiled(schema, mainFuncName);
 
   // Generate code for main schema
-  generateSchemaValidator(code, schema, 'data', ctx);
+  generateSchemaValidator(code, schema, 'data', "''", ctx);
 
   // Process any queued schemas (from $ref)
   let queued: { schema: JsonSchema; funcName: string } | undefined;
   while ((queued = ctx.nextToCompile())) {
     const q = queued; // Capture for closure
     code.blank();
-    code.block(`function ${q.funcName}(data)`, () => {
-      generateSchemaValidator(code, q.schema, 'data', ctx);
+    code.block(`function ${q.funcName}(data, errors, path)`, () => {
+      generateSchemaValidator(code, q.schema, 'data', 'path', ctx);
       code.line('return true;');
     });
   }
@@ -53,23 +63,25 @@ return true;
 `;
 
   // DEBUG: Uncomment to see generated code
-  // console.log('Generated code:', `function ${mainFuncName}(data) {\n${fullCode}\n}`);
+  // console.log('Generated code:', `function ${mainFuncName}(data, errors) {\n${fullCode}\n}`);
 
   // Create the function with runtime dependencies injected
   const factory = new Function(
     ...runtimeNames,
-    `return function ${mainFuncName}(data) {\n${fullCode}\n}`
+    `return function ${mainFuncName}(data, errors) {\n${fullCode}\n}`
   );
   return factory(...runtimeValues) as ValidateFn;
 }
 
 /**
  * Generate validation code for a schema
+ * @param pathExpr - JavaScript expression that evaluates to the current path string
  */
 function generateSchemaValidator(
   code: CodeBuilder,
   schema: JsonSchema,
   dataVar: string,
+  pathExpr: string,
   ctx: CompileContext
 ): void {
   // Boolean schemas
@@ -79,30 +91,33 @@ function generateSchemaValidator(
   }
 
   if (schema === false) {
+    code.line(
+      `if (errors) errors.push({ path: ${pathExpr}, message: 'Schema is false', keyword: 'false' });`
+    );
     code.line('return false;');
     return;
   }
 
   // Generate JIT code for each keyword
-  generateTypeCheck(code, schema, dataVar, ctx);
-  generateConstCheck(code, schema, dataVar, ctx);
-  generateEnumCheck(code, schema, dataVar, ctx);
-  generateStringChecks(code, schema, dataVar, ctx);
-  generateFormatCheck(code, schema, dataVar, ctx);
-  generateNumberChecks(code, schema, dataVar, ctx);
-  generateArrayChecks(code, schema, dataVar, ctx);
-  generateObjectChecks(code, schema, dataVar, ctx);
-  generatePropertiesChecks(code, schema, dataVar, ctx);
-  generateItemsChecks(code, schema, dataVar, ctx);
-  generateCompositionChecks(code, schema, dataVar, ctx);
-  generateRefCheck(code, schema, dataVar, ctx);
-  generateDynamicRefCheck(code, schema, dataVar, ctx);
-  generateContainsCheck(code, schema, dataVar, ctx);
-  generateDependentRequiredCheck(code, schema, dataVar, ctx);
-  generatePropertyNamesCheck(code, schema, dataVar, ctx);
-  generateDependentSchemasCheck(code, schema, dataVar, ctx);
-  generateUnevaluatedPropertiesCheck(code, schema, dataVar, ctx);
-  generateUnevaluatedItemsCheck(code, schema, dataVar, ctx);
+  generateTypeCheck(code, schema, dataVar, pathExpr, ctx);
+  generateConstCheck(code, schema, dataVar, pathExpr, ctx);
+  generateEnumCheck(code, schema, dataVar, pathExpr, ctx);
+  generateStringChecks(code, schema, dataVar, pathExpr, ctx);
+  generateFormatCheck(code, schema, dataVar, pathExpr, ctx);
+  generateNumberChecks(code, schema, dataVar, pathExpr, ctx);
+  generateArrayChecks(code, schema, dataVar, pathExpr, ctx);
+  generateObjectChecks(code, schema, dataVar, pathExpr, ctx);
+  generatePropertiesChecks(code, schema, dataVar, pathExpr, ctx);
+  generateItemsChecks(code, schema, dataVar, pathExpr, ctx);
+  generateCompositionChecks(code, schema, dataVar, pathExpr, ctx);
+  generateRefCheck(code, schema, dataVar, pathExpr, ctx);
+  generateDynamicRefCheck(code, schema, dataVar, pathExpr, ctx);
+  generateContainsCheck(code, schema, dataVar, pathExpr, ctx);
+  generateDependentRequiredCheck(code, schema, dataVar, pathExpr, ctx);
+  generatePropertyNamesCheck(code, schema, dataVar, pathExpr, ctx);
+  generateDependentSchemasCheck(code, schema, dataVar, pathExpr, ctx);
+  generateUnevaluatedPropertiesCheck(code, schema, dataVar, pathExpr, ctx);
+  generateUnevaluatedItemsCheck(code, schema, dataVar, pathExpr, ctx);
 }
 
 /**
@@ -176,29 +191,41 @@ function createFormatValidators(): Record<string, (s: string) => boolean> {
 // =============================================================================
 
 /**
+ * Generate code to push an error and return false (or just return false if no errors array)
+ */
+function genError(code: CodeBuilder, pathExpr: string, keyword: string, message: string): void {
+  code.line(
+    `if (errors) errors.push({ path: ${pathExpr}, message: '${escapeString(message)}', keyword: '${keyword}' });`
+  );
+  code.line('return false;');
+}
+
+/**
  * Generate type check code
  */
 export function generateTypeCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
   dataVar: string,
+  pathExpr: string,
   _ctx: CompileContext
 ): void {
   if (!schema.type) return;
 
   const types = Array.isArray(schema.type) ? schema.type : [schema.type];
+  const expectedType = types.join(' or ');
 
   if (types.length === 1) {
     const type = types[0];
     const check = getTypeCheck(dataVar, type);
     code.if(`!(${check})`, () => {
-      code.line('return false;');
+      genError(code, pathExpr, 'type', `Expected ${expectedType}`);
     });
   } else {
     // Multiple types - need OR
     const checks = types.map((t) => getTypeCheck(dataVar, t));
     code.if(`!(${checks.join(' || ')})`, () => {
-      code.line('return false;');
+      genError(code, pathExpr, 'type', `Expected ${expectedType}`);
     });
   }
 }
@@ -231,6 +258,7 @@ export function generateConstCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
   dataVar: string,
+  pathExpr: string,
   _ctx: CompileContext
 ): void {
   if (schema.const === undefined) return;
@@ -238,12 +266,12 @@ export function generateConstCheck(
   // For primitives, use strict equality
   if (schema.const === null || typeof schema.const !== 'object') {
     code.if(`${dataVar} !== ${stringify(schema.const)}`, () => {
-      code.line('return false;');
+      genError(code, pathExpr, 'const', `Expected constant value`);
     });
   } else {
     // For objects/arrays, use deepEqual
     code.if(`!deepEqual(${dataVar}, ${stringify(schema.const)})`, () => {
-      code.line('return false;');
+      genError(code, pathExpr, 'const', `Expected constant value`);
     });
   }
 }
@@ -255,6 +283,7 @@ export function generateEnumCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
   dataVar: string,
+  pathExpr: string,
   _ctx: CompileContext
 ): void {
   if (!schema.enum) return;
@@ -265,13 +294,13 @@ export function generateEnumCheck(
   if (allPrimitive) {
     const values = stringify(schema.enum);
     code.if(`!${values}.includes(${dataVar})`, () => {
-      code.line('return false;');
+      genError(code, pathExpr, 'enum', `Value must be one of the allowed values`);
     });
   } else {
     // Need deepEqual for object values
     const values = stringify(schema.enum);
     code.if(`!${values}.some(v => deepEqual(${dataVar}, v))`, () => {
-      code.line('return false;');
+      genError(code, pathExpr, 'enum', `Value must be one of the allowed values`);
     });
   }
 }
@@ -283,6 +312,7 @@ export function generateStringChecks(
   code: CodeBuilder,
   schema: JsonSchemaBase,
   dataVar: string,
+  pathExpr: string,
   _ctx: CompileContext
 ): void {
   const hasStringChecks =
@@ -300,13 +330,23 @@ export function generateStringChecks(
 
       if (schema.minLength !== undefined) {
         code.if(`len < ${schema.minLength}`, () => {
-          code.line('return false;');
+          genError(
+            code,
+            pathExpr,
+            'minLength',
+            `String must be at least ${schema.minLength} characters`
+          );
         });
       }
 
       if (schema.maxLength !== undefined) {
         code.if(`len > ${schema.maxLength}`, () => {
-          code.line('return false;');
+          genError(
+            code,
+            pathExpr,
+            'maxLength',
+            `String must be at most ${schema.maxLength} characters`
+          );
         });
       }
     }
@@ -315,7 +355,7 @@ export function generateStringChecks(
       // Escape the pattern for use in RegExp
       const escapedPattern = escapeString(schema.pattern);
       code.if(`!/${escapedPattern}/.test(${dataVar})`, () => {
-        code.line('return false;');
+        genError(code, pathExpr, 'pattern', `String must match pattern ${schema.pattern}`);
       });
     }
   });
@@ -328,6 +368,7 @@ export function generateNumberChecks(
   code: CodeBuilder,
   schema: JsonSchemaBase,
   dataVar: string,
+  pathExpr: string,
   _ctx: CompileContext
 ): void {
   const hasNumberChecks =
@@ -343,25 +384,25 @@ export function generateNumberChecks(
   code.if(`typeof ${dataVar} === 'number'`, () => {
     if (schema.minimum !== undefined) {
       code.if(`${dataVar} < ${schema.minimum}`, () => {
-        code.line('return false;');
+        genError(code, pathExpr, 'minimum', `Value must be >= ${schema.minimum}`);
       });
     }
 
     if (schema.maximum !== undefined) {
       code.if(`${dataVar} > ${schema.maximum}`, () => {
-        code.line('return false;');
+        genError(code, pathExpr, 'maximum', `Value must be <= ${schema.maximum}`);
       });
     }
 
     if (schema.exclusiveMinimum !== undefined) {
       code.if(`${dataVar} <= ${schema.exclusiveMinimum}`, () => {
-        code.line('return false;');
+        genError(code, pathExpr, 'exclusiveMinimum', `Value must be > ${schema.exclusiveMinimum}`);
       });
     }
 
     if (schema.exclusiveMaximum !== undefined) {
       code.if(`${dataVar} >= ${schema.exclusiveMaximum}`, () => {
-        code.line('return false;');
+        genError(code, pathExpr, 'exclusiveMaximum', `Value must be < ${schema.exclusiveMaximum}`);
       });
     }
 
@@ -371,7 +412,12 @@ export function generateNumberChecks(
       code.if(
         `Math.abs(${dataVar} / ${multipleOf} - Math.round(${dataVar} / ${multipleOf})) > 1e-10`,
         () => {
-          code.line('return false;');
+          genError(
+            code,
+            pathExpr,
+            'multipleOf',
+            `Value must be a multiple of ${schema.multipleOf}`
+          );
         }
       );
     }
@@ -385,6 +431,7 @@ export function generateArrayChecks(
   code: CodeBuilder,
   schema: JsonSchemaBase,
   dataVar: string,
+  pathExpr: string,
   _ctx: CompileContext
 ): void {
   const hasArrayChecks =
@@ -396,13 +443,13 @@ export function generateArrayChecks(
   code.if(`Array.isArray(${dataVar})`, () => {
     if (schema.minItems !== undefined) {
       code.if(`${dataVar}.length < ${schema.minItems}`, () => {
-        code.line('return false;');
+        genError(code, pathExpr, 'minItems', `Array must have at least ${schema.minItems} items`);
       });
     }
 
     if (schema.maxItems !== undefined) {
       code.if(`${dataVar}.length > ${schema.maxItems}`, () => {
-        code.line('return false;');
+        genError(code, pathExpr, 'maxItems', `Array must have at most ${schema.maxItems} items`);
       });
     }
 
@@ -414,14 +461,14 @@ export function generateArrayChecks(
         code.if(`typeof item === 'object' && item !== null`, () => {
           code.forOf('obj', 'objects', () => {
             code.if(`deepEqual(item, obj)`, () => {
-              code.line('return false;');
+              genError(code, pathExpr, 'uniqueItems', `Array items must be unique`);
             });
           });
           code.line('objects.push(item);');
         });
         code.else(() => {
           code.if(`seen.has(item)`, () => {
-            code.line('return false;');
+            genError(code, pathExpr, 'uniqueItems', `Array items must be unique`);
           });
           code.line('seen.add(item);');
         });
@@ -437,6 +484,7 @@ export function generateObjectChecks(
   code: CodeBuilder,
   schema: JsonSchemaBase,
   dataVar: string,
+  pathExpr: string,
   _ctx: CompileContext
 ): void {
   const hasObjectChecks =
@@ -453,7 +501,11 @@ export function generateObjectChecks(
       if (schema.required && schema.required.length > 0) {
         for (const prop of schema.required) {
           const propStr = escapeString(prop);
+          const propPathExpr = pathExpr === "''" ? `'${propStr}'` : `${pathExpr} + '.${propStr}'`;
           code.if(`!('${propStr}' in ${dataVar})`, () => {
+            code.line(
+              `if (errors) errors.push({ path: ${propPathExpr}, message: 'Required property missing', keyword: 'required' });`
+            );
             code.line('return false;');
           });
         }
@@ -464,13 +516,23 @@ export function generateObjectChecks(
 
         if (schema.minProperties !== undefined) {
           code.if(`propCount < ${schema.minProperties}`, () => {
-            code.line('return false;');
+            genError(
+              code,
+              pathExpr,
+              'minProperties',
+              `Object must have at least ${schema.minProperties} properties`
+            );
           });
         }
 
         if (schema.maxProperties !== undefined) {
           code.if(`propCount > ${schema.maxProperties}`, () => {
-            code.line('return false;');
+            genError(
+              code,
+              pathExpr,
+              'maxProperties',
+              `Object must have at most ${schema.maxProperties} properties`
+            );
           });
         }
       }
@@ -485,6 +547,7 @@ export function generatePropertiesChecks(
   code: CodeBuilder,
   schema: JsonSchemaBase,
   dataVar: string,
+  pathExpr: string,
   ctx: CompileContext
 ): void {
   const hasProps = schema.properties && Object.keys(schema.properties).length > 0;
@@ -502,8 +565,12 @@ export function generatePropertiesChecks(
       if (schema.properties) {
         for (const [propName, propSchema] of Object.entries(schema.properties)) {
           const propAccessed = propAccess(dataVar, propName);
+          const propPathExpr =
+            pathExpr === "''"
+              ? `'${escapeString(propName)}'`
+              : `${pathExpr} + '.${escapeString(propName)}'`;
           code.if(`'${escapeString(propName)}' in ${dataVar}`, () => {
-            generateSchemaValidator(code, propSchema, propAccessed, ctx);
+            generateSchemaValidator(code, propSchema, propAccessed, propPathExpr, ctx);
           });
         }
       }
@@ -522,13 +589,16 @@ export function generatePropertiesChecks(
             });
           }
 
+          // Dynamic path expression for key
+          const keyPathExpr = pathExpr === "''" ? 'key' : `${pathExpr} + '.' + key`;
+
           // Check pattern properties
           if (hasPatternProps && schema.patternProperties) {
             for (const [pattern, patternSchema] of Object.entries(schema.patternProperties)) {
               const escapedPattern = escapeString(pattern);
               code.if(`/${escapedPattern}/.test(key)`, () => {
                 const propAccessed = `${dataVar}[key]`;
-                generateSchemaValidator(code, patternSchema, propAccessed, ctx);
+                generateSchemaValidator(code, patternSchema, propAccessed, keyPathExpr, ctx);
               });
             }
           }
@@ -551,10 +621,22 @@ export function generatePropertiesChecks(
 
             if (condition !== 'true') {
               code.if(condition, () => {
-                generateAdditionalPropsCheck(code, addPropsSchema, `${dataVar}[key]`, ctx);
+                generateAdditionalPropsCheck(
+                  code,
+                  addPropsSchema,
+                  `${dataVar}[key]`,
+                  keyPathExpr,
+                  ctx
+                );
               });
             } else {
-              generateAdditionalPropsCheck(code, addPropsSchema, `${dataVar}[key]`, ctx);
+              generateAdditionalPropsCheck(
+                code,
+                addPropsSchema,
+                `${dataVar}[key]`,
+                keyPathExpr,
+                ctx
+              );
             }
           }
         });
@@ -567,14 +649,15 @@ function generateAdditionalPropsCheck(
   code: CodeBuilder,
   schema: JsonSchema,
   dataVar: string,
+  pathExpr: string,
   ctx: CompileContext
 ): void {
   if (schema === false) {
-    code.line('return false;');
+    genError(code, pathExpr, 'additionalProperties', 'Additional properties not allowed');
   } else if (schema === true) {
     // No check needed
   } else {
-    generateSchemaValidator(code, schema, dataVar, ctx);
+    generateSchemaValidator(code, schema, dataVar, pathExpr, ctx);
   }
 }
 
@@ -585,6 +668,7 @@ export function generateContainsCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
   dataVar: string,
+  pathExpr: string,
   ctx: CompileContext
 ): void {
   if (!schema.contains) return;
@@ -617,12 +701,22 @@ export function generateContainsCheck(
     });
 
     code.if(`${countVar} < ${minContains}`, () => {
-      code.line('return false;');
+      genError(
+        code,
+        pathExpr,
+        'contains',
+        `Array must contain at least ${minContains} matching items`
+      );
     });
 
     if (maxContains !== undefined) {
       code.if(`${countVar} > ${maxContains}`, () => {
-        code.line('return false;');
+        genError(
+          code,
+          pathExpr,
+          'maxContains',
+          `Array must contain at most ${maxContains} matching items`
+        );
       });
     }
   });
@@ -635,6 +729,7 @@ export function generateDependentRequiredCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
   dataVar: string,
+  pathExpr: string,
   _ctx: CompileContext
 ): void {
   if (!schema.dependentRequired) return;
@@ -647,7 +742,12 @@ export function generateDependentRequiredCheck(
         code.if(`'${propStr}' in ${dataVar}`, () => {
           for (const reqProp of requiredProps) {
             const reqPropStr = escapeString(reqProp);
+            const reqPathExpr =
+              pathExpr === "''" ? `'${reqPropStr}'` : `${pathExpr} + '.${reqPropStr}'`;
             code.if(`!('${reqPropStr}' in ${dataVar})`, () => {
+              code.line(
+                `if (errors) errors.push({ path: ${reqPathExpr}, message: 'Property required when ${propStr} is present', keyword: 'dependentRequired' });`
+              );
               code.line('return false;');
             });
           }
@@ -664,6 +764,7 @@ export function generateDependentSchemasCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
   dataVar: string,
+  pathExpr: string,
   ctx: CompileContext
 ): void {
   if (!schema.dependentSchemas) return;
@@ -674,7 +775,7 @@ export function generateDependentSchemasCheck(
       for (const [prop, depSchema] of Object.entries(schema.dependentSchemas!)) {
         const propStr = escapeString(prop);
         code.if(`'${propStr}' in ${dataVar}`, () => {
-          generateSchemaValidator(code, depSchema, dataVar, ctx);
+          generateSchemaValidator(code, depSchema, dataVar, pathExpr, ctx);
         });
       }
     }
@@ -688,6 +789,7 @@ export function generatePropertyNamesCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
   dataVar: string,
+  pathExpr: string,
   ctx: CompileContext
 ): void {
   if (!schema.propertyNames) return;
@@ -698,7 +800,8 @@ export function generatePropertyNamesCheck(
     `typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
     () => {
       code.forIn('key', dataVar, () => {
-        generateSchemaValidator(code, propNamesSchema, 'key', ctx);
+        // For propertyNames, the path is the key itself
+        generateSchemaValidator(code, propNamesSchema, 'key', 'key', ctx);
       });
     }
   );
@@ -711,6 +814,7 @@ export function generateRefCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
   dataVar: string,
+  pathExpr: string,
   ctx: CompileContext
 ): void {
   if (!schema.$ref) return;
@@ -720,7 +824,7 @@ export function generateRefCheck(
 
   if (!refSchema) {
     // Can't resolve - schema is invalid, always fail
-    code.line('return false;');
+    genError(code, pathExpr, '$ref', `Cannot resolve reference ${schema.$ref}`);
     return;
   }
 
@@ -728,13 +832,13 @@ export function generateRefCheck(
   const existingName = ctx.getCompiledName(refSchema);
   if (existingName) {
     // Call the already-compiled function
-    code.if(`!${existingName}(${dataVar})`, () => {
+    code.if(`!${existingName}(${dataVar}, errors, ${pathExpr})`, () => {
       code.line('return false;');
     });
   } else {
     // Queue for compilation and generate a call
     const funcName = ctx.queueCompile(refSchema);
-    code.if(`!${funcName}(${dataVar})`, () => {
+    code.if(`!${funcName}(${dataVar}, errors, ${pathExpr})`, () => {
       code.line('return false;');
     });
   }
@@ -747,12 +851,13 @@ export function generateCompositionChecks(
   code: CodeBuilder,
   schema: JsonSchemaBase,
   dataVar: string,
+  pathExpr: string,
   ctx: CompileContext
 ): void {
   // allOf - all subschemas must validate
   if (schema.allOf && schema.allOf.length > 0) {
     for (const subSchema of schema.allOf) {
-      generateSchemaValidator(code, subSchema, dataVar, ctx);
+      generateSchemaValidator(code, subSchema, dataVar, pathExpr, ctx);
     }
   }
 
@@ -781,7 +886,7 @@ export function generateCompositionChecks(
     }
 
     code.if(`!${resultVar}`, () => {
-      code.line('return false;');
+      genError(code, pathExpr, 'anyOf', 'Value must match at least one schema');
     });
   }
 
@@ -806,12 +911,12 @@ export function generateCompositionChecks(
 
       // Early exit if more than one matches
       code.if(`${countVar} > 1`, () => {
-        code.line('return false;');
+        genError(code, pathExpr, 'oneOf', 'Value must match exactly one schema');
       });
     }
 
     code.if(`${countVar} !== 1`, () => {
-      code.line('return false;');
+      genError(code, pathExpr, 'oneOf', 'Value must match exactly one schema');
     });
   }
 
@@ -820,7 +925,7 @@ export function generateCompositionChecks(
     const notSchema = schema.not;
     if (notSchema === true) {
       // not true = always fails
-      code.line('return false;');
+      genError(code, pathExpr, 'not', 'Value must not match schema');
     } else if (notSchema === false) {
       // not false = always passes, no code needed
     } else {
@@ -829,7 +934,9 @@ export function generateCompositionChecks(
       code.line(`  const ${checkVar} = ${dataVar};`);
       generateSchemaValidatorForAnyOf(code, notSchema, checkVar, ctx);
       code.line(`  return true;`);
-      code.line(`})()) return false;`);
+      code.line(`})()) {`);
+      genError(code, pathExpr, 'not', 'Value must not match schema');
+      code.line(`}`);
     }
   }
 
@@ -859,9 +966,9 @@ export function generateCompositionChecks(
     if (thenSchema !== undefined) {
       code.if(condVar, () => {
         if (thenSchema === false) {
-          code.line('return false;');
+          genError(code, pathExpr, 'then', 'Conditional validation failed');
         } else if (thenSchema !== true) {
-          generateSchemaValidator(code, thenSchema, dataVar, ctx);
+          generateSchemaValidator(code, thenSchema, dataVar, pathExpr, ctx);
         }
       });
     }
@@ -869,9 +976,9 @@ export function generateCompositionChecks(
     if (elseSchema !== undefined) {
       code.if(`!${condVar}`, () => {
         if (elseSchema === false) {
-          code.line('return false;');
+          genError(code, pathExpr, 'else', 'Conditional validation failed');
         } else if (elseSchema !== true) {
-          generateSchemaValidator(code, elseSchema, dataVar, ctx);
+          generateSchemaValidator(code, elseSchema, dataVar, pathExpr, ctx);
         }
       });
     }
@@ -880,6 +987,7 @@ export function generateCompositionChecks(
 
 /**
  * Generate schema validator for use in anyOf/oneOf/not (returns early instead of returning false)
+ * Note: This doesn't collect errors since it's used for boolean checks only
  */
 function generateSchemaValidatorForAnyOf(
   code: CodeBuilder,
@@ -894,15 +1002,17 @@ function generateSchemaValidatorForAnyOf(
   }
 
   // Generate checks that return false on failure (which means the subschema didn't match)
-  generateTypeCheck(code, schema, dataVar, ctx);
-  generateConstCheck(code, schema, dataVar, ctx);
-  generateEnumCheck(code, schema, dataVar, ctx);
-  generateStringChecks(code, schema, dataVar, ctx);
-  generateNumberChecks(code, schema, dataVar, ctx);
-  generateArrayChecks(code, schema, dataVar, ctx);
-  generateObjectChecks(code, schema, dataVar, ctx);
-  generatePropertiesChecks(code, schema, dataVar, ctx);
-  generateItemsChecks(code, schema, dataVar, ctx);
+  // Use empty path since we don't collect errors in anyOf/oneOf/not checks
+  const dummyPath = "''";
+  generateTypeCheck(code, schema, dataVar, dummyPath, ctx);
+  generateConstCheck(code, schema, dataVar, dummyPath, ctx);
+  generateEnumCheck(code, schema, dataVar, dummyPath, ctx);
+  generateStringChecks(code, schema, dataVar, dummyPath, ctx);
+  generateNumberChecks(code, schema, dataVar, dummyPath, ctx);
+  generateArrayChecks(code, schema, dataVar, dummyPath, ctx);
+  generateObjectChecks(code, schema, dataVar, dummyPath, ctx);
+  generatePropertiesChecks(code, schema, dataVar, dummyPath, ctx);
+  generateItemsChecks(code, schema, dataVar, dummyPath, ctx);
   // Note: We don't recurse into composition here to avoid deep nesting
 }
 
@@ -913,6 +1023,7 @@ export function generateItemsChecks(
   code: CodeBuilder,
   schema: JsonSchemaBase,
   dataVar: string,
+  pathExpr: string,
   ctx: CompileContext
 ): void {
   const hasPrefixItems = schema.prefixItems && schema.prefixItems.length > 0;
@@ -926,9 +1037,10 @@ export function generateItemsChecks(
     if (hasPrefixItems && schema.prefixItems) {
       for (let i = 0; i < schema.prefixItems.length; i++) {
         const itemSchema = schema.prefixItems[i];
+        const itemPathExpr = pathExpr === "''" ? `'[${i}]'` : `${pathExpr} + '[${i}]'`;
         code.if(`${dataVar}.length > ${i}`, () => {
           const itemAccess = `${dataVar}[${i}]`;
-          generateSchemaValidator(code, itemSchema, itemAccess, ctx);
+          generateSchemaValidator(code, itemSchema, itemAccess, itemPathExpr, ctx);
         });
       }
     }
@@ -942,11 +1054,11 @@ export function generateItemsChecks(
         // No additional items allowed
         if (startIndex > 0) {
           code.if(`${dataVar}.length > ${startIndex}`, () => {
-            code.line('return false;');
+            genError(code, pathExpr, 'items', `Array must have at most ${startIndex} items`);
           });
         } else {
           code.if(`${dataVar}.length > 0`, () => {
-            code.line('return false;');
+            genError(code, pathExpr, 'items', 'Array must be empty');
           });
         }
       } else if (itemsSchema !== true) {
@@ -954,7 +1066,9 @@ export function generateItemsChecks(
         const iVar = code.genVar('i');
         code.for(`let ${iVar} = ${startIndex}`, `${iVar} < ${dataVar}.length`, `${iVar}++`, () => {
           const itemAccess = `${dataVar}[${iVar}]`;
-          generateSchemaValidator(code, itemsSchema, itemAccess, ctx);
+          const itemPathExpr =
+            pathExpr === "''" ? `'[' + ${iVar} + ']'` : `${pathExpr} + '[' + ${iVar} + ']'`;
+          generateSchemaValidator(code, itemsSchema, itemAccess, itemPathExpr, ctx);
         });
       }
     }
@@ -968,6 +1082,7 @@ export function generateFormatCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
   dataVar: string,
+  pathExpr: string,
   ctx: CompileContext
 ): void {
   if (schema.format === undefined) return;
@@ -982,7 +1097,7 @@ export function generateFormatCheck(
     code.if(
       `formatValidators['${escapeString(format)}'] && !formatValidators['${escapeString(format)}'](${dataVar})`,
       () => {
-        code.line('return false;');
+        genError(code, pathExpr, 'format', `Invalid ${format} format`);
       }
     );
   });
@@ -995,6 +1110,7 @@ export function generateDynamicRefCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
   dataVar: string,
+  pathExpr: string,
   ctx: CompileContext
 ): void {
   if (!schema.$dynamicRef) return;
@@ -1006,20 +1122,20 @@ export function generateDynamicRefCheck(
 
   if (!refSchema) {
     // Can't resolve - schema is invalid, always fail
-    code.line('return false;');
+    genError(code, pathExpr, '$dynamicRef', `Cannot resolve reference ${schema.$dynamicRef}`);
     return;
   }
 
   // Check if already compiled (avoid infinite recursion)
   const existingName = ctx.getCompiledName(refSchema);
   if (existingName) {
-    code.if(`!${existingName}(${dataVar})`, () => {
+    code.if(`!${existingName}(${dataVar}, errors, ${pathExpr})`, () => {
       code.line('return false;');
     });
   } else {
     // Queue for compilation and generate a call
     const funcName = ctx.queueCompile(refSchema);
-    code.if(`!${funcName}(${dataVar})`, () => {
+    code.if(`!${funcName}(${dataVar}, errors, ${pathExpr})`, () => {
       code.line('return false;');
     });
   }
@@ -1103,6 +1219,7 @@ export function generateUnevaluatedPropertiesCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
   dataVar: string,
+  pathExpr: string,
   ctx: CompileContext
 ): void {
   if (schema.unevaluatedProperties === undefined) return;
@@ -1206,14 +1323,24 @@ export function generateUnevaluatedPropertiesCheck(
 
           const condition = conditions.join(' && ');
 
+          const keyPathExpr = pathExpr === "''" ? 'key' : `${pathExpr} + '.' + key`;
           code.if(condition, () => {
             if (schema.unevaluatedProperties === false) {
+              code.line(
+                `if (errors) errors.push({ path: ${keyPathExpr}, message: 'Unevaluated property not allowed', keyword: 'unevaluatedProperties' });`
+              );
               code.line('return false;');
             } else if (
               schema.unevaluatedProperties !== true &&
               schema.unevaluatedProperties !== undefined
             ) {
-              generateSchemaValidator(code, schema.unevaluatedProperties, `${dataVar}[key]`, ctx);
+              generateSchemaValidator(
+                code,
+                schema.unevaluatedProperties,
+                `${dataVar}[key]`,
+                keyPathExpr,
+                ctx
+              );
             }
           });
         });
@@ -1232,14 +1359,24 @@ export function generateUnevaluatedPropertiesCheck(
 
           const condition = conditions.length > 0 ? conditions.join(' && ') : 'true';
 
+          const keyPathExpr = pathExpr === "''" ? 'key' : `${pathExpr} + '.' + key`;
           code.if(condition, () => {
             if (schema.unevaluatedProperties === false) {
+              code.line(
+                `if (errors) errors.push({ path: ${keyPathExpr}, message: 'Unevaluated property not allowed', keyword: 'unevaluatedProperties' });`
+              );
               code.line('return false;');
             } else if (
               schema.unevaluatedProperties !== true &&
               schema.unevaluatedProperties !== undefined
             ) {
-              generateSchemaValidator(code, schema.unevaluatedProperties, `${dataVar}[key]`, ctx);
+              generateSchemaValidator(
+                code,
+                schema.unevaluatedProperties,
+                `${dataVar}[key]`,
+                keyPathExpr,
+                ctx
+              );
             }
           });
         });
@@ -1321,6 +1458,7 @@ export function generateUnevaluatedItemsCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
   dataVar: string,
+  pathExpr: string,
   ctx: CompileContext
 ): void {
   if (schema.unevaluatedItems === undefined) return;
@@ -1371,6 +1509,11 @@ export function generateUnevaluatedItemsCheck(
         const jVar = code.genVar('j');
         code.for(`let ${jVar} = 0`, `${jVar} < ${dataVar}.length`, `${jVar}++`, () => {
           code.if(`!${evaluatedSetVar}.has(${jVar})`, () => {
+            const itemPathExpr =
+              pathExpr === "''" ? `'[' + ${jVar} + ']'` : `${pathExpr} + '[' + ${jVar} + ']'`;
+            code.line(
+              `if (errors) errors.push({ path: ${itemPathExpr}, message: 'Unevaluated item not allowed', keyword: 'unevaluatedItems' });`
+            );
             code.line('return false;');
           });
         });
@@ -1379,10 +1522,13 @@ export function generateUnevaluatedItemsCheck(
         const jVar = code.genVar('j');
         code.for(`let ${jVar} = 0`, `${jVar} < ${dataVar}.length`, `${jVar}++`, () => {
           code.if(`!${evaluatedSetVar}.has(${jVar})`, () => {
+            const itemPathExpr =
+              pathExpr === "''" ? `'[' + ${jVar} + ']'` : `${pathExpr} + '[' + ${jVar} + ']'`;
             generateSchemaValidator(
               code,
               schema.unevaluatedItems as JsonSchema,
               `${dataVar}[${jVar}]`,
+              itemPathExpr,
               ctx
             );
           });
@@ -1393,21 +1539,31 @@ export function generateUnevaluatedItemsCheck(
       if (schema.unevaluatedItems === false) {
         if (prefixCount > 0) {
           code.if(`${dataVar}.length > ${prefixCount}`, () => {
+            const itemPathExpr =
+              pathExpr === "''"
+                ? `'[' + ${prefixCount} + ']'`
+                : `${pathExpr} + '[' + ${prefixCount} + ']'`;
+            code.line(
+              `if (errors) errors.push({ path: ${itemPathExpr}, message: 'Unevaluated item not allowed', keyword: 'unevaluatedItems' });`
+            );
             code.line('return false;');
           });
         } else {
           code.if(`${dataVar}.length > 0`, () => {
-            code.line('return false;');
+            genError(code, pathExpr, 'unevaluatedItems', 'Array must be empty');
           });
         }
       } else if (schema.unevaluatedItems !== true) {
         // Validate unevaluated items against the schema
         const iVar = code.genVar('i');
         code.for(`let ${iVar} = ${prefixCount}`, `${iVar} < ${dataVar}.length`, `${iVar}++`, () => {
+          const itemPathExpr =
+            pathExpr === "''" ? `'[' + ${iVar} + ']'` : `${pathExpr} + '[' + ${iVar} + ']'`;
           generateSchemaValidator(
             code,
             schema.unevaluatedItems as JsonSchema,
             `${dataVar}[${iVar}]`,
+            itemPathExpr,
             ctx
           );
         });

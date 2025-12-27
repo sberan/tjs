@@ -39,9 +39,8 @@ describe('dependentSchemas', () => {
     const result = Payment.parse({ creditCard: '1234' });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(
-        result.errors.some((e) => e.keyword === 'required' && e.path === 'billingAddress')
-      ).toBe(true);
+      expect(result.errors[0].keyword).toBe('required');
+      expect(result.errors[0].path).toBe('billingAddress');
     }
   });
 
@@ -162,9 +161,8 @@ describe('unevaluatedProperties', () => {
     const result = Strict.parse({ name: 'Alice', extra: 'value' });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(
-        result.errors.some((e) => e.keyword === 'unevaluatedProperties' && e.path === 'extra')
-      ).toBe(true);
+      expect(result.errors[0].keyword).toBe('unevaluatedProperties');
+      expect(result.errors[0].path).toBe('extra');
     }
   });
 
@@ -328,9 +326,8 @@ describe('unevaluatedItems', () => {
     const result = StrictTuple.parse(['hello', 42, 'extra']);
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.errors.some((e) => e.keyword === 'unevaluatedItems' && e.path === '[2]')).toBe(
-        true
-      );
+      expect(result.errors[0].keyword).toBe('unevaluatedItems');
+      expect(result.errors[0].path).toBe('[2]');
     }
   });
 

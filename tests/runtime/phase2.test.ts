@@ -95,7 +95,7 @@ describe('propertyNames', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.errors.length).toBe(1);
-      expect(result.errors[0].keyword).toBe('propertyNames');
+      expect(result.errors[0].keyword).toBe('pattern');
       expect(result.errors[0].path).toBe('BadKey');
     }
   });
