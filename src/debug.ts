@@ -6,6 +6,7 @@ const Obj1 = schema({
     a: { type: 'string' },
     b: { type: 'number' },
   },
+  required: ['b'],
 });
 
 type Actual = typeof Obj1.type;
