@@ -151,6 +151,8 @@ describe('minContains / maxContains', () => {
   });
 });
 
+// Format validation is enabled by default (formatAssertion: true)
+// Can be disabled with schema({...}, { formatAssertion: false })
 describe('format validators', () => {
   describe('date', () => {
     const DateSchema = schema({ type: 'string', format: 'date' });
@@ -250,6 +252,18 @@ describe('format validators', () => {
     it('rejects invalid regex patterns', () => {
       expect(RegexSchema.validate('[')).toBe(false); // unclosed bracket
       expect(RegexSchema.validate('*')).toBe(false); // nothing to repeat
+    });
+  });
+
+  describe('formatAssertion option', () => {
+    it('can disable format validation with formatAssertion: false', () => {
+      const DateSchemaNoAssert = schema(
+        { type: 'string', format: 'date' },
+        { formatAssertion: false }
+      );
+      // Invalid dates pass when format assertion is disabled
+      expect(DateSchemaNoAssert.validate('not-a-date')).toBe(true);
+      expect(DateSchemaNoAssert.validate('2024-1-15')).toBe(true);
     });
   });
 });
