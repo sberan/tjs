@@ -284,22 +284,25 @@ export function generateEnumCheck(
   schema: JsonSchemaBase,
   dataVar: string,
   pathExpr: string,
-  _ctx: CompileContext
+  ctx: CompileContext
 ): void {
   if (!schema.enum) return;
 
-  // Check if all values are primitives (can use Set/includes)
+  // Check if all values are primitives (can use Set for O(1) lookup)
   const allPrimitive = schema.enum.every((v) => v === null || typeof v !== 'object');
 
   if (allPrimitive) {
-    const values = stringify(schema.enum);
-    code.if(`!${values}.includes(${dataVar})`, () => {
+    // Use a pre-compiled Set for O(1) lookup instead of array.includes() O(n)
+    const setName = ctx.genRuntimeName('enumSet');
+    ctx.addRuntimeFunction(setName, new Set(schema.enum));
+    code.if(`!${setName}.has(${dataVar})`, () => {
       genError(code, pathExpr, 'enum', `Value must be one of the allowed values`);
     });
   } else {
-    // Need deepEqual for object values
-    const values = stringify(schema.enum);
-    code.if(`!${values}.some(v => deepEqual(${dataVar}, v))`, () => {
+    // Need deepEqual for object values - use pre-compiled array
+    const arrName = ctx.genRuntimeName('enumArr');
+    ctx.addRuntimeFunction(arrName, schema.enum);
+    code.if(`!${arrName}.some(v => deepEqual(${dataVar}, v))`, () => {
       genError(code, pathExpr, 'enum', `Value must be one of the allowed values`);
     });
   }
@@ -580,11 +583,17 @@ export function generatePropertiesChecks(
         const definedProps = schema.properties ? Object.keys(schema.properties) : [];
         const patterns = schema.patternProperties ? Object.keys(schema.patternProperties) : [];
 
+        // Create a Set for O(1) property lookup if there are defined properties
+        let propsSetName: string | undefined;
+        if (definedProps.length > 0) {
+          propsSetName = ctx.genRuntimeName('propsSet');
+          ctx.addRuntimeFunction(propsSetName, new Set(definedProps));
+        }
+
         code.forIn('key', dataVar, () => {
-          // Check if it's a defined property
-          if (definedProps.length > 0) {
-            const propsArray = stringify(definedProps);
-            code.if(`${propsArray}.includes(key)`, () => {
+          // Check if it's a defined property using Set.has() for O(1) lookup
+          if (propsSetName) {
+            code.if(`${propsSetName}.has(key)`, () => {
               code.line('continue;');
             });
           }
@@ -671,11 +680,56 @@ export function generateContainsCheck(
   pathExpr: string,
   ctx: CompileContext
 ): void {
-  if (!schema.contains) return;
+  if (schema.contains === undefined) return;
 
   const containsSchema = schema.contains;
   const minContains = schema.minContains ?? 1;
   const maxContains = schema.maxContains;
+
+  // Handle boolean schemas directly
+  if (containsSchema === true) {
+    // Every item matches - just check array length against minContains/maxContains
+    code.if(`Array.isArray(${dataVar})`, () => {
+      code.if(`${dataVar}.length < ${minContains}`, () => {
+        genError(
+          code,
+          pathExpr,
+          'contains',
+          `Array must contain at least ${minContains} matching items`
+        );
+      });
+      if (maxContains !== undefined) {
+        code.if(`${dataVar}.length > ${maxContains}`, () => {
+          genError(
+            code,
+            pathExpr,
+            'maxContains',
+            `Array must contain at most ${maxContains} matching items`
+          );
+        });
+      }
+    });
+    return;
+  }
+
+  if (containsSchema === false) {
+    // Nothing matches - only valid if minContains is 0
+    code.if(`Array.isArray(${dataVar})`, () => {
+      if (minContains > 0) {
+        genError(
+          code,
+          pathExpr,
+          'contains',
+          `Array must contain at least ${minContains} matching items`
+        );
+      }
+      // maxContains is always satisfied since count is 0
+    });
+    return;
+  }
+
+  // Queue the contains schema for compilation (reuses all existing generators)
+  const containsFuncName = ctx.queueCompile(containsSchema);
 
   code.if(`Array.isArray(${dataVar})`, () => {
     const countVar = code.genVar('containsCount');
@@ -685,12 +739,10 @@ export function generateContainsCheck(
     code.for(`let ${iVar} = 0`, `${iVar} < ${dataVar}.length`, `${iVar}++`, () => {
       const itemAccess = `${dataVar}[${iVar}]`;
 
-      code.line(`if ((function() {`);
-      const checkVar = code.genVar('check');
-      code.line(`  const ${checkVar} = ${itemAccess};`);
-      generateSchemaValidatorForAnyOf(code, containsSchema, checkVar, ctx);
-      code.line(`  return true;`);
-      code.line(`})()) ${countVar}++;`);
+      // Call the compiled contains validator (pass null for errors to skip collection)
+      code.if(`${containsFuncName}(${itemAccess}, null, '')`, () => {
+        code.line(`${countVar}++;`);
+      });
 
       // Early exit if we've found enough and no maxContains
       if (maxContains === undefined) {

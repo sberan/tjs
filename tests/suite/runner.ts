@@ -1,5 +1,5 @@
 import type { JsonSchema } from '../../src/types.js';
-import { Validator } from '../../src/validator.js';
+import { Validator } from '../../src/index.js';
 import type { TestFile, TestResult, ComplianceReport } from './types.js';
 
 export interface RunnerOptions {
