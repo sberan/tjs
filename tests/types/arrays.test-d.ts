@@ -1,23 +1,23 @@
-import { expectTypeOf } from 'expect-type';
+import type { Equal, Expect } from './test-utils.js';
 import { schema } from 'json-schema-ts';
 
 // Untyped array
 const Arr = schema({ type: 'array' });
-expectTypeOf<typeof Arr.type>().toEqualTypeOf<unknown[]>();
+type _Arr = Expect<Equal<typeof Arr.type, unknown[]>>;
 
 // Typed array - strings
 const StrArr = schema({
   type: 'array',
   items: { type: 'string' },
 });
-expectTypeOf<typeof StrArr.type>().toEqualTypeOf<string[]>();
+type _StrArr = Expect<Equal<typeof StrArr.type, string[]>>;
 
 // Typed array - numbers
 const NumArr = schema({
   type: 'array',
   items: { type: 'number' },
 });
-expectTypeOf<typeof NumArr.type>().toEqualTypeOf<number[]>();
+type _NumArr = Expect<Equal<typeof NumArr.type, number[]>>;
 
 // Typed array - objects
 const ObjArr = schema({
@@ -31,14 +31,14 @@ const ObjArr = schema({
     required: ['id'],
   },
 });
-expectTypeOf<typeof ObjArr.type>().toEqualTypeOf<{ id: string; value?: number }[]>();
+type _ObjArr = Expect<Equal<typeof ObjArr.type, { id: string; value?: number }[]>>;
 
 // Empty tuple (items: false)
 const EmptyTuple = schema({
   type: 'array',
   items: false,
 });
-expectTypeOf<typeof EmptyTuple.type>().toEqualTypeOf<[]>();
+type _EmptyTuple = Expect<Equal<typeof EmptyTuple.type, []>>;
 
 // Tuple - fixed length
 const Tuple = schema({
@@ -49,7 +49,7 @@ const Tuple = schema({
   ],
   items: false,
 });
-expectTypeOf<typeof Tuple.type>().toEqualTypeOf<[string, number]>();
+type _Tuple = Expect<Equal<typeof Tuple.type, [string, number]>>;
 
 // Tuple - three elements
 const Tuple3 = schema({
@@ -61,7 +61,7 @@ const Tuple3 = schema({
   ],
   items: false,
 });
-expectTypeOf<typeof Tuple3.type>().toEqualTypeOf<[string, number, boolean]>();
+type _Tuple3 = Expect<Equal<typeof Tuple3.type, [string, number, boolean]>>;
 
 // Tuple with rest elements
 const TupleRest = schema({
@@ -71,7 +71,7 @@ const TupleRest = schema({
   ],
   items: { type: 'number' },
 });
-expectTypeOf<typeof TupleRest.type>().toEqualTypeOf<[string, ...number[]]>();
+type _TupleRest = Expect<Equal<typeof TupleRest.type, [string, ...number[]]>>;
 
 // Tuple with multiple prefix and rest
 const TupleMultiRest = schema({
@@ -82,7 +82,7 @@ const TupleMultiRest = schema({
   ],
   items: { type: 'number' },
 });
-expectTypeOf<typeof TupleMultiRest.type>().toEqualTypeOf<[string, boolean, ...number[]]>();
+type _TupleMultiRest = Expect<Equal<typeof TupleMultiRest.type, [string, boolean, ...number[]]>>;
 
 // Nested arrays
 const NestedArr = schema({
@@ -92,4 +92,4 @@ const NestedArr = schema({
     items: { type: 'string' },
   },
 });
-expectTypeOf<typeof NestedArr.type>().toEqualTypeOf<string[][]>();
+type _NestedArr = Expect<Equal<typeof NestedArr.type, string[][]>>;

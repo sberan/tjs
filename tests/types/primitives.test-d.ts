@@ -1,54 +1,54 @@
-import { expectTypeOf } from 'expect-type';
+import type { Equal, Expect } from './test-utils.js';
 import { schema } from 'json-schema-ts';
 
 // String
 const S = schema({ type: 'string' });
-expectTypeOf<typeof S.type>().toEqualTypeOf<string>();
+type _String = Expect<Equal<typeof S.type, string>>;
 
 // Number
 const N = schema({ type: 'number' });
-expectTypeOf<typeof N.type>().toEqualTypeOf<number>();
+type _Number = Expect<Equal<typeof N.type, number>>;
 
 // Integer maps to number
 const I = schema({ type: 'integer' });
-expectTypeOf<typeof I.type>().toEqualTypeOf<number>();
+type _Integer = Expect<Equal<typeof I.type, number>>;
 
 // Boolean
 const B = schema({ type: 'boolean' });
-expectTypeOf<typeof B.type>().toEqualTypeOf<boolean>();
+type _Boolean = Expect<Equal<typeof B.type, boolean>>;
 
 // Null
 const Null = schema({ type: 'null' });
-expectTypeOf<typeof Null.type>().toEqualTypeOf<null>();
+type _Null = Expect<Equal<typeof Null.type, null>>;
 
 // Const - string
 const ConstStr = schema({ const: 'foo' });
-expectTypeOf<typeof ConstStr.type>().toEqualTypeOf<'foo'>();
+type _ConstStr = Expect<Equal<typeof ConstStr.type, 'foo'>>;
 
 // Const - number
 const ConstNum = schema({ const: 42 });
-expectTypeOf<typeof ConstNum.type>().toEqualTypeOf<42>();
+type _ConstNum = Expect<Equal<typeof ConstNum.type, 42>>;
 
 // Const - boolean
 const ConstBool = schema({ const: true });
-expectTypeOf<typeof ConstBool.type>().toEqualTypeOf<true>();
+type _ConstBool = Expect<Equal<typeof ConstBool.type, true>>;
 
 // Enum - strings
 const EnumStr = schema({ enum: ['a', 'b', 'c'] });
-expectTypeOf<typeof EnumStr.type>().toEqualTypeOf<'a' | 'b' | 'c'>();
+type _EnumStr = Expect<Equal<typeof EnumStr.type, 'a' | 'b' | 'c'>>;
 
 // Enum - numbers
 const EnumNum = schema({ enum: [1, 2, 3] });
-expectTypeOf<typeof EnumNum.type>().toEqualTypeOf<1 | 2 | 3>();
+type _EnumNum = Expect<Equal<typeof EnumNum.type, 1 | 2 | 3>>;
 
 // Enum - mixed
 const EnumMixed = schema({ enum: ['yes', 'no', 1, 0, null] });
-expectTypeOf<typeof EnumMixed.type>().toEqualTypeOf<'yes' | 'no' | 1 | 0 | null>();
+type _EnumMixed = Expect<Equal<typeof EnumMixed.type, 'yes' | 'no' | 1 | 0 | null>>;
 
 // Type array - nullable
 const Nullable = schema({ type: ['string', 'null'] });
-expectTypeOf<typeof Nullable.type>().toEqualTypeOf<string | null>();
+type _Nullable = Expect<Equal<typeof Nullable.type, string | null>>;
 
 // Type array - multiple
 const Multi = schema({ type: ['string', 'number', 'boolean'] });
-expectTypeOf<typeof Multi.type>().toEqualTypeOf<string | number | boolean>();
+type _Multi = Expect<Equal<typeof Multi.type, string | number | boolean>>;
