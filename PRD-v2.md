@@ -1800,15 +1800,135 @@ const Schema = schema({
 
 | # | Issue | Priority | Location | Status |
 |---|-------|----------|----------|--------|
-| 1 | Type array ignores properties/items | HIGH | `InferType` | To fix |
-| 2 | `if/else` without `then` ignored | HIGH | `InferSchema` | To fix |
-| 3 | Circular `$ref` recursion error | MEDIUM | `InferRef` | To fix |
-| 4 | Missing required properties ignored | MEDIUM | `BuildObject` | Document |
+| 1 | Type array ignores properties/items | HIGH | `InferType` | ✅ Fixed |
+| 2 | `if/else` without `then` ignored | HIGH | `InferSchema` | ✅ Fixed |
+| 3 | Circular `$ref` recursion error | MEDIUM | `InferRef` | ✅ Fixed |
+| 4 | Missing required properties ignored | MEDIUM | `BuildObject` | ✅ Fixed |
 | 5 | `not` complex schemas → `JsonValue` | LOW | `InferNot` | Accept |
 | 6 | `oneOf`/`anyOf` same at type level | LOW | `InferSchema` | Accept |
 | 7 | Empty `allOf` → `unknown` | LOW | `InferAllOf` | Correct |
 | 8 | `const`+`type` conflict | LOW | `InferSchema` | Document |
 | 9 | Deep nesting recursion limit | LOW | All | Document |
+| 10 | `not` with type array loses specificity | MEDIUM | `InferNot` | ✅ Fixed |
+
+---
+
+## Developer Experience Improvements
+
+### Prettier
+
+Add Prettier for consistent code formatting across the codebase.
+
+```bash
+npm install -D prettier
+```
+
+Create `.prettierrc`:
+```json
+{
+  "semi": true,
+  "singleQuote": true,
+  "tabWidth": 2,
+  "trailingComma": "es5",
+  "printWidth": 100
+}
+```
+
+Add scripts to `package.json`:
+```json
+{
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  }
+}
+```
+
+### Pre-commit Hook
+
+Use Husky + lint-staged for pre-commit formatting and linting.
+
+```bash
+npm install -D husky lint-staged
+npx husky init
+```
+
+Add to `package.json`:
+```json
+{
+  "lint-staged": {
+    "*.{ts,js,json,md}": "prettier --write"
+  }
+}
+```
+
+Create `.husky/pre-commit`:
+```bash
+npx lint-staged
+npm run test:types
+```
+
+### eslint-plugin-expect-type for Type Testing ✅ IMPLEMENTED
+
+Type tests now use [eslint-plugin-expect-type](https://github.com/JoshuaKGoldberg/eslint-plugin-expect-type) with `$ExpectType` comments for type assertions.
+
+**Installation:**
+```bash
+npm install -D eslint eslint-plugin-expect-type @typescript-eslint/parser
+```
+
+**Configuration (`eslint.config.mjs`):**
+```javascript
+import tsParser from '@typescript-eslint/parser';
+import * as expectType from 'eslint-plugin-expect-type';
+
+export default [
+  {
+    files: ['tests/types/**/*.ts'],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: {
+        project: './tests/types/tsconfig.json',
+      },
+    },
+    plugins: {
+      'expect-type': expectType,
+    },
+    rules: {
+      'expect-type/expect': 'error',
+    },
+  },
+];
+```
+
+**Usage:**
+```typescript
+import { schema } from 'json-schema-ts';
+
+// String type
+const S = schema({ type: 'string' });
+S.type; // $ExpectType string
+
+// Object with properties
+const Obj = schema({
+  type: 'object',
+  properties: {
+    name: { type: 'string' },
+  },
+});
+Obj.type; // $ExpectType { name?: string }
+```
+
+**Test script (`package.json`):**
+```json
+{
+  "scripts": {
+    "test:types": "eslint tests/types/"
+  }
+}
+```
+
+**Note:** The test tsconfig includes `"exactOptionalPropertyTypes": true` to get cleaner type output without `| undefined` on optional properties.
 
 ---
 

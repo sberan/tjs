@@ -1,23 +1,22 @@
-import type { Equal, Expect } from './test-utils.js';
 import { schema } from 'json-schema-ts';
 
 // Untyped array
 const Arr = schema({ type: 'array' });
-type _Arr = Expect<Equal<typeof Arr.type, unknown[]>>;
+Arr.type; // $ExpectType unknown[]
 
 // Typed array - strings
 const StrArr = schema({
   type: 'array',
   items: { type: 'string' },
 });
-type _StrArr = Expect<Equal<typeof StrArr.type, string[]>>;
+StrArr.type; // $ExpectType string[]
 
 // Typed array - numbers
 const NumArr = schema({
   type: 'array',
   items: { type: 'number' },
 });
-type _NumArr = Expect<Equal<typeof NumArr.type, number[]>>;
+NumArr.type; // $ExpectType number[]
 
 // Typed array - objects
 const ObjArr = schema({
@@ -31,14 +30,14 @@ const ObjArr = schema({
     required: ['id'],
   },
 });
-type _ObjArr = Expect<Equal<typeof ObjArr.type, { id: string; value?: number }[]>>;
+ObjArr.type; // $ExpectType { id: string; value?: number }[]
 
 // Empty tuple (items: false)
 const EmptyTuple = schema({
   type: 'array',
   items: false,
 });
-type _EmptyTuple = Expect<Equal<typeof EmptyTuple.type, []>>;
+EmptyTuple.type; // $ExpectType []
 
 // Tuple - fixed length
 const Tuple = schema({
@@ -49,7 +48,7 @@ const Tuple = schema({
   ],
   items: false,
 });
-type _Tuple = Expect<Equal<typeof Tuple.type, [string, number]>>;
+Tuple.type; // $ExpectType [string, number]
 
 // Tuple - three elements
 const Tuple3 = schema({
@@ -61,7 +60,7 @@ const Tuple3 = schema({
   ],
   items: false,
 });
-type _Tuple3 = Expect<Equal<typeof Tuple3.type, [string, number, boolean]>>;
+Tuple3.type; // $ExpectType [string, number, boolean]
 
 // Tuple with rest elements
 const TupleRest = schema({
@@ -71,7 +70,7 @@ const TupleRest = schema({
   ],
   items: { type: 'number' },
 });
-type _TupleRest = Expect<Equal<typeof TupleRest.type, [string, ...number[]]>>;
+TupleRest.type; // $ExpectType [string, ...number[]]
 
 // Tuple with multiple prefix and rest
 const TupleMultiRest = schema({
@@ -82,7 +81,7 @@ const TupleMultiRest = schema({
   ],
   items: { type: 'number' },
 });
-type _TupleMultiRest = Expect<Equal<typeof TupleMultiRest.type, [string, boolean, ...number[]]>>;
+TupleMultiRest.type; // $ExpectType [string, boolean, ...number[]]
 
 // Nested arrays
 const NestedArr = schema({
@@ -92,4 +91,4 @@ const NestedArr = schema({
     items: { type: 'string' },
   },
 });
-type _NestedArr = Expect<Equal<typeof NestedArr.type, string[][]>>;
+NestedArr.type; // $ExpectType string[][]
