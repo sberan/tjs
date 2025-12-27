@@ -14,6 +14,7 @@ export type ParseResult<T> =
 export class Validator<T> {
   readonly #schema: JsonSchema;
   readonly #defs: Record<string, JsonSchema>;
+  readonly #anchors: Map<string, JsonSchema>;
 
   // Phantom type for type inference
   declare readonly type: T;
@@ -21,6 +22,72 @@ export class Validator<T> {
   constructor(schema: JsonSchema) {
     this.#schema = schema;
     this.#defs = typeof schema === 'object' && schema.$defs ? schema.$defs : {};
+    this.#anchors = new Map();
+    this.#collectAnchors(schema);
+  }
+
+  #collectAnchors(schema: JsonSchema): void {
+    if (typeof schema !== 'object' || schema === null) return;
+
+    if (schema.$anchor) {
+      this.#anchors.set(schema.$anchor, schema);
+    }
+
+    // Recurse into all subschemas
+    if (schema.$defs) {
+      for (const def of Object.values(schema.$defs)) {
+        this.#collectAnchors(def);
+      }
+    }
+    if (schema.properties) {
+      for (const prop of Object.values(schema.properties)) {
+        this.#collectAnchors(prop);
+      }
+    }
+    if (schema.items && typeof schema.items === 'object') {
+      this.#collectAnchors(schema.items);
+    }
+    if (schema.prefixItems) {
+      for (const item of schema.prefixItems) {
+        this.#collectAnchors(item);
+      }
+    }
+    if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
+      this.#collectAnchors(schema.additionalProperties);
+    }
+    if (schema.anyOf) {
+      for (const sub of schema.anyOf) {
+        this.#collectAnchors(sub);
+      }
+    }
+    if (schema.oneOf) {
+      for (const sub of schema.oneOf) {
+        this.#collectAnchors(sub);
+      }
+    }
+    if (schema.allOf) {
+      for (const sub of schema.allOf) {
+        this.#collectAnchors(sub);
+      }
+    }
+    if (schema.not) {
+      this.#collectAnchors(schema.not);
+    }
+    if (schema.if) {
+      this.#collectAnchors(schema.if);
+    }
+    if (schema.then) {
+      this.#collectAnchors(schema.then);
+    }
+    if (schema.else) {
+      this.#collectAnchors(schema.else);
+    }
+    if (schema.contains) {
+      this.#collectAnchors(schema.contains);
+    }
+    if (schema.propertyNames) {
+      this.#collectAnchors(schema.propertyNames);
+    }
   }
 
   validate(data: unknown): data is T {
@@ -358,6 +425,21 @@ export class Validator<T> {
       }
     }
 
+    // Validate propertyNames
+    if (schema.propertyNames) {
+      for (const key of keys) {
+        const keyErrors = this.#validate(key, schema.propertyNames, `${path}[propertyName:${key}]`);
+        for (const err of keyErrors) {
+          errors.push({
+            path: path ? `${path}.${key}` : key,
+            message: `Property name "${key}" is invalid: ${err.message}`,
+            keyword: 'propertyNames',
+            value: key,
+          });
+        }
+      }
+    }
+
     // Validate known properties
     for (const [key, propSchema] of Object.entries(properties)) {
       if (key in data) {
@@ -365,11 +447,26 @@ export class Validator<T> {
       }
     }
 
+    // Track keys matched by properties or patternProperties (for additionalProperties)
+    const evaluatedKeys = new Set(Object.keys(properties));
+
+    // Validate patternProperties
+    if (schema.patternProperties) {
+      for (const [pattern, propSchema] of Object.entries(schema.patternProperties)) {
+        const regex = new RegExp(pattern);
+        for (const [key, value] of Object.entries(data)) {
+          if (regex.test(key)) {
+            evaluatedKeys.add(key);
+            errors.push(...this.#validate(value, propSchema, path ? `${path}.${key}` : key));
+          }
+        }
+      }
+    }
+
     // Validate additional properties
     if (schema.additionalProperties !== undefined) {
-      const knownKeys = new Set(Object.keys(properties));
       for (const [key, value] of Object.entries(data)) {
-        if (!knownKeys.has(key)) {
+        if (!evaluatedKeys.has(key)) {
           if (schema.additionalProperties === false) {
             errors.push({ path: path ? `${path}.${key}` : key, message: 'Additional property is not allowed', keyword: 'additionalProperties', value });
           } else if (typeof schema.additionalProperties === 'object') {
@@ -383,10 +480,18 @@ export class Validator<T> {
   }
 
   #resolveRef(ref: string): JsonSchema | undefined {
-    const match = ref.match(/^#\/\$defs\/(.+)$/);
-    if (match && match[1] in this.#defs) {
-      return this.#defs[match[1]];
+    // Handle $defs reference: #/$defs/Name
+    const defsMatch = ref.match(/^#\/\$defs\/(.+)$/);
+    if (defsMatch && defsMatch[1] in this.#defs) {
+      return this.#defs[defsMatch[1]];
     }
+
+    // Handle anchor reference: #anchorName
+    const anchorMatch = ref.match(/^#([a-zA-Z][a-zA-Z0-9_-]*)$/);
+    if (anchorMatch) {
+      return this.#anchors.get(anchorMatch[1]);
+    }
+
     return undefined;
   }
 

@@ -482,11 +482,11 @@ type EncodedData = typeof EncodedData.type;  // string
 4. **Missing formats** - ✅ Implemented (`date`, `time`, `duration`, `hostname`, `uri-reference`, `json-pointer`, `relative-json-pointer`, `regex`)
 5. **Annotation keywords** - ✅ Implemented (`title`, `description`, `default`, `deprecated`, `examples`, `readOnly`, `writeOnly`, `$comment`, `$id`)
 
-### Phase 2: Medium Complexity
+### Phase 2: Medium Complexity ✅ COMPLETE
 
-1. **`patternProperties`** - Regex-based property validation
-2. **`propertyNames`** - Property name validation
-3. **`$anchor`** - Named references within schema
+1. **`patternProperties`** - ✅ Implemented (runtime only, no type inference)
+2. **`propertyNames`** - ✅ Implemented
+3. **`$anchor`** - ✅ Implemented
 
 ### Phase 3: High Complexity
 

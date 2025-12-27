@@ -11,8 +11,11 @@ export interface JsonSchemaBase {
   const?: JsonValue;
   enum?: readonly JsonValue[];
   properties?: Record<string, JsonSchema>;
+  patternProperties?: Record<string, JsonSchema>;
+  propertyNames?: JsonSchema;
   required?: readonly string[];
   additionalProperties?: boolean | JsonSchema;
+  $anchor?: string;
   items?: boolean | JsonSchema;
   prefixItems?: readonly JsonSchema[];
   anyOf?: readonly JsonSchema[];
