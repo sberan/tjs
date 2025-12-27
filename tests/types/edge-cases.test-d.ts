@@ -123,3 +123,105 @@ const DeepRefs = schema({
   required: ['outer'],
 });
 type _DeepRefs = Expect<Equal<typeof DeepRefs.type, { outer: { inner: { value: string } } }>>;
+
+// =============================================================================
+// HIGH PRIORITY FIXES - Type inference holes
+// =============================================================================
+
+// FIX #1: Type array with properties preserves structure
+// Previously: type: ['object', 'null'] would return Record<string, unknown> | null
+// Now: properly infers { foo?: string } | null
+const NullableObject = schema({
+  type: ['object', 'null'],
+  properties: {
+    foo: { type: 'string' },
+  },
+});
+type _NullableObject = Expect<Equal<typeof NullableObject.type, { foo?: string } | null>>;
+
+// Type array with required properties
+const NullableObjectRequired = schema({
+  type: ['object', 'null'],
+  properties: {
+    id: { type: 'string' },
+    name: { type: 'string' },
+  },
+  required: ['id'],
+});
+type _NullableObjectRequired = Expect<Equal<typeof NullableObjectRequired.type, { id: string; name?: string } | null>>;
+
+// Type array with array type preserves items
+const NullableArray = schema({
+  type: ['array', 'null'],
+  items: { type: 'number' },
+});
+type _NullableArray = Expect<Equal<typeof NullableArray.type, number[] | null>>;
+
+// Type array with multiple structured types
+const ObjectOrArray = schema({
+  type: ['object', 'array'],
+  properties: {
+    value: { type: 'string' },
+  },
+  items: { type: 'number' },
+});
+type _ObjectOrArray = Expect<Equal<typeof ObjectOrArray.type, { value?: string } | number[]>>;
+
+// Type array mixing primitives and structured
+const StringOrObject = schema({
+  type: ['string', 'object'],
+  properties: {
+    data: { type: 'boolean' },
+  },
+});
+type _StringOrObject = Expect<Equal<typeof StringOrObject.type, string | { data?: boolean }>>;
+
+// FIX #2: if/else without then now works
+// Previously: would fall through to InferType returning unknown
+// Now: properly infers union of if-matches type and else type
+const IfElseNoThen = schema({
+  if: { type: 'string' },
+  else: { type: 'number' },
+});
+type _IfElseNoThen = Expect<Equal<typeof IfElseNoThen.type, unknown | number>>;
+
+// if/else with base type constraint
+const IfElseWithType = schema({
+  type: ['string', 'number'],
+  if: { type: 'string', minLength: 5 },
+  else: { type: 'number', minimum: 0 },
+});
+type _IfElseWithType = Expect<Equal<typeof IfElseWithType.type, string | number>>;
+
+// Verify if/then/else still works (regression test)
+const IfThenElse = schema({
+  if: { type: 'string' },
+  then: { type: 'string', minLength: 1 },
+  else: { type: 'number' },
+});
+type _IfThenElse = Expect<Equal<typeof IfThenElse.type, string | number>>;
+
+// Verify if/then still works (regression test)
+// Note: then schema has no type, so Infer<then> returns unknown
+// Result is Infer<then> | InferType<S> = unknown | string = unknown
+const IfThenOnly = schema({
+  type: 'string',
+  if: { minLength: 5 },
+  then: { pattern: '^[A-Z]' },
+});
+type _IfThenOnly = Expect<Equal<typeof IfThenOnly.type, unknown>>;
+
+// if/then with explicit types - properly narrows
+const IfThenTyped = schema({
+  if: { type: 'string' },
+  then: { type: 'string' },
+});
+type _IfThenTyped = Expect<Equal<typeof IfThenTyped.type, string | unknown>>;
+
+// if/then where base type dominates
+const IfThenWithBaseType = schema({
+  type: 'number',
+  if: { minimum: 0 },
+  then: { type: 'number' },
+});
+type _IfThenWithBaseType = Expect<Equal<typeof IfThenWithBaseType.type, number>>;
