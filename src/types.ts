@@ -35,6 +35,24 @@ export interface JsonSchemaBase {
   minItems?: number;
   maxItems?: number;
   uniqueItems?: boolean;
+  // Object constraints
+  minProperties?: number;
+  maxProperties?: number;
+  dependentRequired?: Record<string, readonly string[]>;
+  // Array constraints
+  contains?: JsonSchema;
+  minContains?: number;
+  maxContains?: number;
+  // Annotations (metadata only, no validation)
+  title?: string;
+  description?: string;
+  default?: JsonValue;
+  deprecated?: boolean;
+  examples?: readonly JsonValue[];
+  readOnly?: boolean;
+  writeOnly?: boolean;
+  $comment?: string;
+  $id?: string;
 }
 
 // JsonSchema can be a boolean or an object
