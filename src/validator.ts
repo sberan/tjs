@@ -29,6 +29,7 @@ interface ValidationResult {
 export class Validator<T> {
   readonly #schema: JsonSchema;
   readonly #anchors: Map<string, JsonSchema>;
+  readonly #schemasById: Map<string, JsonSchema>;
   readonly #options: Required<ValidatorOptions>;
 
   // Phantom type for type inference
@@ -37,6 +38,7 @@ export class Validator<T> {
   constructor(schema: JsonSchema, options: ValidatorOptions = {}) {
     this.#schema = schema;
     this.#anchors = new Map();
+    this.#schemasById = new Map();
     this.#options = {
       formatAssertion: options.formatAssertion ?? true,
     };
@@ -311,55 +313,59 @@ export class Validator<T> {
       // Continue to validate base schema keywords below (don't return early)
     }
 
-    // Handle if/then/else - merge evaluated props from if AND the branch taken
+    // Handle if/then/else - merge evaluated props based on which branch is taken
     // Check !== undefined to handle if: false
     if (schema.if !== undefined) {
       const ifResult = this.#validate(data, schema.if, path);
       const ifValid = ifResult.errors.length === 0;
 
-      // Always merge evaluated properties/items from the if schema
-      // (annotations from if are collected even without then/else)
-      if (ifResult.evaluatedProperties) {
-        evaluatedProperties = evaluatedProperties ?? new Set();
-        for (const key of ifResult.evaluatedProperties) {
-          evaluatedProperties.add(key);
+      if (ifValid) {
+        // When if is TRUE: merge from if AND then (if exists)
+        if (ifResult.evaluatedProperties) {
+          evaluatedProperties = evaluatedProperties ?? new Set();
+          for (const key of ifResult.evaluatedProperties) {
+            evaluatedProperties.add(key);
+          }
         }
-      }
-      if (ifResult.evaluatedItems) {
-        evaluatedItems = evaluatedItems ?? new Set();
-        for (const idx of ifResult.evaluatedItems) {
-          evaluatedItems.add(idx);
+        if (ifResult.evaluatedItems) {
+          evaluatedItems = evaluatedItems ?? new Set();
+          for (const idx of ifResult.evaluatedItems) {
+            evaluatedItems.add(idx);
+          }
         }
-      }
 
-      if (ifValid && schema.then !== undefined) {
-        const thenResult = this.#validate(data, schema.then, path);
-        errors.push(...thenResult.errors);
-        if (thenResult.evaluatedProperties) {
-          evaluatedProperties = evaluatedProperties ?? new Set();
-          for (const key of thenResult.evaluatedProperties) {
-            evaluatedProperties.add(key);
+        if (schema.then !== undefined) {
+          const thenResult = this.#validate(data, schema.then, path);
+          errors.push(...thenResult.errors);
+          if (thenResult.evaluatedProperties) {
+            evaluatedProperties = evaluatedProperties ?? new Set();
+            for (const key of thenResult.evaluatedProperties) {
+              evaluatedProperties.add(key);
+            }
+          }
+          if (thenResult.evaluatedItems) {
+            evaluatedItems = evaluatedItems ?? new Set();
+            for (const idx of thenResult.evaluatedItems) {
+              evaluatedItems.add(idx);
+            }
           }
         }
-        if (thenResult.evaluatedItems) {
-          evaluatedItems = evaluatedItems ?? new Set();
-          for (const idx of thenResult.evaluatedItems) {
-            evaluatedItems.add(idx);
+      } else {
+        // When if is FALSE: merge from else (if exists), NOT from if
+        if (schema.else !== undefined) {
+          const elseResult = this.#validate(data, schema.else, path);
+          errors.push(...elseResult.errors);
+          if (elseResult.evaluatedProperties) {
+            evaluatedProperties = evaluatedProperties ?? new Set();
+            for (const key of elseResult.evaluatedProperties) {
+              evaluatedProperties.add(key);
+            }
           }
-        }
-      } else if (!ifValid && schema.else !== undefined) {
-        const elseResult = this.#validate(data, schema.else, path);
-        errors.push(...elseResult.errors);
-        if (elseResult.evaluatedProperties) {
-          evaluatedProperties = evaluatedProperties ?? new Set();
-          for (const key of elseResult.evaluatedProperties) {
-            evaluatedProperties.add(key);
-          }
-        }
-        if (elseResult.evaluatedItems) {
-          evaluatedItems = evaluatedItems ?? new Set();
-          for (const idx of elseResult.evaluatedItems) {
-            evaluatedItems.add(idx);
+          if (elseResult.evaluatedItems) {
+            evaluatedItems = evaluatedItems ?? new Set();
+            for (const idx of elseResult.evaluatedItems) {
+              evaluatedItems.add(idx);
+            }
           }
         }
       }
@@ -427,6 +433,14 @@ export class Validator<T> {
     // Check unevaluatedItems after all validation (composition + base schema)
     if (schema.unevaluatedItems !== undefined && Array.isArray(data)) {
       this.#checkUnevaluatedItems(data, schema, path, evaluatedItems ?? new Set(), errors);
+      // When unevaluatedItems is true or a schema (not false), mark all items as evaluated
+      // This is important for parent schemas that also have unevaluatedItems
+      if (schema.unevaluatedItems !== false) {
+        evaluatedItems = evaluatedItems ?? new Set();
+        for (let i = 0; i < data.length; i++) {
+          evaluatedItems.add(i);
+        }
+      }
     }
 
     return { errors, evaluatedProperties, evaluatedItems };
@@ -948,7 +962,123 @@ export class Validator<T> {
       return this.#anchors.get(anchorMatch[1]);
     }
 
+    // Handle URN or URI with fragment (e.g., "urn:uuid:xxx#/path" or "http://example.com/schema#anchor")
+    const fragmentIndex = ref.indexOf('#');
+    if (fragmentIndex !== -1) {
+      const baseUri = ref.slice(0, fragmentIndex);
+      const fragment = ref.slice(fragmentIndex);
+
+      // Look up the schema by base URI
+      const baseSchema = this.#schemasById.get(baseUri);
+      if (baseSchema) {
+        // If there's a fragment, resolve it within that schema
+        if (fragment === '#') {
+          return baseSchema;
+        }
+        if (fragment.startsWith('#/')) {
+          // JSON Pointer relative to the base schema
+          return this.#resolveJsonPointerInSchema(baseSchema, fragment.slice(1));
+        }
+        // Anchor reference - look for $anchor in the base schema
+        const anchorName = fragment.slice(1);
+        return this.#findAnchorInSchema(baseSchema, anchorName);
+      }
+    }
+
+    // Handle plain URI/URN reference (without fragment)
+    const schema = this.#schemasById.get(ref);
+    if (schema) {
+      return schema;
+    }
+
     return undefined;
+  }
+
+  #findAnchorInSchema(schema: JsonSchema, anchorName: string): JsonSchema | undefined {
+    if (typeof schema !== 'object' || schema === null) return undefined;
+
+    if (schema.$anchor === anchorName) {
+      return schema;
+    }
+
+    // Search in all subschemas
+    const searchIn = [
+      ...(schema.$defs ? Object.values(schema.$defs) : []),
+      ...(schema.properties ? Object.values(schema.properties) : []),
+      ...(schema.prefixItems ?? []),
+      ...(schema.anyOf ?? []),
+      ...(schema.oneOf ?? []),
+      ...(schema.allOf ?? []),
+      schema.items,
+      schema.additionalProperties,
+      schema.unevaluatedProperties,
+      schema.unevaluatedItems,
+      schema.not,
+      schema.if,
+      schema.then,
+      schema.else,
+      schema.contains,
+      schema.propertyNames,
+      ...(schema.dependentSchemas ? Object.values(schema.dependentSchemas) : []),
+      schema.contentSchema,
+    ];
+
+    for (const subSchema of searchIn) {
+      if (typeof subSchema === 'object' && subSchema !== null) {
+        const found = this.#findAnchorInSchema(subSchema, anchorName);
+        if (found) return found;
+      }
+    }
+
+    return undefined;
+  }
+
+  #resolveJsonPointerInSchema(schema: JsonSchema, pointer: string): JsonSchema | undefined {
+    if (pointer === '' || pointer === '/') {
+      return schema;
+    }
+
+    // Split pointer into segments and decode JSON Pointer escapes
+    const segments = pointer
+      .split('/')
+      .slice(1) // Remove leading empty segment from split
+      .map((seg) => {
+        // First decode URL encoding (e.g., %22 -> ", %25 -> %)
+        let decoded = seg;
+        try {
+          decoded = decodeURIComponent(seg);
+        } catch {
+          // If decoding fails, use original segment
+        }
+        // Then decode JSON Pointer escapes
+        return decoded
+          .replace(/~1/g, '/') // ~1 -> /
+          .replace(/~0/g, '~'); // ~0 -> ~
+      });
+
+    let current: unknown = schema;
+
+    for (const segment of segments) {
+      if (current === null || typeof current !== 'object') {
+        return undefined;
+      }
+
+      if (Array.isArray(current)) {
+        const index = parseInt(segment, 10);
+        if (isNaN(index) || index < 0 || index >= current.length) {
+          return undefined;
+        }
+        current = current[index];
+      } else {
+        const obj = current as Record<string, unknown>;
+        if (!(segment in obj)) {
+          return undefined;
+        }
+        current = obj[segment];
+      }
+    }
+
+    return current as JsonSchema;
   }
 
   #resolveJsonPointer(pointer: string): JsonSchema | undefined {
@@ -960,13 +1090,19 @@ export class Validator<T> {
     const segments = pointer
       .split('/')
       .slice(1) // Remove leading empty segment from split
-      .map(
-        (seg) =>
-          seg
-            .replace(/~1/g, '/') // ~1 -> /
-            .replace(/~0/g, '~') // ~0 -> ~
-            .replace(/%25/g, '%') // URL-encoded %
-      );
+      .map((seg) => {
+        // First decode URL encoding (e.g., %22 -> ", %25 -> %)
+        let decoded = seg;
+        try {
+          decoded = decodeURIComponent(seg);
+        } catch {
+          // If decoding fails, use original segment
+        }
+        // Then decode JSON Pointer escapes
+        return decoded
+          .replace(/~1/g, '/') // ~1 -> /
+          .replace(/~0/g, '~'); // ~0 -> ~
+      });
 
     let current: unknown = this.#schema;
 

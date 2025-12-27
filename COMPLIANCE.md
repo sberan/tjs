@@ -3,8 +3,8 @@
 ## Summary
 
 - **Total Tests**: 1271
-- **Passed**: 1157 (91.0%)
-- **Failed**: 34
+- **Passed**: 1162 (91.4%)
+- **Failed**: 29
 - **Skipped**: 80
 
 ## By Keyword
@@ -49,12 +49,12 @@
 | prefixItems | 11 | 0 | 0 | 100% |
 | properties | 28 | 0 | 0 | 100% |
 | propertyNames | 20 | 0 | 0 | 100% |
-| ref | 62 | 17 | 0 | 78% |
+| ref | 63 | 16 | 0 | 80% |
 | refRemote | 0 | 0 | 31 | N/A |
 | required | 16 | 0 | 0 | 100% |
 | type | 80 | 0 | 0 | 100% |
-| unevaluatedItems | 68 | 3 | 0 | 96% |
-| unevaluatedProperties | 117 | 8 | 0 | 94% |
+| unevaluatedItems | 70 | 1 | 0 | 99% |
+| unevaluatedProperties | 119 | 6 | 0 | 95% |
 | uniqueItems | 69 | 0 | 0 | 100% |
 | vocabulary | 0 | 0 | 5 | N/A |
 
@@ -105,12 +105,6 @@
 ### ref / Recursive references between schemas
 
 **Test**: valid tree
-**Expected**: valid
-**Actual**: invalid
-
-### ref / refs with quote
-
-**Test**: object with numbers is valid
 **Expected**: valid
 **Actual**: invalid
 
@@ -198,41 +192,17 @@
 **Expected**: valid
 **Actual**: invalid
 
-### unevaluatedItems / unevaluatedItems with nested unevaluatedItems
-
-**Test**: with additional items
-**Expected**: valid
-**Actual**: invalid
-
 ### unevaluatedItems / unevaluatedItems with $dynamicRef
 
 **Test**: with no unevaluated items
 **Expected**: valid
 **Actual**: invalid
 
-### unevaluatedItems / unevaluatedItems can see annotations from if without then and else
-
-**Test**: invalid in case if is evaluated
-**Expected**: invalid
-**Actual**: valid
-
 ### unevaluatedProperties / unevaluatedProperties with nested unevaluatedProperties
 
 **Test**: with nested unevaluated properties
 **Expected**: valid
 **Actual**: invalid
-
-### unevaluatedProperties / unevaluatedProperties with if/then/else
-
-**Test**: when if is false and has unevaluated properties
-**Expected**: invalid
-**Actual**: valid
-
-### unevaluatedProperties / unevaluatedProperties with if/then/else, then not defined
-
-**Test**: when if is false and has unevaluated properties
-**Expected**: invalid
-**Actual**: valid
 
 ### unevaluatedProperties / unevaluatedProperties with $dynamicRef
 
