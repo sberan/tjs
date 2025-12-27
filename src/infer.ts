@@ -36,15 +36,15 @@ type InferSchema<S extends JsonSchemaBase, Defs, Depth extends unknown[]> =
       : // Handle enum
         S extends { enum: readonly (infer E)[] }
         ? E
-        : // Handle anyOf
-          S extends { anyOf: readonly (infer U extends JsonSchema)[] }
-          ? Infer<U, Defs, Depth>
+        : // Handle anyOf - if base has type, use it to constrain branches
+          S extends { anyOf: readonly JsonSchema[] }
+          ? InferAnyOf<S, Defs, Depth>
           : // Handle oneOf (same as anyOf for types)
-            S extends { oneOf: readonly (infer U extends JsonSchema)[] }
-            ? Infer<U, Defs, Depth>
-            : // Handle allOf
+            S extends { oneOf: readonly JsonSchema[] }
+            ? InferOneOf<S, Defs, Depth>
+            : // Handle allOf - include base schema type in intersection
               S extends { allOf: readonly JsonSchema[] }
-              ? InferAllOf<S['allOf'], Defs, Depth>
+              ? InferAllOfWithBase<S, Defs, Depth>
               : // Handle not
                 S extends { not: infer N }
                 ? InferNot<N>
@@ -150,20 +150,24 @@ type BuildObject<
   // Required properties from P
   {
     [K in keyof P as K extends R[number] ? K : never]: Infer<P[K], Defs, Depth>;
-  } & { // Optional properties from P
+  } & {
+    // Optional properties from P
     [K in keyof P as K extends R[number] ? never : K]?: Infer<P[K], Defs, Depth>;
   } & { [K in R[number] as K extends keyof P ? never : K]: unknown } // Required properties NOT in P get type `unknown`
 >;
 
 // Infer array type
+// Note: Both items: false and unevaluatedItems: false close a tuple
 type InferArray<S extends JsonSchemaBase, Defs, Depth extends unknown[]> = S extends {
   prefixItems: readonly (infer PI extends JsonSchema)[];
 }
   ? S extends { items: false }
     ? InferTupleFromArray<S['prefixItems'], Defs, Depth>
-    : S extends { items: infer I extends JsonSchema }
-      ? [...InferTupleFromArray<S['prefixItems'], Defs, Depth>, ...Infer<I, Defs, Depth>[]]
-      : [...InferTupleFromArray<S['prefixItems'], Defs, Depth>, ...unknown[]]
+    : S extends { unevaluatedItems: false }
+      ? InferTupleFromArray<S['prefixItems'], Defs, Depth>
+      : S extends { items: infer I extends JsonSchema }
+        ? [...InferTupleFromArray<S['prefixItems'], Defs, Depth>, ...Infer<I, Defs, Depth>[]]
+        : [...InferTupleFromArray<S['prefixItems'], Defs, Depth>, ...unknown[]]
   : S extends { items: false }
     ? []
     : S extends { items: infer I extends JsonSchema }
@@ -180,31 +184,40 @@ type InferTupleFromArray<
   : [];
 
 // Infer a conditional branch (then/else) by merging with base schema
-// If branch has its own type, use it directly. Otherwise merge base properties with branch properties.
+// If branch has const/enum/type, use it directly. Otherwise merge base properties with branch properties.
 type InferConditionalBranch<
   Base extends JsonSchemaBase,
   Branch extends JsonSchema,
   Defs,
   Depth extends unknown[],
-> = Branch extends { type: JsonSchemaType | JsonSchemaType[] }
-  ? // Branch has explicit type - infer it directly
-    Infer<Branch, Defs, Depth>
-  : // Branch is partial - merge with base schema
-    Branch extends { properties: infer BP extends Record<string, JsonSchema> }
-    ? Base extends { type: 'object'; properties: infer BaseP extends Record<string, JsonSchema> }
-      ? // Merge base properties with branch properties, branch required takes precedence
-        Branch extends { required: readonly string[] }
-        ? InferMergedObject<BaseP, BP, Branch['required'], Defs, Depth>
-        : InferMergedObject<BaseP, BP, [], Defs, Depth>
-      : // Base is object type but no properties - just use branch properties
-        Base extends { type: 'object' }
-        ? Branch extends { required: readonly string[] }
-          ? BuildObject<BP, Branch['required'], Defs, Depth>
-          : BuildObject<BP, [], Defs, Depth>
-        : // Base is not object - try to infer branch directly
-          Infer<Branch, Defs, Depth>
-    : // Branch has no properties - use base type
-      InferType<Base, Defs, Depth>;
+> = Branch extends { const: infer C }
+  ? // Branch has const - use it directly
+    C
+  : Branch extends { enum: readonly (infer E)[] }
+    ? // Branch has enum - use it directly
+      E
+    : Branch extends { type: JsonSchemaType | JsonSchemaType[] }
+      ? // Branch has explicit type - infer it directly
+        Infer<Branch, Defs, Depth>
+      : // Branch is partial - merge with base schema
+        Branch extends { properties: infer BP extends Record<string, JsonSchema> }
+        ? Base extends {
+            type: 'object';
+            properties: infer BaseP extends Record<string, JsonSchema>;
+          }
+          ? // Merge base properties with branch properties, branch required takes precedence
+            Branch extends { required: readonly string[] }
+            ? InferMergedObject<BaseP, BP, Branch['required'], Defs, Depth>
+            : InferMergedObject<BaseP, BP, [], Defs, Depth>
+          : // Base is object type but no properties - just use branch properties
+            Base extends { type: 'object' }
+            ? Branch extends { required: readonly string[] }
+              ? BuildObject<BP, Branch['required'], Defs, Depth>
+              : BuildObject<BP, [], Defs, Depth>
+            : // Base is not object - try to infer branch directly
+              Infer<Branch, Defs, Depth>
+        : // Branch has no properties - use base type
+          InferType<Base, Defs, Depth>;
 
 // Merge base object properties with branch properties
 type InferMergedObject<
@@ -221,7 +234,8 @@ type InferMergedObject<
       Defs,
       Depth
     >;
-  } & { // Optional properties from merged set
+  } & {
+    // Optional properties from merged set
     [K in keyof (BaseP & BranchP) as K extends R[number] ? never : K]?: Infer<
       (BaseP & BranchP)[K],
       Defs,
@@ -230,7 +244,7 @@ type InferMergedObject<
   } & { [K in R[number] as K extends keyof (BaseP & BranchP) ? never : K]: unknown } // Required properties NOT in merged set get type `unknown`
 >;
 
-// Handle allOf (intersection)
+// Handle allOf (intersection) - just the array items
 type InferAllOf<
   T extends readonly JsonSchema[],
   Defs,
@@ -240,6 +254,56 @@ type InferAllOf<
   : T extends readonly [infer Head extends JsonSchema, ...infer Tail extends readonly JsonSchema[]]
     ? Infer<Head, Defs, Depth> & InferAllOf<Tail, Defs, Depth>
     : unknown;
+
+// Handle allOf with base schema - include base type in intersection
+type InferAllOfWithBase<S extends JsonSchemaBase, Defs, Depth extends unknown[]> = S extends {
+  allOf: readonly JsonSchema[];
+}
+  ? S extends { type: JsonSchemaType | JsonSchemaType[] }
+    ? InferType<S, Defs, Depth> & InferAllOf<S['allOf'], Defs, Depth>
+    : InferAllOf<S['allOf'], Defs, Depth>
+  : unknown;
+
+// Handle anyOf - if base has type, constrain the result
+type InferAnyOf<S extends JsonSchemaBase, Defs, Depth extends unknown[]> = S extends {
+  anyOf: readonly (infer U extends JsonSchema)[];
+}
+  ? S extends { type: JsonSchemaType | JsonSchemaType[] }
+    ? // Base has a type - the anyOf branches must also satisfy it
+      // If branch has type, use it; otherwise inherit from base
+      InferAnyOfBranches<S['anyOf'], S, Defs, Depth>
+    : // No base type - just union the branches
+      Infer<U, Defs, Depth>
+  : unknown;
+
+// Handle oneOf - same logic as anyOf for types
+type InferOneOf<S extends JsonSchemaBase, Defs, Depth extends unknown[]> = S extends {
+  oneOf: readonly (infer U extends JsonSchema)[];
+}
+  ? S extends { type: JsonSchemaType | JsonSchemaType[] }
+    ? InferAnyOfBranches<S['oneOf'], S, Defs, Depth>
+    : Infer<U, Defs, Depth>
+  : unknown;
+
+// Infer anyOf/oneOf branches, inheriting base type when branch has no type
+type InferAnyOfBranches<
+  Branches extends readonly JsonSchema[],
+  Base extends JsonSchemaBase,
+  Defs,
+  Depth extends unknown[],
+> = Branches extends readonly (infer B extends JsonSchema)[]
+  ? B extends { type: JsonSchemaType | JsonSchemaType[] }
+    ? // Branch has its own type - use it directly
+      Infer<B, Defs, Depth>
+    : B extends { const: infer C }
+      ? // Branch has const - use it directly
+        C
+      : B extends { enum: readonly (infer E)[] }
+        ? // Branch has enum - use it directly
+          E
+        : // Branch has no type/const/enum - inherit from base
+          InferType<Base, Defs, Depth>
+  : unknown;
 
 // Handle $ref resolution with depth tracking to prevent infinite recursion
 type InferRef<R extends string, Defs, Depth extends unknown[]> = R extends `#/$defs/${infer Name}`
