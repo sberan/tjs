@@ -3,8 +3,8 @@
 ## Summary
 
 - **Total Tests**: 1271
-- **Passed**: 1218 (95.8%)
-- **Failed**: 53
+- **Passed**: 1231 (96.9%)
+- **Failed**: 40
 - **Skipped**: 0
 
 ## By Keyword
@@ -53,8 +53,8 @@
 | refRemote | 31 | 0 | 0 | 100% |
 | required | 16 | 0 | 0 | 100% |
 | type | 80 | 0 | 0 | 100% |
-| unevaluatedItems | 59 | 12 | 0 | 83% |
-| unevaluatedProperties | 100 | 25 | 0 | 80% |
+| unevaluatedItems | 61 | 10 | 0 | 86% |
+| unevaluatedProperties | 111 | 14 | 0 | 89% |
 | uniqueItems | 69 | 0 | 0 | 100% |
 | vocabulary | 4 | 1 | 0 | 80% |
 
@@ -110,9 +110,9 @@
 
 ### dynamicRef / strict-tree schema, guards against misspelled properties
 
-**Test**: instance with correct field
-**Expected**: valid
-**Actual**: invalid
+**Test**: instance with misspelled field
+**Expected**: invalid
+**Actual**: valid
 
 ### dynamicRef / tests for implementation dynamic anchor and reference link
 
@@ -173,18 +173,6 @@
 **Test**: when if matches and it has unevaluated items
 **Expected**: invalid
 **Actual**: valid
-
-### unevaluatedItems / unevaluatedItems with $ref
-
-**Test**: with no unevaluated items
-**Expected**: valid
-**Actual**: invalid
-
-### unevaluatedItems / unevaluatedItems before $ref
-
-**Test**: with no unevaluated items
-**Expected**: valid
-**Actual**: invalid
 
 ### unevaluatedItems / unevaluatedItems with $dynamicRef
 
@@ -264,18 +252,6 @@
 **Expected**: valid
 **Actual**: invalid
 
-### unevaluatedProperties / unevaluatedProperties with $ref
-
-**Test**: with no unevaluated properties
-**Expected**: valid
-**Actual**: invalid
-
-### unevaluatedProperties / unevaluatedProperties before $ref
-
-**Test**: with no unevaluated properties
-**Expected**: valid
-**Actual**: invalid
-
 ### unevaluatedProperties / unevaluatedProperties with $dynamicRef
 
 **Test**: with no unevaluated properties
@@ -294,60 +270,6 @@
 **Expected**: valid
 **Actual**: invalid
 
-### unevaluatedProperties / unevaluatedProperties + ref inside allOf / oneOf
-
-**Test**: a and x are valid
-**Expected**: valid
-**Actual**: invalid
-
-### unevaluatedProperties / unevaluatedProperties + ref inside allOf / oneOf
-
-**Test**: a and y are valid
-**Expected**: valid
-**Actual**: invalid
-
-### unevaluatedProperties / unevaluatedProperties + ref inside allOf / oneOf
-
-**Test**: a and b and x are valid
-**Expected**: valid
-**Actual**: invalid
-
-### unevaluatedProperties / unevaluatedProperties + ref inside allOf / oneOf
-
-**Test**: a and b and y are valid
-**Expected**: valid
-**Actual**: invalid
-
-### unevaluatedProperties / dynamic evalation inside nested refs
-
-**Test**: b is valid
-**Expected**: valid
-**Actual**: invalid
-
-### unevaluatedProperties / dynamic evalation inside nested refs
-
-**Test**: c is valid
-**Expected**: valid
-**Actual**: invalid
-
-### unevaluatedProperties / dynamic evalation inside nested refs
-
-**Test**: d is valid
-**Expected**: valid
-**Actual**: invalid
-
-### unevaluatedProperties / dynamic evalation inside nested refs
-
-**Test**: xx is valid
-**Expected**: valid
-**Actual**: invalid
-
-### unevaluatedProperties / dynamic evalation inside nested refs
-
-**Test**: xx + foox is valid
-**Expected**: valid
-**Actual**: invalid
-
 ### unevaluatedProperties / dynamic evalation inside nested refs
 
 **Test**: all is valid
@@ -360,4 +282,20 @@
 **Expected**: valid
 **Actual**: invalid
 
-... and 3 more failures
+### unevaluatedProperties / unevaluatedProperties can see annotations from if without then and else
+
+**Test**: valid in case if is evaluated
+**Expected**: valid
+**Actual**: invalid
+
+### unevaluatedProperties / dependentSchemas with unevaluatedProperties
+
+**Test**: unevaluatedProperties sees bar when foo2 is present
+**Expected**: valid
+**Actual**: invalid
+
+### vocabulary / schema that uses custom metaschema with with no validation vocabulary
+
+**Test**: no validation: invalid number, but it still validates
+**Expected**: valid
+**Actual**: invalid
