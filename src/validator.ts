@@ -32,6 +32,9 @@ interface ValidationResult {
   evaluatedItems?: Set<number>;
 }
 
+// Vocabulary URI for validation vocabulary (draft 2020-12)
+const VOCAB_VALIDATION = 'https://json-schema.org/draft/2020-12/vocab/validation';
+
 export class Validator<T> {
   readonly #schema: JsonSchema;
   readonly #anchors: Map<string, JsonSchema>;
@@ -39,6 +42,8 @@ export class Validator<T> {
   readonly #schemaToBaseUri: Map<JsonSchema, string>;
   readonly #dynamicAnchors: Map<string, JsonSchema[]>; // anchor name -> all schemas with that $dynamicAnchor
   readonly #options: { formatAssertion: boolean };
+  readonly #metaschemaVocabularies: Map<string, Set<string>>; // metaschema URI -> set of enabled vocabulary URIs
+  readonly #enabledVocabularies: Set<string> | null; // vocabularies enabled for this validator's root schema
 
   // Phantom type for type inference
   declare readonly type: T;
@@ -52,6 +57,7 @@ export class Validator<T> {
     this.#options = {
       formatAssertion: options.formatAssertion ?? true,
     };
+    this.#metaschemaVocabularies = new Map();
 
     // Load remote schemas first (so they're available for $ref resolution)
     if (options.remotes) {
@@ -64,6 +70,8 @@ export class Validator<T> {
         // Always register by the URI key (for schemas without $id)
         if (typeof remoteSchema === 'object' && remoteSchema !== null) {
           this.#schemasById.set(uri, remoteSchema);
+          // Extract vocabulary declarations from metaschemas
+          this.#extractVocabularies(remoteSchema, schemaId);
         }
         this.#collectAnchors(remoteSchema, schemaId);
       }
@@ -73,6 +81,37 @@ export class Validator<T> {
     const rootBaseUri =
       typeof schema === 'object' && schema !== null && schema.$id ? schema.$id : '';
     this.#collectAnchors(schema, rootBaseUri);
+
+    // Determine enabled vocabularies based on root schema's $schema
+    if (typeof schema === 'object' && schema !== null && schema.$schema) {
+      const vocabs = this.#metaschemaVocabularies.get(schema.$schema);
+      this.#enabledVocabularies = vocabs ?? null;
+    } else {
+      this.#enabledVocabularies = null; // null means all vocabularies enabled (default behavior)
+    }
+  }
+
+  #extractVocabularies(schema: JsonSchema, schemaId: string): void {
+    if (typeof schema !== 'object' || schema === null) return;
+
+    // If this schema has $vocabulary, it's a metaschema declaring which vocabularies it supports
+    if (schema.$vocabulary && typeof schema.$vocabulary === 'object') {
+      const enabledVocabs = new Set<string>();
+      for (const [vocabUri, _required] of Object.entries(schema.$vocabulary)) {
+        // Include vocabulary if it's required (true) or optional (false)
+        // We support all standard vocabularies, so we include both
+        enabledVocabs.add(vocabUri);
+      }
+      this.#metaschemaVocabularies.set(schemaId, enabledVocabs);
+    }
+  }
+
+  #isVocabularyEnabled(vocabularyUri: string): boolean {
+    // If no custom metaschema with $vocabulary, all vocabularies are enabled
+    if (this.#enabledVocabularies === null) return true;
+
+    // Check if the requested vocabulary is in the enabled set
+    return this.#enabledVocabularies.has(vocabularyUri);
   }
 
   #collectAnchors(schema: JsonSchema, baseUri: string): void {
@@ -379,8 +418,11 @@ export class Validator<T> {
       }
     }
 
-    // Handle const
-    if ('const' in schema) {
+    // Check if validation vocabulary is enabled
+    const validationEnabled = this.#isVocabularyEnabled(VOCAB_VALIDATION);
+
+    // Handle const (validation vocabulary)
+    if (validationEnabled && 'const' in schema) {
       if (!this.#deepEqual(data, schema.const)) {
         errors.push({
           path,
@@ -392,8 +434,8 @@ export class Validator<T> {
       return { errors };
     }
 
-    // Handle enum
-    if (schema.enum) {
+    // Handle enum (validation vocabulary)
+    if (validationEnabled && schema.enum) {
       if (!schema.enum.some((v) => this.#deepEqual(data, v))) {
         errors.push({
           path,
@@ -569,8 +611,8 @@ export class Validator<T> {
       // Continue to validate base schema keywords below (don't return early)
     }
 
-    // Handle type
-    if (schema.type) {
+    // Handle type (validation vocabulary)
+    if (validationEnabled && schema.type) {
       const types = Array.isArray(schema.type) ? schema.type : [schema.type];
       const typeValid = types.some((t) => this.#checkType(data, t));
       if (!typeValid) {
@@ -584,13 +626,23 @@ export class Validator<T> {
       }
     }
 
-    // Type-specific validations
+    // Type-specific validations (only if validation vocabulary is enabled)
     if (typeof data === 'string') {
-      errors.push(...this.#validateString(data, schema, path));
+      if (validationEnabled) {
+        errors.push(...this.#validateString(data, schema, path));
+      }
     } else if (typeof data === 'number') {
-      errors.push(...this.#validateNumber(data, schema, path));
+      if (validationEnabled) {
+        errors.push(...this.#validateNumber(data, schema, path));
+      }
     } else if (Array.isArray(data)) {
-      const arrayResult = this.#validateArray(data, schema, path, newDynamicScope);
+      const arrayResult = this.#validateArray(
+        data,
+        schema,
+        path,
+        newDynamicScope,
+        validationEnabled
+      );
       errors.push(...arrayResult.errors);
       // Merge evaluated items from array validation with those from composition
       if (arrayResult.evaluatedItems) {
@@ -604,7 +656,8 @@ export class Validator<T> {
         data as Record<string, unknown>,
         schema,
         path,
-        newDynamicScope
+        newDynamicScope,
+        validationEnabled
       );
       errors.push(...objectResult.errors);
       // Merge evaluated properties from object validation with those from composition
@@ -847,40 +900,45 @@ export class Validator<T> {
     data: unknown[],
     schema: JsonSchemaBase,
     path: string,
-    dynamicScope: JsonSchema[]
+    dynamicScope: JsonSchema[],
+    validationEnabled: boolean = true
   ): ValidationResult {
     const errors: ValidationError[] = [];
     const evaluatedItems = new Set<number>();
 
-    if (schema.minItems !== undefined && data.length < schema.minItems) {
-      errors.push({
-        path,
-        message: `Array must have at least ${schema.minItems} items`,
-        keyword: 'minItems',
-        value: data,
-      });
-    }
-    if (schema.maxItems !== undefined && data.length > schema.maxItems) {
-      errors.push({
-        path,
-        message: `Array must have at most ${schema.maxItems} items`,
-        keyword: 'maxItems',
-        value: data,
-      });
-    }
-    if (schema.uniqueItems && !this.#areItemsUnique(data)) {
-      errors.push({
-        path,
-        message: 'Array items must be unique',
-        keyword: 'uniqueItems',
-        value: data,
-      });
+    // Validation vocabulary keywords (minItems, maxItems, uniqueItems)
+    if (validationEnabled) {
+      if (schema.minItems !== undefined && data.length < schema.minItems) {
+        errors.push({
+          path,
+          message: `Array must have at least ${schema.minItems} items`,
+          keyword: 'minItems',
+          value: data,
+        });
+      }
+      if (schema.maxItems !== undefined && data.length > schema.maxItems) {
+        errors.push({
+          path,
+          message: `Array must have at most ${schema.maxItems} items`,
+          keyword: 'maxItems',
+          value: data,
+        });
+      }
+      if (schema.uniqueItems && !this.#areItemsUnique(data)) {
+        errors.push({
+          path,
+          message: 'Array items must be unique',
+          keyword: 'uniqueItems',
+          value: data,
+        });
+      }
     }
 
-    // Validate contains (check !== undefined to handle contains: false)
+    // Validate contains (applicator vocabulary - always runs)
+    // But minContains/maxContains are validation vocabulary
     if (schema.contains !== undefined) {
-      const minContains = schema.minContains ?? 1;
-      const maxContains = schema.maxContains ?? Infinity;
+      const minContains = validationEnabled ? (schema.minContains ?? 1) : 1;
+      const maxContains = validationEnabled ? (schema.maxContains ?? Infinity) : Infinity;
 
       // Count matching items
       let matchCount = 0;
@@ -895,21 +953,24 @@ export class Validator<T> {
       }
 
       // minContains: 0 makes contains always pass, but maxContains still applies
-      if (minContains > 0 && matchCount < minContains) {
-        errors.push({
-          path,
-          message: `Array must contain at least ${minContains} item(s) matching the contains schema`,
-          keyword: 'contains',
-          value: matchCount,
-        });
-      }
-      if (matchCount > maxContains) {
-        errors.push({
-          path,
-          message: `Array must contain at most ${maxContains} item(s) matching the contains schema`,
-          keyword: 'maxContains',
-          value: matchCount,
-        });
+      // Only check if validation vocabulary is enabled
+      if (validationEnabled) {
+        if (minContains > 0 && matchCount < minContains) {
+          errors.push({
+            path,
+            message: `Array must contain at least ${minContains} item(s) matching the contains schema`,
+            keyword: 'contains',
+            value: matchCount,
+          });
+        }
+        if (matchCount > maxContains) {
+          errors.push({
+            path,
+            message: `Array must contain at most ${maxContains} item(s) matching the contains schema`,
+            keyword: 'maxContains',
+            value: matchCount,
+          });
+        }
       }
     }
 
@@ -977,7 +1038,8 @@ export class Validator<T> {
     data: Record<string, unknown>,
     schema: JsonSchemaBase,
     path: string,
-    dynamicScope: JsonSchema[]
+    dynamicScope: JsonSchema[],
+    validationEnabled: boolean = true
   ): ValidationResult {
     const errors: ValidationError[] = [];
     const properties = schema.properties ?? {};
@@ -985,47 +1047,50 @@ export class Validator<T> {
     const keys = Object.keys(data);
     const evaluatedProperties = new Set<string>();
 
-    // Check minProperties/maxProperties
-    if (schema.minProperties !== undefined && keys.length < schema.minProperties) {
-      errors.push({
-        path,
-        message: `Object must have at least ${schema.minProperties} properties`,
-        keyword: 'minProperties',
-        value: keys.length,
-      });
-    }
-    if (schema.maxProperties !== undefined && keys.length > schema.maxProperties) {
-      errors.push({
-        path,
-        message: `Object must have at most ${schema.maxProperties} properties`,
-        keyword: 'maxProperties',
-        value: keys.length,
-      });
-    }
-
-    // Check required properties
-    // Use Object.hasOwn to avoid prototype pollution (e.g., __proto__, toString, constructor)
-    for (const key of required) {
-      if (!Object.hasOwn(data, key)) {
+    // Validation vocabulary keywords (minProperties, maxProperties, required, dependentRequired)
+    if (validationEnabled) {
+      // Check minProperties/maxProperties
+      if (schema.minProperties !== undefined && keys.length < schema.minProperties) {
         errors.push({
-          path: path ? `${path}.${key}` : key,
-          message: 'Required property is missing',
-          keyword: 'required',
+          path,
+          message: `Object must have at least ${schema.minProperties} properties`,
+          keyword: 'minProperties',
+          value: keys.length,
         });
       }
-    }
+      if (schema.maxProperties !== undefined && keys.length > schema.maxProperties) {
+        errors.push({
+          path,
+          message: `Object must have at most ${schema.maxProperties} properties`,
+          keyword: 'maxProperties',
+          value: keys.length,
+        });
+      }
 
-    // Check dependentRequired
-    if (schema.dependentRequired) {
-      for (const [trigger, dependents] of Object.entries(schema.dependentRequired)) {
-        if (Object.hasOwn(data, trigger)) {
-          for (const dependent of dependents) {
-            if (!Object.hasOwn(data, dependent)) {
-              errors.push({
-                path: path ? `${path}.${dependent}` : dependent,
-                message: `Property "${dependent}" is required when "${trigger}" is present`,
-                keyword: 'dependentRequired',
-              });
+      // Check required properties
+      // Use Object.hasOwn to avoid prototype pollution (e.g., __proto__, toString, constructor)
+      for (const key of required) {
+        if (!Object.hasOwn(data, key)) {
+          errors.push({
+            path: path ? `${path}.${key}` : key,
+            message: 'Required property is missing',
+            keyword: 'required',
+          });
+        }
+      }
+
+      // Check dependentRequired
+      if (schema.dependentRequired) {
+        for (const [trigger, dependents] of Object.entries(schema.dependentRequired)) {
+          if (Object.hasOwn(data, trigger)) {
+            for (const dependent of dependents) {
+              if (!Object.hasOwn(data, dependent)) {
+                errors.push({
+                  path: path ? `${path}.${dependent}` : dependent,
+                  message: `Property "${dependent}" is required when "${trigger}" is present`,
+                  keyword: 'dependentRequired',
+                });
+              }
             }
           }
         }

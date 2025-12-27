@@ -72,6 +72,8 @@ export interface JsonSchemaBase {
   writeOnly?: boolean;
   $comment?: string;
   $id?: string;
+  $schema?: string;
+  $vocabulary?: Record<string, boolean>;
 }
 
 // JsonSchema can be a boolean or an object
