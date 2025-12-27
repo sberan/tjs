@@ -155,13 +155,29 @@ export class Validator<T> {
     let evaluatedProperties: Set<string> | undefined;
     let evaluatedItems: Set<number> | undefined;
 
-    // Handle $ref
+    // Handle $ref - in draft 2020-12, $ref applies alongside sibling keywords
     if (schema.$ref) {
       const refSchema = this.#resolveRef(schema.$ref);
       if (refSchema) {
-        return this.#validate(data, refSchema, path);
+        const refResult = this.#validate(data, refSchema, path);
+        errors.push(...refResult.errors);
+        // Merge evaluated properties/items from $ref
+        if (refResult.evaluatedProperties) {
+          evaluatedProperties = evaluatedProperties ?? new Set();
+          for (const key of refResult.evaluatedProperties) {
+            evaluatedProperties.add(key);
+          }
+        }
+        if (refResult.evaluatedItems) {
+          evaluatedItems = evaluatedItems ?? new Set();
+          for (const idx of refResult.evaluatedItems) {
+            evaluatedItems.add(idx);
+          }
+        }
+        // Continue to validate sibling keywords (don't return early)
+      } else {
+        errors.push({ path, message: `Unresolved $ref: ${schema.$ref}`, keyword: '$ref' });
       }
-      return { errors: [{ path, message: `Unresolved $ref: ${schema.$ref}`, keyword: '$ref' }] };
     }
 
     // Handle const
@@ -190,14 +206,14 @@ export class Validator<T> {
       return { errors };
     }
 
-    // Handle anyOf - merge evaluated props from the first valid subschema
+    // Handle anyOf - merge evaluated props from ALL valid subschemas
     if (schema.anyOf) {
       let anyValid = false;
       for (const s of schema.anyOf) {
         const result = this.#validate(data, s, path);
         if (result.errors.length === 0) {
           anyValid = true;
-          // Merge evaluated properties from matching subschema
+          // Merge evaluated properties from ALL matching subschemas (don't break)
           if (result.evaluatedProperties) {
             evaluatedProperties = evaluatedProperties ?? new Set();
             for (const key of result.evaluatedProperties) {
@@ -210,7 +226,7 @@ export class Validator<T> {
               evaluatedItems.add(idx);
             }
           }
-          break;
+          // Don't break - continue to collect annotations from other valid subschemas
         }
       }
       if (!anyValid) {
@@ -609,32 +625,31 @@ export class Validator<T> {
       const minContains = schema.minContains ?? 1;
       const maxContains = schema.maxContains ?? Infinity;
 
-      // minContains: 0 disables contains validation entirely
-      if (minContains > 0) {
-        let matchCount = 0;
-        for (let i = 0; i < data.length; i++) {
-          if (this.#validate(data[i], schema.contains, `${path}[${i}]`).errors.length === 0) {
-            matchCount++;
-            evaluatedItems.add(i);
-          }
+      // Count matching items
+      let matchCount = 0;
+      for (let i = 0; i < data.length; i++) {
+        if (this.#validate(data[i], schema.contains, `${path}[${i}]`).errors.length === 0) {
+          matchCount++;
+          evaluatedItems.add(i);
         }
+      }
 
-        if (matchCount < minContains) {
-          errors.push({
-            path,
-            message: `Array must contain at least ${minContains} item(s) matching the contains schema`,
-            keyword: 'contains',
-            value: matchCount,
-          });
-        }
-        if (matchCount > maxContains) {
-          errors.push({
-            path,
-            message: `Array must contain at most ${maxContains} item(s) matching the contains schema`,
-            keyword: 'maxContains',
-            value: matchCount,
-          });
-        }
+      // minContains: 0 makes contains always pass, but maxContains still applies
+      if (minContains > 0 && matchCount < minContains) {
+        errors.push({
+          path,
+          message: `Array must contain at least ${minContains} item(s) matching the contains schema`,
+          keyword: 'contains',
+          value: matchCount,
+        });
+      }
+      if (matchCount > maxContains) {
+        errors.push({
+          path,
+          message: `Array must contain at most ${maxContains} item(s) matching the contains schema`,
+          keyword: 'maxContains',
+          value: matchCount,
+        });
       }
     }
 
@@ -658,6 +673,11 @@ export class Validator<T> {
             value: data,
           });
         }
+      } else if (schema.items === true) {
+        // items: true means all remaining items are valid and evaluated
+        for (let i = restStart; i < data.length; i++) {
+          evaluatedItems.add(i);
+        }
       } else if (typeof schema.items === 'object') {
         for (let i = restStart; i < data.length; i++) {
           evaluatedItems.add(i);
@@ -668,6 +688,11 @@ export class Validator<T> {
     } else if (schema.items === false) {
       if (data.length > 0) {
         errors.push({ path, message: 'Array must be empty', keyword: 'items', value: data });
+      }
+    } else if (schema.items === true) {
+      // items: true means all items are valid and evaluated
+      for (let i = 0; i < data.length; i++) {
+        evaluatedItems.add(i);
       }
     } else if (typeof schema.items === 'object') {
       for (let i = 0; i < data.length; i++) {
@@ -713,8 +738,9 @@ export class Validator<T> {
     }
 
     // Check required properties
+    // Use Object.hasOwn to avoid prototype pollution (e.g., __proto__, toString, constructor)
     for (const key of required) {
-      if (!(key in data)) {
+      if (!Object.hasOwn(data, key)) {
         errors.push({
           path: path ? `${path}.${key}` : key,
           message: 'Required property is missing',
@@ -726,9 +752,9 @@ export class Validator<T> {
     // Check dependentRequired
     if (schema.dependentRequired) {
       for (const [trigger, dependents] of Object.entries(schema.dependentRequired)) {
-        if (trigger in data) {
+        if (Object.hasOwn(data, trigger)) {
           for (const dependent of dependents) {
-            if (!(dependent in data)) {
+            if (!Object.hasOwn(data, dependent)) {
               errors.push({
                 path: path ? `${path}.${dependent}` : dependent,
                 message: `Property "${dependent}" is required when "${trigger}" is present`,
@@ -741,16 +767,19 @@ export class Validator<T> {
     }
 
     // Check dependentSchemas - apply additional schema constraints when trigger property exists
+    // Note: Properties from dependentSchemas are NOT visible to additionalProperties,
+    // but ARE visible to unevaluatedProperties. We track them separately.
+    const evaluatedByApplicators = new Set<string>();
     if (schema.dependentSchemas) {
       for (const [trigger, dependentSchema] of Object.entries(schema.dependentSchemas)) {
-        if (trigger in data) {
+        if (Object.hasOwn(data, trigger)) {
           // The dependent schema applies to the entire object, not just the trigger
           const result = this.#validate(data, dependentSchema, path);
           errors.push(...result.errors);
-          // Merge evaluated properties from dependent schema
+          // Track evaluated properties for unevaluatedProperties (not additionalProperties)
           if (result.evaluatedProperties) {
             for (const key of result.evaluatedProperties) {
-              evaluatedProperties.add(key);
+              evaluatedByApplicators.add(key);
             }
           }
         }
@@ -774,7 +803,7 @@ export class Validator<T> {
 
     // Validate known properties and mark them as evaluated
     for (const [key, propSchema] of Object.entries(properties)) {
-      if (key in data) {
+      if (Object.hasOwn(data, key)) {
         evaluatedProperties.add(key);
         const result = this.#validate(data[key], propSchema, path ? `${path}.${key}` : key);
         errors.push(...result.errors);
@@ -806,6 +835,9 @@ export class Validator<T> {
               keyword: 'additionalProperties',
               value,
             });
+          } else if (schema.additionalProperties === true) {
+            // additionalProperties: true means all additional properties are valid and evaluated
+            evaluatedProperties.add(key);
           } else if (typeof schema.additionalProperties === 'object') {
             evaluatedProperties.add(key);
             const result = this.#validate(
@@ -821,6 +853,12 @@ export class Validator<T> {
 
     // Note: unevaluatedProperties is now checked in #validate after all composition
     // keywords are processed, so we have access to evaluated props from allOf/anyOf/etc.
+
+    // Merge applicator-evaluated properties into result for unevaluatedProperties
+    // (but after additionalProperties has already been checked)
+    for (const key of evaluatedByApplicators) {
+      evaluatedProperties.add(key);
+    }
 
     return { errors, evaluatedProperties };
   }

@@ -3,15 +3,15 @@
 ## Summary
 
 - **Total Tests**: 1271
-- **Passed**: 1129 (88.8%)
-- **Failed**: 62
+- **Passed**: 1150 (90.5%)
+- **Failed**: 41
 - **Skipped**: 80
 
 ## By Keyword
 
 | Keyword | Passed | Failed | Skipped | Rate |
 |---------|--------|--------|---------|------|
-| additionalProperties | 20 | 1 | 0 | 95% |
+| additionalProperties | 21 | 0 | 0 | 100% |
 | allOf | 30 | 0 | 0 | 100% |
 | anchor | 5 | 3 | 0 | 63% |
 | anyOf | 18 | 0 | 0 | 100% |
@@ -36,35 +36,29 @@
 | maxLength | 6 | 1 | 0 | 86% |
 | maxProperties | 10 | 0 | 0 | 100% |
 | maximum | 8 | 0 | 0 | 100% |
-| minContains | 27 | 1 | 0 | 96% |
+| minContains | 28 | 0 | 0 | 100% |
 | minItems | 6 | 0 | 0 | 100% |
 | minLength | 6 | 1 | 0 | 86% |
 | minProperties | 8 | 0 | 0 | 100% |
 | minimum | 11 | 0 | 0 | 100% |
 | multipleOf | 10 | 0 | 0 | 100% |
-| not | 39 | 1 | 0 | 98% |
+| not | 40 | 0 | 0 | 100% |
 | oneOf | 27 | 0 | 0 | 100% |
 | pattern | 9 | 0 | 0 | 100% |
 | patternProperties | 23 | 0 | 0 | 100% |
 | prefixItems | 11 | 0 | 0 | 100% |
-| properties | 27 | 1 | 0 | 96% |
+| properties | 28 | 0 | 0 | 100% |
 | propertyNames | 20 | 0 | 0 | 100% |
-| ref | 61 | 18 | 0 | 77% |
+| ref | 62 | 17 | 0 | 78% |
 | refRemote | 0 | 0 | 31 | N/A |
-| required | 12 | 4 | 0 | 75% |
+| required | 16 | 0 | 0 | 100% |
 | type | 80 | 0 | 0 | 100% |
-| unevaluatedItems | 59 | 12 | 0 | 83% |
-| unevaluatedProperties | 109 | 16 | 0 | 87% |
+| unevaluatedItems | 65 | 6 | 0 | 92% |
+| unevaluatedProperties | 115 | 10 | 0 | 92% |
 | uniqueItems | 67 | 2 | 0 | 97% |
 | vocabulary | 0 | 0 | 5 | N/A |
 
 ## Failures
-
-### additionalProperties / dependentSchemas with additionalProperties
-
-**Test**: additionalProperties can't see bar even when foo2 is present
-**Expected**: invalid
-**Actual**: valid
 
 ### anchor / Location-independent identifier with absolute URI
 
@@ -96,33 +90,9 @@
 **Expected**: valid
 **Actual**: invalid
 
-### minContains / minContains = 0 with maxContains
-
-**Test**: too many
-**Expected**: invalid
-**Actual**: valid
-
 ### minLength / minLength validation
 
 **Test**: one grapheme is not long enough
-**Expected**: invalid
-**Actual**: valid
-
-### not / collect annotations inside a 'not', even if collection is disabled
-
-**Test**: annotations are still collected inside a 'not'
-**Expected**: invalid
-**Actual**: valid
-
-### properties / properties whose names are Javascript object property names
-
-**Test**: none of the properties mentioned
-**Expected**: valid
-**Actual**: invalid
-
-### ref / ref applies alongside sibling keywords
-
-**Test**: ref valid, maxItems invalid
 **Expected**: invalid
 **Actual**: valid
 
@@ -228,65 +198,11 @@
 **Expected**: valid
 **Actual**: invalid
 
-### required / required properties whose names are Javascript object property names
-
-**Test**: none of the properties mentioned
-**Expected**: invalid
-**Actual**: valid
-
-### required / required properties whose names are Javascript object property names
-
-**Test**: __proto__ present
-**Expected**: invalid
-**Actual**: valid
-
-### required / required properties whose names are Javascript object property names
-
-**Test**: toString present
-**Expected**: invalid
-**Actual**: valid
-
-### required / required properties whose names are Javascript object property names
-
-**Test**: constructor present
-**Expected**: invalid
-**Actual**: valid
-
-### unevaluatedItems / unevaluatedItems with items and prefixItems
-
-**Test**: unevaluatedItems doesn't apply
-**Expected**: valid
-**Actual**: invalid
-
-### unevaluatedItems / unevaluatedItems with nested prefixItems and items
-
-**Test**: with additional items
-**Expected**: valid
-**Actual**: invalid
-
 ### unevaluatedItems / unevaluatedItems with nested unevaluatedItems
 
 **Test**: with additional items
 **Expected**: valid
 **Actual**: invalid
-
-### unevaluatedItems / unevaluatedItems with anyOf
-
-**Test**: when two schemas match and has no unevaluated items
-**Expected**: valid
-**Actual**: invalid
-
-### unevaluatedItems / unevaluatedItems with $ref
-
-**Test**: with unevaluated items
-**Expected**: invalid
-**Actual**: valid
-
-### unevaluatedItems / unevaluatedItems before $ref
-
-**Test**: with unevaluated items
-**Expected**: invalid
-**Actual**: valid
 
 ### unevaluatedItems / unevaluatedItems with $dynamicRef
 
@@ -312,33 +228,9 @@
 **Expected**: valid
 **Actual**: invalid
 
-### unevaluatedItems / unevaluatedItems with minContains = 0
-
-**Test**: all items evaluated by contains
-**Expected**: valid
-**Actual**: invalid
-
 ### unevaluatedItems / unevaluatedItems can see annotations from if without then and else
 
 **Test**: valid in case if is evaluated
-**Expected**: valid
-**Actual**: invalid
-
-### unevaluatedProperties / unevaluatedProperties with adjacent bool additionalProperties
-
-**Test**: with no additional properties
-**Expected**: valid
-**Actual**: invalid
-
-### unevaluatedProperties / unevaluatedProperties with adjacent bool additionalProperties
-
-**Test**: with additional properties
-**Expected**: valid
-**Actual**: invalid
-
-### unevaluatedProperties / unevaluatedProperties with nested additionalProperties
-
-**Test**: with additional properties
 **Expected**: valid
 **Actual**: invalid
 
@@ -348,16 +240,68 @@
 **Expected**: valid
 **Actual**: invalid
 
-### unevaluatedProperties / unevaluatedProperties with anyOf
-
-**Test**: when two match and has no unevaluated properties
-**Expected**: valid
-**Actual**: invalid
-
 ### unevaluatedProperties / unevaluatedProperties with if/then/else
 
 **Test**: when if is true and has no unevaluated properties
 **Expected**: valid
 **Actual**: invalid
 
-... and 12 more failures
+### unevaluatedProperties / unevaluatedProperties with if/then/else, then not defined
+
+**Test**: when if is true and has no unevaluated properties
+**Expected**: valid
+**Actual**: invalid
+
+### unevaluatedProperties / unevaluatedProperties with if/then/else, else not defined
+
+**Test**: when if is true and has no unevaluated properties
+**Expected**: valid
+**Actual**: invalid
+
+### unevaluatedProperties / unevaluatedProperties with $dynamicRef
+
+**Test**: with no unevaluated properties
+**Expected**: valid
+**Actual**: invalid
+
+### unevaluatedProperties / nested unevaluatedProperties, outer false, inner true, properties outside
+
+**Test**: with nested unevaluated properties
+**Expected**: valid
+**Actual**: invalid
+
+### unevaluatedProperties / nested unevaluatedProperties, outer false, inner true, properties inside
+
+**Test**: with nested unevaluated properties
+**Expected**: valid
+**Actual**: invalid
+
+### unevaluatedProperties / dynamic evalation inside nested refs
+
+**Test**: all is valid
+**Expected**: valid
+**Actual**: invalid
+
+### unevaluatedProperties / dynamic evalation inside nested refs
+
+**Test**: all + foo is valid
+**Expected**: valid
+**Actual**: invalid
+
+### unevaluatedProperties / unevaluatedProperties can see annotations from if without then and else
+
+**Test**: valid in case if is evaluated
+**Expected**: valid
+**Actual**: invalid
+
+### uniqueItems / uniqueItems validation
+
+**Test**: property order of array of objects is ignored
+**Expected**: invalid
+**Actual**: valid
+
+### uniqueItems / uniqueItems validation
+
+**Test**: objects are non-unique despite key order
+**Expected**: invalid
+**Actual**: valid
