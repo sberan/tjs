@@ -225,3 +225,83 @@ const IfThenWithBaseType = schema({
   then: { type: 'number' },
 });
 type _IfThenWithBaseType = Expect<Equal<typeof IfThenWithBaseType.type, number>>;
+
+// =============================================================================
+// MEDIUM PRIORITY FIXES - Type inference holes
+// =============================================================================
+
+// FIX #3: Circular $ref now returns `unknown` instead of causing TS recursion error
+// Previously: TypeScript would crash with "Type instantiation is excessively deep"
+// Now: Returns `unknown` after hitting depth limit of 15
+const CircularRef = schema({
+  $defs: {
+    Node: {
+      type: 'object',
+      properties: {
+        value: { type: 'string' },
+        next: { $ref: '#/$defs/Node' },
+      },
+    },
+  },
+  $ref: '#/$defs/Node',
+});
+// The type should not cause a compilation error
+// After depth limit, circular refs resolve to `unknown`
+type CircularRefType = typeof CircularRef.type;
+// We can at least verify it compiles and has some structure
+const _circularTest: CircularRefType = { value: 'test' };
+
+// Self-referential definition (direct cycle)
+const DirectCycle = schema({
+  $defs: {
+    Self: { $ref: '#/$defs/Self' },
+  },
+  $ref: '#/$defs/Self',
+});
+type _DirectCycle = Expect<Equal<typeof DirectCycle.type, unknown>>;
+
+// FIX #4: Required properties not in `properties` now get type `unknown`
+// Previously: Required properties not defined in `properties` were silently ignored
+// Now: They are added with type `unknown`
+const MissingRequired = schema({
+  type: 'object',
+  properties: {
+    name: { type: 'string' },
+  },
+  required: ['name', 'ghost'],
+});
+type _MissingRequired = Expect<Equal<typeof MissingRequired.type, { name: string; ghost: unknown }>>;
+
+// Multiple missing required properties
+const MultipleMissingRequired = schema({
+  type: 'object',
+  properties: {
+    id: { type: 'number' },
+  },
+  required: ['id', 'foo', 'bar', 'baz'],
+});
+type _MultipleMissingRequired = Expect<Equal<
+  typeof MultipleMissingRequired.type,
+  { id: number; foo: unknown; bar: unknown; baz: unknown }
+>>;
+
+// All required properties missing from properties
+const AllMissingRequired = schema({
+  type: 'object',
+  required: ['a', 'b'],
+});
+type _AllMissingRequired = Expect<Equal<typeof AllMissingRequired.type, Record<string, unknown>>>;
+
+// Mix of defined and undefined required with optional
+const MixedRequired = schema({
+  type: 'object',
+  properties: {
+    defined: { type: 'string' },
+    optional: { type: 'boolean' },
+  },
+  required: ['defined', 'undefined_prop'],
+});
+type _MixedRequired = Expect<Equal<
+  typeof MixedRequired.type,
+  { defined: string; optional?: boolean; undefined_prop: unknown }
+>>;
