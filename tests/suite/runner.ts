@@ -13,7 +13,6 @@ export interface RunnerOptions {
 
 // Keywords that are not yet implemented or have known issues
 const UNIMPLEMENTED_KEYWORDS = [
-  'dynamicRef', // $dynamicRef / $dynamicAnchor not implemented
   'refRemote', // Remote $ref not implemented
   'vocabulary', // Vocabulary not implemented
   'unknownKeyword', // Meta-schema validation not implemented
