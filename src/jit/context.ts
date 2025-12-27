@@ -151,6 +151,13 @@ export class CompileContext {
   }
 
   /**
+   * Generate a unique name for a runtime value
+   */
+  genRuntimeName(prefix: string): string {
+    return `${prefix}${this.#funcCounter++}`;
+  }
+
+  /**
    * Check if a schema has already been compiled
    */
   isCompiled(schema: JsonSchema): boolean {
