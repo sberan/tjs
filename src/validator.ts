@@ -311,11 +311,27 @@ export class Validator<T> {
       // Continue to validate base schema keywords below (don't return early)
     }
 
-    // Handle if/then/else - merge evaluated props from the branch taken
+    // Handle if/then/else - merge evaluated props from if AND the branch taken
     // Check !== undefined to handle if: false
     if (schema.if !== undefined) {
       const ifResult = this.#validate(data, schema.if, path);
       const ifValid = ifResult.errors.length === 0;
+
+      // Always merge evaluated properties/items from the if schema
+      // (annotations from if are collected even without then/else)
+      if (ifResult.evaluatedProperties) {
+        evaluatedProperties = evaluatedProperties ?? new Set();
+        for (const key of ifResult.evaluatedProperties) {
+          evaluatedProperties.add(key);
+        }
+      }
+      if (ifResult.evaluatedItems) {
+        evaluatedItems = evaluatedItems ?? new Set();
+        for (const idx of ifResult.evaluatedItems) {
+          evaluatedItems.add(idx);
+        }
+      }
+
       if (ifValid && schema.then !== undefined) {
         const thenResult = this.#validate(data, schema.then, path);
         errors.push(...thenResult.errors);
@@ -611,7 +627,7 @@ export class Validator<T> {
         value: data,
       });
     }
-    if (schema.uniqueItems && new Set(data.map((x) => JSON.stringify(x))).size !== data.length) {
+    if (schema.uniqueItems && !this.#areItemsUnique(data)) {
       errors.push({
         path,
         message: 'Array items must be unique',
@@ -975,6 +991,18 @@ export class Validator<T> {
     }
 
     return current as JsonSchema;
+  }
+
+  #areItemsUnique(data: unknown[]): boolean {
+    // O(n^2) comparison using deepEqual to handle object key order
+    for (let i = 0; i < data.length; i++) {
+      for (let j = i + 1; j < data.length; j++) {
+        if (this.#deepEqual(data[i], data[j])) {
+          return false;
+        }
+      }
+    }
+    return true;
   }
 
   #deepEqual(a: unknown, b: unknown): boolean {
