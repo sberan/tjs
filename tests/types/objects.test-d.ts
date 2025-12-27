@@ -62,9 +62,7 @@ const Strict = schema({
 });
 Strict.type; // $ExpectType { id?: string }
 
-// Additional properties typed
-// Note: Due to TypeScript limitations with index signatures, when additionalProperties
-// has a different type than defined properties, we verify the named property type.
+// Additional properties typed - creates intersection with index signature
 const Dict = schema({
   type: 'object',
   properties: {
@@ -73,7 +71,7 @@ const Dict = schema({
   required: ['id'],
   additionalProperties: { type: 'number' },
 });
-Dict.type.id; // $ExpectType string
+Dict.type; // $ExpectType { id: string; } & { [x: string]: number; }
 
 // Deeply nested
 const DeepNested = schema({

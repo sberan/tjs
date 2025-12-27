@@ -104,7 +104,10 @@ type InferObject<S extends JsonSchemaBase, Defs, Depth extends unknown[]> =
             ? BuildObject<P, [], Defs, Depth> & { [K in string as K extends keyof P ? never : K]: Infer<AP, Defs, Depth> }
             : BuildObject<P, [], Defs, Depth>
         : BuildObject<P, [], Defs, Depth>
-    : Record<string, unknown>;
+    // No properties - check for required without properties
+    : S extends { required: readonly string[] }
+      ? BuildObject<{}, S['required'], Defs, Depth>
+      : Record<string, unknown>;
 
 // Build object with required/optional handling
 // Also adds `unknown` for required properties not defined in properties
