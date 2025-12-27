@@ -1,7 +1,6 @@
 import { loadTestFiles } from '../tests/suite/loader.js';
 import type { TestFile, TestGroup } from '../tests/suite/types.js';
 import type { ValidatorAdapter, BenchmarkResult } from './types.js';
-import { jsonSchemaTsAdapter } from './adapters/json-schema-ts.js';
 import { ajvAdapter } from './adapters/ajv.js';
 import { jitAdapter } from './adapters/jit.js';
 
@@ -144,7 +143,7 @@ function main() {
     0
   );
 
-  const adapters: ValidatorAdapter[] = [ajvAdapter, jsonSchemaTsAdapter, jitAdapter];
+  const adapters: ValidatorAdapter[] = [ajvAdapter, jitAdapter];
   const results: BenchmarkResult[] = [];
 
   if (!jsonOutput) {
@@ -217,17 +216,17 @@ function main() {
       console.log(`${name} ${ops} ${rel} ${skip}`);
     }
 
-    // Per-keyword comparison between json-schema-ts and AJV
-    const jstsResult = results.find((r) => r.validator === 'json-schema-ts');
+    // Per-keyword comparison between jit and AJV
+    const jitResult = results.find((r) => r.validator === 'json-schema-ts-jit');
     const ajvResult = results.find((r) => r.validator === 'ajv');
 
-    if (jstsResult && ajvResult) {
+    if (jitResult && ajvResult) {
       console.log();
-      console.log('Per-Keyword Comparison (json-schema-ts vs AJV):');
+      console.log('Per-Keyword Comparison (jit vs AJV):');
       console.log('─'.repeat(72));
       console.log(
         'Keyword'.padEnd(25) +
-          'json-schema-ts'.padStart(14) +
+          'jit'.padStart(14) +
           'ajv'.padStart(14) +
           'ratio'.padStart(10) +
           'diff'.padStart(8)
@@ -236,21 +235,21 @@ function main() {
 
       // Get all keywords present in both
       const allKeywords = new Set([
-        ...Object.keys(jstsResult.byKeyword),
+        ...Object.keys(jitResult.byKeyword),
         ...Object.keys(ajvResult.byKeyword),
       ]);
 
-      // Calculate ratio (json-schema-ts / ajv) for each keyword
-      const keywordComparison: { keyword: string; jsts: number; ajv: number; ratio: number }[] = [];
+      // Calculate ratio (jit / ajv) for each keyword
+      const keywordComparison: { keyword: string; jit: number; ajv: number; ratio: number }[] = [];
       for (const keyword of allKeywords) {
-        const jstsOps = jstsResult.byKeyword[keyword];
+        const jitOps = jitResult.byKeyword[keyword];
         const ajvOps = ajvResult.byKeyword[keyword];
-        if (jstsOps && ajvOps) {
+        if (jitOps && ajvOps) {
           keywordComparison.push({
             keyword,
-            jsts: jstsOps,
+            jit: jitOps,
             ajv: ajvOps,
-            ratio: jstsOps / ajvOps,
+            ratio: jitOps / ajvOps,
           });
         }
       }
@@ -259,17 +258,17 @@ function main() {
       keywordComparison.sort((a, b) => a.ratio - b.ratio);
 
       // Show all keywords sorted by ratio
-      for (const { keyword, jsts, ajv, ratio } of keywordComparison) {
+      for (const { keyword, jit, ajv, ratio } of keywordComparison) {
         const kw = keyword.padEnd(25);
-        const jstsStr = formatNumber(jsts).padStart(14);
+        const jitStr = formatNumber(jit).padStart(14);
         const ajvStr = formatNumber(ajv).padStart(14);
         const ratioStr = `${ratio.toFixed(2)}x`.padStart(10);
         const diffPercent = ((ratio - 1) * 100).toFixed(0);
         const diffStr = (ratio >= 1 ? `+${diffPercent}%` : `${diffPercent}%`).padStart(8);
-        console.log(`${kw}${jstsStr}${ajvStr}${ratioStr}${diffStr}`);
+        console.log(`${kw}${jitStr}${ajvStr}${ratioStr}${diffStr}`);
       }
 
-      // Summary: keywords where json-schema-ts is slower than AJV
+      // Summary: keywords where jit is slower than AJV
       const slowerThanAjv = keywordComparison.filter((k) => k.ratio < 1);
       const fasterThanAjv = keywordComparison.filter((k) => k.ratio >= 1);
 
