@@ -18,7 +18,9 @@
     "build": "tsc",
     "test": "npm run test:types && npm run test:runtime",
     "test:types": "eslint tests/types/",
-    "test:runtime": "vitest run",
+    "test:runtime": "vitest run tests/runtime/",
+    "test:suite": "vitest run tests/suite/compliance.test.ts",
+    "test:suite:keyword": "vitest run tests/suite/keyword.test.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky"
