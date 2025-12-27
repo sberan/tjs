@@ -3,6 +3,7 @@ import type { TestFile, TestGroup } from '../tests/suite/types.js';
 import type { ValidatorAdapter, BenchmarkResult } from './types.js';
 import { jsonSchemaTsAdapter } from './adapters/json-schema-ts.js';
 import { ajvAdapter } from './adapters/ajv.js';
+import { jitAdapter } from './adapters/jit.js';
 
 // Keywords to skip (not implemented or have known issues)
 const SKIP_KEYWORDS = new Set([
@@ -143,7 +144,7 @@ function main() {
     0
   );
 
-  const adapters: ValidatorAdapter[] = [ajvAdapter, jsonSchemaTsAdapter];
+  const adapters: ValidatorAdapter[] = [ajvAdapter, jsonSchemaTsAdapter, jitAdapter];
   const results: BenchmarkResult[] = [];
 
   if (!jsonOutput) {
@@ -216,34 +217,92 @@ function main() {
       console.log(`${name} ${ops} ${rel} ${skip}`);
     }
 
-    // Per-keyword breakdown for json-schema-ts
+    // Per-keyword comparison between json-schema-ts and AJV
     const jstsResult = results.find((r) => r.validator === 'json-schema-ts');
-    if (jstsResult) {
+    const ajvResult = results.find((r) => r.validator === 'ajv');
+
+    if (jstsResult && ajvResult) {
       console.log();
-      console.log('Per-Keyword Breakdown (json-schema-ts):');
-      console.log('─'.repeat(42));
+      console.log('Per-Keyword Comparison (json-schema-ts vs AJV):');
+      console.log('─'.repeat(72));
+      console.log(
+        'Keyword'.padEnd(25) +
+          'json-schema-ts'.padStart(14) +
+          'ajv'.padStart(14) +
+          'ratio'.padStart(10) +
+          'diff'.padStart(8)
+      );
+      console.log('─'.repeat(72));
 
-      const keywords = Object.entries(jstsResult.byKeyword)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 15);
+      // Get all keywords present in both
+      const allKeywords = new Set([
+        ...Object.keys(jstsResult.byKeyword),
+        ...Object.keys(ajvResult.byKeyword),
+      ]);
 
-      for (const [keyword, opsPerSec] of keywords) {
-        const kw = keyword.padEnd(25);
-        const ops = formatNumber(opsPerSec).padStart(12);
-        console.log(`${kw} ${ops} ops/sec`);
+      // Calculate ratio (json-schema-ts / ajv) for each keyword
+      const keywordComparison: { keyword: string; jsts: number; ajv: number; ratio: number }[] = [];
+      for (const keyword of allKeywords) {
+        const jstsOps = jstsResult.byKeyword[keyword];
+        const ajvOps = ajvResult.byKeyword[keyword];
+        if (jstsOps && ajvOps) {
+          keywordComparison.push({
+            keyword,
+            jsts: jstsOps,
+            ajv: ajvOps,
+            ratio: jstsOps / ajvOps,
+          });
+        }
       }
 
-      // Show slowest
-      const slowest = Object.entries(jstsResult.byKeyword)
-        .sort((a, b) => a[1] - b[1])
-        .slice(0, 3);
+      // Sort by ratio ascending (slowest relative to AJV first)
+      keywordComparison.sort((a, b) => a.ratio - b.ratio);
+
+      // Show all keywords sorted by ratio
+      for (const { keyword, jsts, ajv, ratio } of keywordComparison) {
+        const kw = keyword.padEnd(25);
+        const jstsStr = formatNumber(jsts).padStart(14);
+        const ajvStr = formatNumber(ajv).padStart(14);
+        const ratioStr = `${ratio.toFixed(2)}x`.padStart(10);
+        const diffPercent = ((ratio - 1) * 100).toFixed(0);
+        const diffStr = (ratio >= 1 ? `+${diffPercent}%` : `${diffPercent}%`).padStart(8);
+        console.log(`${kw}${jstsStr}${ajvStr}${ratioStr}${diffStr}`);
+      }
+
+      // Summary: keywords where json-schema-ts is slower than AJV
+      const slowerThanAjv = keywordComparison.filter((k) => k.ratio < 1);
+      const fasterThanAjv = keywordComparison.filter((k) => k.ratio >= 1);
 
       console.log();
-      console.log('Slowest keywords:');
-      for (const [keyword, opsPerSec] of slowest) {
-        const kw = keyword.padEnd(25);
-        const ops = formatNumber(opsPerSec).padStart(12);
-        console.log(`${kw} ${ops} ops/sec`);
+      console.log('─'.repeat(72));
+      console.log(
+        `Summary: ${fasterThanAjv.length} keywords faster, ${slowerThanAjv.length} keywords slower than AJV`
+      );
+
+      if (slowerThanAjv.length > 0) {
+        console.log();
+        console.log('⚠ Slowest relative to AJV (optimization targets):');
+        for (const { keyword, ratio } of slowerThanAjv.slice(0, 5)) {
+          const kw = keyword.padEnd(25);
+          const ratioStr = `${ratio.toFixed(2)}x`.padStart(8);
+          const diffPercent = ((1 - ratio) * 100).toFixed(0);
+          console.log(`  ${kw}${ratioStr}  (${diffPercent}% slower)`);
+        }
+      }
+
+      // Show fastest keywords (where we beat AJV the most)
+      const fastestRelative = keywordComparison
+        .filter((k) => k.ratio > 1)
+        .sort((a, b) => b.ratio - a.ratio);
+      if (fastestRelative.length > 0) {
+        console.log();
+        console.log('✓ Fastest relative to AJV:');
+        for (const { keyword, ratio } of fastestRelative.slice(0, 5)) {
+          const kw = keyword.padEnd(25);
+          const ratioStr = `${ratio.toFixed(2)}x`.padStart(8);
+          const diffPercent = ((ratio - 1) * 100).toFixed(0);
+          console.log(`  ${kw}${ratioStr}  (${diffPercent}% faster)`);
+        }
       }
     }
   }

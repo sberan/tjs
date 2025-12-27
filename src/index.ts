@@ -1,16 +1,22 @@
 import type { JsonSchema } from './types.js';
 import type { Infer } from './infer.js';
-import { Validator, type ValidatorOptions } from './validator.js';
+import { ValidatorJIT, type JITOptions } from './jit/index.js';
 
 export function schema<const T extends JsonSchema>(
   definition: T,
-  options?: ValidatorOptions
-): Validator<Infer<T>> {
-  return new Validator(definition, options) as Validator<Infer<T>>;
+  options?: JITOptions
+): ValidatorJIT<Infer<T>> {
+  return new ValidatorJIT(definition, options) as ValidatorJIT<Infer<T>>;
 }
 
 // Re-export types
 export type { JsonSchema, JsonSchemaBase, JsonValue, JsonObject, JsonArray } from './types.js';
 export type { Infer } from './infer.js';
-export type { ValidationError, ParseResult, ValidatorOptions } from './validator.js';
-export { Validator } from './validator.js';
+export type { ValidationError } from './keywords/types.js';
+export type { ParseResult, JITOptions as ValidatorOptions } from './jit/index.js';
+
+// Default export is JIT validator
+export { ValidatorJIT as Validator } from './jit/index.js';
+
+// Also export interpreter for special cases (error collection, unevaluated keywords)
+export { Validator as ValidatorInterpreter } from './validator.js';
