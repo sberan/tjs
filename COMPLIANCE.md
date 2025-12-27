@@ -3,8 +3,8 @@
 ## Summary
 
 - **Total Tests**: 1271
-- **Passed**: 1271 (100.0%)
-- **Failed**: 0
+- **Passed**: 1269 (99.8%)
+- **Failed**: 2
 - **Skipped**: 0
 
 ## By Keyword
@@ -20,7 +20,7 @@
 | contains | 21 | 0 | 0 | 100% |
 | content | 18 | 0 | 0 | 100% |
 | default | 7 | 0 | 0 | 100% |
-| defs | 2 | 0 | 0 | 100% |
+| defs | 1 | 1 | 0 | 50% |
 | dependentRequired | 20 | 0 | 0 | 100% |
 | dependentSchemas | 20 | 0 | 0 | 100% |
 | dynamicRef | 44 | 0 | 0 | 100% |
@@ -49,7 +49,7 @@
 | prefixItems | 11 | 0 | 0 | 100% |
 | properties | 28 | 0 | 0 | 100% |
 | propertyNames | 20 | 0 | 0 | 100% |
-| ref | 79 | 0 | 0 | 100% |
+| ref | 78 | 1 | 0 | 99% |
 | refRemote | 31 | 0 | 0 | 100% |
 | required | 16 | 0 | 0 | 100% |
 | type | 80 | 0 | 0 | 100% |
@@ -57,3 +57,17 @@
 | unevaluatedProperties | 125 | 0 | 0 | 100% |
 | uniqueItems | 69 | 0 | 0 | 100% |
 | vocabulary | 5 | 0 | 0 | 100% |
+
+## Failures
+
+### defs / validate definition against metaschema
+
+**Test**: valid definition schema
+**Expected**: valid
+**Actual**: invalid
+
+### ref / remote ref, containing refs itself
+
+**Test**: remote ref valid
+**Expected**: valid
+**Actual**: invalid

@@ -5,3 +5,4 @@ export { validateString } from './string.js';
 export { validateNumber } from './number.js';
 export { validateArrayConstraints } from './array.js';
 export { validateObjectConstraints } from './object.js';
+export { validateFormat } from './format.js';
