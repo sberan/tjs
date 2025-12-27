@@ -3,8 +3,8 @@
 ## Summary
 
 - **Total Tests**: 1271
-- **Passed**: 1204 (94.7%)
-- **Failed**: 67
+- **Passed**: 1218 (95.8%)
+- **Failed**: 53
 - **Skipped**: 0
 
 ## By Keyword
@@ -14,7 +14,7 @@
 | additionalProperties | 21 | 0 | 0 | 100% |
 | allOf | 30 | 0 | 0 | 100% |
 | anchor | 8 | 0 | 0 | 100% |
-| anyOf | 17 | 1 | 0 | 94% |
+| anyOf | 18 | 0 | 0 | 100% |
 | boolean_schema | 18 | 0 | 0 | 100% |
 | const | 54 | 0 | 0 | 100% |
 | contains | 21 | 0 | 0 | 100% |
@@ -41,30 +41,24 @@
 | minLength | 7 | 0 | 0 | 100% |
 | minProperties | 8 | 0 | 0 | 100% |
 | minimum | 11 | 0 | 0 | 100% |
-| multipleOf | 9 | 1 | 0 | 90% |
-| not | 38 | 2 | 0 | 95% |
-| oneOf | 26 | 1 | 0 | 96% |
+| multipleOf | 10 | 0 | 0 | 100% |
+| not | 40 | 0 | 0 | 100% |
+| oneOf | 27 | 0 | 0 | 100% |
 | pattern | 9 | 0 | 0 | 100% |
 | patternProperties | 23 | 0 | 0 | 100% |
 | prefixItems | 11 | 0 | 0 | 100% |
-| properties | 26 | 2 | 0 | 93% |
-| propertyNames | 19 | 1 | 0 | 95% |
+| properties | 28 | 0 | 0 | 100% |
+| propertyNames | 20 | 0 | 0 | 100% |
 | ref | 77 | 2 | 0 | 97% |
-| refRemote | 30 | 1 | 0 | 97% |
+| refRemote | 31 | 0 | 0 | 100% |
 | required | 16 | 0 | 0 | 100% |
 | type | 80 | 0 | 0 | 100% |
 | unevaluatedItems | 59 | 12 | 0 | 83% |
-| unevaluatedProperties | 95 | 30 | 0 | 76% |
+| unevaluatedProperties | 100 | 25 | 0 | 80% |
 | uniqueItems | 69 | 0 | 0 | 100% |
 | vocabulary | 4 | 1 | 0 | 80% |
 
 ## Failures
-
-### anyOf / nested anyOf, to check validation semantics
-
-**Test**: anything non-null is invalid
-**Expected**: invalid
-**Actual**: valid
 
 ### defs / validate definition against metaschema
 
@@ -144,48 +138,6 @@
 **Expected**: invalid
 **Actual**: valid
 
-### multipleOf / float division = inf
-
-**Test**: always invalid, but naive implementations may raise an overflow error
-**Expected**: invalid
-**Actual**: valid
-
-### not / double negation
-
-**Test**: any value is valid
-**Expected**: valid
-**Actual**: invalid
-
-### not / collect annotations inside a 'not', even if collection is disabled
-
-**Test**: unevaluated property
-**Expected**: valid
-**Actual**: invalid
-
-### oneOf / nested oneOf, to check validation semantics
-
-**Test**: anything non-null is invalid
-**Expected**: invalid
-**Actual**: valid
-
-### properties / properties, patternProperties, additionalProperties interaction
-
-**Test**: patternProperty invalidates property
-**Expected**: invalid
-**Actual**: valid
-
-### properties / properties whose names are Javascript object property names
-
-**Test**: none of the properties mentioned
-**Expected**: valid
-**Actual**: invalid
-
-### propertyNames / propertyNames with boolean schema false
-
-**Test**: object with any properties is invalid
-**Expected**: invalid
-**Actual**: valid
-
 ### ref / order of evaluation: $id and $ref on nested schema
 
 **Test**: data is valid against nested sibling
@@ -197,12 +149,6 @@
 **Test**: a string is valid
 **Expected**: valid
 **Actual**: invalid
-
-### refRemote / root ref in remote ref
-
-**Test**: object is invalid
-**Expected**: invalid
-**Actual**: valid
 
 ### unevaluatedItems / unevaluatedItems with nested items
 
@@ -348,16 +294,70 @@
 **Expected**: valid
 **Actual**: invalid
 
-### unevaluatedProperties / in-place applicator siblings, anyOf has unevaluated
+### unevaluatedProperties / unevaluatedProperties + ref inside allOf / oneOf
 
-**Test**: base case: both properties present
-**Expected**: invalid
-**Actual**: valid
+**Test**: a and x are valid
+**Expected**: valid
+**Actual**: invalid
 
-### unevaluatedProperties / in-place applicator siblings, anyOf has unevaluated
+### unevaluatedProperties / unevaluatedProperties + ref inside allOf / oneOf
 
-**Test**: in place applicator siblings, bar is missing
-**Expected**: invalid
-**Actual**: valid
+**Test**: a and y are valid
+**Expected**: valid
+**Actual**: invalid
 
-... and 17 more failures
+### unevaluatedProperties / unevaluatedProperties + ref inside allOf / oneOf
+
+**Test**: a and b and x are valid
+**Expected**: valid
+**Actual**: invalid
+
+### unevaluatedProperties / unevaluatedProperties + ref inside allOf / oneOf
+
+**Test**: a and b and y are valid
+**Expected**: valid
+**Actual**: invalid
+
+### unevaluatedProperties / dynamic evalation inside nested refs
+
+**Test**: b is valid
+**Expected**: valid
+**Actual**: invalid
+
+### unevaluatedProperties / dynamic evalation inside nested refs
+
+**Test**: c is valid
+**Expected**: valid
+**Actual**: invalid
+
+### unevaluatedProperties / dynamic evalation inside nested refs
+
+**Test**: d is valid
+**Expected**: valid
+**Actual**: invalid
+
+### unevaluatedProperties / dynamic evalation inside nested refs
+
+**Test**: xx is valid
+**Expected**: valid
+**Actual**: invalid
+
+### unevaluatedProperties / dynamic evalation inside nested refs
+
+**Test**: xx + foox is valid
+**Expected**: valid
+**Actual**: invalid
+
+### unevaluatedProperties / dynamic evalation inside nested refs
+
+**Test**: all is valid
+**Expected**: valid
+**Actual**: invalid
+
+### unevaluatedProperties / dynamic evalation inside nested refs
+
+**Test**: all + foo is valid
+**Expected**: valid
+**Actual**: invalid
+
+... and 3 more failures
