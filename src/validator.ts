@@ -61,6 +61,10 @@ export class Validator<T> {
           typeof remoteSchema === 'object' && remoteSchema !== null && remoteSchema.$id
             ? remoteSchema.$id
             : uri;
+        // Always register by the URI key (for schemas without $id)
+        if (typeof remoteSchema === 'object' && remoteSchema !== null) {
+          this.#schemasById.set(uri, remoteSchema);
+        }
         this.#collectAnchors(remoteSchema, schemaId);
       }
     }
@@ -228,13 +232,20 @@ export class Validator<T> {
     const authority = match[1];
     let path = match[2] || '/';
 
+    // Check if path ends with /
+    const endsWithSlash = path.endsWith('/');
+
     // Split path into segments
     const segments = path.split('/');
     const normalized: string[] = [];
 
     for (const segment of segments) {
-      if (segment === '.' || segment === '') {
-        // Skip current directory markers and empty segments (except keeping leading /)
+      if (segment === '.') {
+        // Skip current directory markers
+        continue;
+      }
+      if (segment === '') {
+        // Keep leading empty segment for root path, skip others
         if (normalized.length === 0) normalized.push('');
         continue;
       }
@@ -248,7 +259,12 @@ export class Validator<T> {
       }
     }
 
-    return authority + normalized.join('/');
+    let result = authority + normalized.join('/');
+    // Preserve trailing slash if original had one
+    if (endsWithSlash && !result.endsWith('/')) {
+      result += '/';
+    }
+    return result;
   }
 
   validate(data: unknown): data is T {
@@ -584,7 +600,12 @@ export class Validator<T> {
         }
       }
     } else if (typeof data === 'object' && data !== null) {
-      const objectResult = this.#validateObject(data as Record<string, unknown>, schema, path, newDynamicScope);
+      const objectResult = this.#validateObject(
+        data as Record<string, unknown>,
+        schema,
+        path,
+        newDynamicScope
+      );
       errors.push(...objectResult.errors);
       // Merge evaluated properties from object validation with those from composition
       if (objectResult.evaluatedProperties) {
@@ -622,7 +643,14 @@ export class Validator<T> {
 
     // Check unevaluatedItems after all validation (composition + base schema)
     if (schema.unevaluatedItems !== undefined && Array.isArray(data)) {
-      this.#checkUnevaluatedItems(data, schema, path, evaluatedItems ?? new Set(), errors, newDynamicScope);
+      this.#checkUnevaluatedItems(
+        data,
+        schema,
+        path,
+        evaluatedItems ?? new Set(),
+        errors,
+        newDynamicScope
+      );
       // When unevaluatedItems is true or a schema (not false), mark all items as evaluated
       // This is important for parent schemas that also have unevaluatedItems
       if (schema.unevaluatedItems !== false) {
@@ -815,7 +843,12 @@ export class Validator<T> {
     return errors;
   }
 
-  #validateArray(data: unknown[], schema: JsonSchemaBase, path: string, dynamicScope: JsonSchema[]): ValidationResult {
+  #validateArray(
+    data: unknown[],
+    schema: JsonSchemaBase,
+    path: string,
+    dynamicScope: JsonSchema[]
+  ): ValidationResult {
     const errors: ValidationError[] = [];
     const evaluatedItems = new Set<number>();
 
@@ -852,7 +885,10 @@ export class Validator<T> {
       // Count matching items
       let matchCount = 0;
       for (let i = 0; i < data.length; i++) {
-        if (this.#validate(data[i], schema.contains, `${path}[${i}]`, dynamicScope).errors.length === 0) {
+        if (
+          this.#validate(data[i], schema.contains, `${path}[${i}]`, dynamicScope).errors.length ===
+          0
+        ) {
           matchCount++;
           evaluatedItems.add(i);
         }
@@ -882,7 +918,12 @@ export class Validator<T> {
       for (let i = 0; i < schema.prefixItems.length; i++) {
         if (i < data.length) {
           evaluatedItems.add(i);
-          const result = this.#validate(data[i], schema.prefixItems[i], `${path}[${i}]`, dynamicScope);
+          const result = this.#validate(
+            data[i],
+            schema.prefixItems[i],
+            `${path}[${i}]`,
+            dynamicScope
+          );
           errors.push(...result.errors);
         }
       }
@@ -1014,7 +1055,12 @@ export class Validator<T> {
     // Validate propertyNames (check !== undefined to handle propertyNames: false)
     if (schema.propertyNames !== undefined) {
       for (const key of keys) {
-        const keyErrors = this.#validate(key, schema.propertyNames, `${path}[propertyName:${key}]`, dynamicScope);
+        const keyErrors = this.#validate(
+          key,
+          schema.propertyNames,
+          `${path}[propertyName:${key}]`,
+          dynamicScope
+        );
         for (const err of keyErrors.errors) {
           errors.push({
             path: path ? `${path}.${key}` : key,
@@ -1030,7 +1076,12 @@ export class Validator<T> {
     for (const [key, propSchema] of Object.entries(properties)) {
       if (Object.hasOwn(data, key)) {
         evaluatedProperties.add(key);
-        const result = this.#validate(data[key], propSchema, path ? `${path}.${key}` : key, dynamicScope);
+        const result = this.#validate(
+          data[key],
+          propSchema,
+          path ? `${path}.${key}` : key,
+          dynamicScope
+        );
         errors.push(...result.errors);
       }
     }
@@ -1042,7 +1093,12 @@ export class Validator<T> {
         for (const [key, value] of Object.entries(data)) {
           if (regex.test(key)) {
             evaluatedProperties.add(key);
-            const result = this.#validate(value, propSchema, path ? `${path}.${key}` : key, dynamicScope);
+            const result = this.#validate(
+              value,
+              propSchema,
+              path ? `${path}.${key}` : key,
+              dynamicScope
+            );
             errors.push(...result.errors);
           }
         }
@@ -1107,7 +1163,12 @@ export class Validator<T> {
             value: data[i],
           });
         } else if (typeof schema.unevaluatedItems === 'object') {
-          const result = this.#validate(data[i], schema.unevaluatedItems, `${path}[${i}]`, dynamicScope);
+          const result = this.#validate(
+            data[i],
+            schema.unevaluatedItems,
+            `${path}[${i}]`,
+            dynamicScope
+          );
           errors.push(...result.errors);
         }
       }

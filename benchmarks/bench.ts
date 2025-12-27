@@ -6,9 +6,9 @@ import { ajvAdapter } from './adapters/ajv.js';
 
 // Keywords to skip (not implemented or have known issues)
 const SKIP_KEYWORDS = new Set([
-  'dynamicRef', // $dynamicRef / $dynamicAnchor not implemented
-  'refRemote', // Remote $ref not implemented
+  'refRemote', // Remote $ref requires file I/O to load schemas (tested in compliance suite)
   'vocabulary', // Vocabulary not implemented
+  'unknownKeyword', // Meta-schema validation not implemented
   'infinite-loop-detection', // Causes stack overflow in some validators
 ]);
 
@@ -18,18 +18,23 @@ interface CompiledTest {
   tests: { data: unknown; valid: boolean }[];
 }
 
-function compileTests(
-  files: TestFile[],
-  adapter: ValidatorAdapter
-): { compiled: CompiledTest[]; skipped: number; errors: string[] } {
+interface CompileResult {
+  compiled: CompiledTest[];
+  skippedByKeyword: number;
+  skippedByError: number;
+  errors: string[];
+}
+
+function compileTests(files: TestFile[], adapter: ValidatorAdapter): CompileResult {
   const compiled: CompiledTest[] = [];
-  let skipped = 0;
+  let skippedByKeyword = 0;
+  let skippedByError = 0;
   const errors: string[] = [];
 
   for (const file of files) {
     if (SKIP_KEYWORDS.has(file.name)) {
       for (const group of file.groups) {
-        skipped += group.tests.length;
+        skippedByKeyword += group.tests.length;
       }
       continue;
     }
@@ -44,12 +49,12 @@ function compileTests(
         });
       } catch (err) {
         errors.push(`${adapter.name}: Failed to compile ${file.name}/${group.description}: ${err}`);
-        skipped += group.tests.length;
+        skippedByError += group.tests.length;
       }
     }
   }
 
-  return { compiled, skipped, errors };
+  return { compiled, skippedByKeyword, skippedByError, errors };
 }
 
 function runBenchmark(
@@ -154,7 +159,7 @@ function main() {
   }
 
   for (const adapter of adapters) {
-    const { compiled, skipped, errors } = compileTests(files, adapter);
+    const { compiled, skippedByKeyword, skippedByError, errors } = compileTests(files, adapter);
 
     if (!jsonOutput && errors.length > 0) {
       console.log(`\n${adapter.name} compilation errors:`);
@@ -174,9 +179,15 @@ function main() {
       opsPerSec,
       totalValidations,
       durationMs,
-      skipped,
+      skipped: skippedByKeyword + skippedByError,
       byKeyword,
     });
+
+    if (!jsonOutput) {
+      console.log(
+        `${adapter.name}: skipped ${skippedByKeyword} (keywords) + ${skippedByError} (errors) = ${skippedByKeyword + skippedByError} total`
+      );
+    }
   }
 
   // Sort by ops/sec descending
