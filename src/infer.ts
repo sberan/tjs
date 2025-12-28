@@ -157,22 +157,31 @@ type BuildObject<
 >;
 
 // Infer array type
+// Supports both draft-2020-12 (prefixItems + items) and draft-07 (items array + additionalItems)
 // Note: Both items: false and unevaluatedItems: false close a tuple
-type InferArray<S extends JsonSchemaBase, Defs, Depth extends unknown[]> = S extends {
-  prefixItems: readonly (infer PI extends JsonSchema)[];
-}
-  ? S extends { items: false }
-    ? InferTupleFromArray<S['prefixItems'], Defs, Depth>
-    : S extends { unevaluatedItems: false }
+type InferArray<S extends JsonSchemaBase, Defs, Depth extends unknown[]> =
+  // Draft-2020-12: prefixItems + items
+  S extends { prefixItems: readonly JsonSchema[] }
+    ? S extends { items: false }
       ? InferTupleFromArray<S['prefixItems'], Defs, Depth>
-      : S extends { items: infer I extends JsonSchema }
-        ? [...InferTupleFromArray<S['prefixItems'], Defs, Depth>, ...Infer<I, Defs, Depth>[]]
-        : [...InferTupleFromArray<S['prefixItems'], Defs, Depth>, ...unknown[]]
-  : S extends { items: false }
-    ? []
-    : S extends { items: infer I extends JsonSchema }
-      ? Infer<I, Defs, Depth>[]
-      : unknown[];
+      : S extends { unevaluatedItems: false }
+        ? InferTupleFromArray<S['prefixItems'], Defs, Depth>
+        : S extends { items: infer I extends JsonSchema }
+          ? [...InferTupleFromArray<S['prefixItems'], Defs, Depth>, ...Infer<I, Defs, Depth>[]]
+          : [...InferTupleFromArray<S['prefixItems'], Defs, Depth>, ...unknown[]]
+    : // Draft-07: items is an array (acts like prefixItems)
+      S extends { items: readonly JsonSchema[] }
+      ? S extends { additionalItems: false }
+        ? InferTupleFromArray<S['items'], Defs, Depth>
+        : S extends { additionalItems: infer AI extends JsonSchema }
+          ? [...InferTupleFromArray<S['items'], Defs, Depth>, ...Infer<AI, Defs, Depth>[]]
+          : [...InferTupleFromArray<S['items'], Defs, Depth>, ...unknown[]]
+      : // items is a single schema (applies to all items)
+        S extends { items: false }
+        ? []
+        : S extends { items: infer I extends JsonSchema }
+          ? Infer<I, Defs, Depth>[]
+          : unknown[];
 
 // Build tuple type from prefixItems array
 type InferTupleFromArray<

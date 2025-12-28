@@ -194,7 +194,8 @@ export class CompileContext {
       ...(schema.anyOf ?? []),
       ...(schema.oneOf ?? []),
       ...(schema.allOf ?? []),
-      schema.items,
+      ...(Array.isArray(schema.items) ? schema.items : schema.items ? [schema.items] : []),
+      schema.additionalItems,
       schema.additionalProperties,
       schema.unevaluatedProperties,
       schema.unevaluatedItems,
@@ -205,6 +206,9 @@ export class CompileContext {
       schema.contains,
       schema.propertyNames,
       ...(schema.dependentSchemas ? Object.values(schema.dependentSchemas) : []),
+      ...(schema.dependencies
+        ? Object.values(schema.dependencies).filter((v) => !Array.isArray(v))
+        : []),
       ...(schema.patternProperties ? Object.values(schema.patternProperties) : []),
     ];
 
