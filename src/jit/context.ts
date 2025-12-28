@@ -542,4 +542,12 @@ export class CompileContext {
     }
     return this.#enabledVocabularies.has(vocabularyUri);
   }
+
+  /**
+   * Check if the schema tree has any $dynamicAnchor definitions
+   * Used to determine if we can safely optimize $ref chains
+   */
+  hasAnyDynamicAnchors(): boolean {
+    return this.#dynamicAnchors.size > 0;
+  }
 }
