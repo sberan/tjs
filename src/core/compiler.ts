@@ -947,7 +947,7 @@ function validateIPv6(s: string): boolean {
 
 // Fast URI regex for simple cases (from ajv-formats)
 const SIMPLE_URI_REGEX = /^(?:[a-z][a-z0-9+\-.]*:)(?:\/?\/)?[^\s]*$/i;
-// eslint-disable-next-line no-control-regex
+
 const NON_ASCII_REGEX = /[^\x00-\x7f]/;
 
 function validateUri(s: string): boolean {
@@ -996,7 +996,7 @@ function validateUriReference(s: string): boolean {
   if (s === '') return true;
   if (FORMAT_REGEX.uriBadChars.test(s)) return false;
   // RFC 3986: URIs must only contain ASCII characters
-  // eslint-disable-next-line no-control-regex
+
   if (/[^\x00-\x7f]/.test(s)) return false;
   // Fragment-only is valid
   if (s.startsWith('#')) return true;

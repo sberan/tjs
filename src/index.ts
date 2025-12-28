@@ -3,7 +3,6 @@ import type { Infer } from './infer.js';
 import {
   createValidator,
   createValidatorAsync,
-  loadRemoteSchemas,
   type CompileOptions,
   type LoadRemotesOptions,
 } from './core/index.js';
@@ -49,7 +48,6 @@ export function Validator<T>(schema: JsonSchema, options?: CompileOptions): Vali
 }
 
 // Re-export the Validator type interface
-// eslint-disable-next-line @typescript-eslint/no-namespace, @typescript-eslint/no-redeclare
 export namespace Validator {
   // This enables `Validator<T>` to work as a type
   export type Type<T> = ValidatorInterface<T>;

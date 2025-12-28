@@ -5,7 +5,7 @@
  * Returns the coerced value and whether coercion was successful.
  */
 
-import type { JsonSchema, JsonSchemaBase } from '../types.js';
+import type { JsonSchema } from '../types.js';
 import type { CoercionOptions } from './context.js';
 
 /**
