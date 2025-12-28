@@ -1348,7 +1348,9 @@ export function generateContentChecks(
       if (schema.contentEncoding === 'base64') {
         // Validate base64 encoding
         // Base64 characters: A-Z, a-z, 0-9, +, /, and = for padding
-        code.if(`!/^[A-Za-z0-9+/]*={0,2}$/.test(${dataVar}) || ${dataVar}.length % 4 !== 0`, () => {
+        const regexName = ctx.genRuntimeName('base64Re');
+        ctx.addRuntimeFunction(regexName, /^[A-Za-z0-9+/]*={0,2}$/);
+        code.if(`!${regexName}.test(${dataVar}) || ${dataVar}.length % 4 !== 0`, () => {
           genError(code, pathExpr, 'contentEncoding', 'String must be valid base64');
         });
       }
