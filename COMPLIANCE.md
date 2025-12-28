@@ -1,6 +1,16 @@
 # JSON Schema Test Suite Compliance Report
 
-## Summary
+## Summary (All Drafts)
+
+| Draft | Passed | Total | Rate |
+|-------|--------|-------|------|
+| draft2020-12 | 1988 | 1990 | 99.9% |
+| draft7 | 1530 | 1534 | 99.7% |
+| draft6 | 1170 | 1170 | 100.0% |
+| draft4 | 881 | 882 | 99.9% |
+| **Total** | **5569** | **5576** | **99.9%** |
+
+## draft2020-12 Required Tests
 
 - **Total Tests**: 1271
 - **Passed**: 1271 (100.0%)
