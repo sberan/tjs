@@ -10,6 +10,13 @@ import type { JsonSchema, JsonSchemaBase } from '../types.js';
 export interface JITOptions {
   /** Whether format validation is an assertion (default: true) */
   formatAssertion?: boolean;
+  /**
+   * Whether content validation (contentMediaType, contentEncoding) is an assertion.
+   * In draft-07, content is optionally validating.
+   * In draft 2020-12, content is annotation-only by default.
+   * Default: auto-detected from $schema (true for draft-07 and earlier, false for 2020-12+)
+   */
+  contentAssertion?: boolean;
   /** Remote schemas for $ref resolution */
   remotes?: Record<string, JsonSchema>;
   /**
@@ -84,8 +91,19 @@ export class CompileContext {
 
   constructor(rootSchema: JsonSchema, options: JITOptions = {}) {
     this.#rootSchema = rootSchema;
+
+    // Detect schema dialect for default content assertion behavior
+    // In draft 2020-12 and 2019-09, content is annotation-only (no validation)
+    // In draft-07 and earlier, content can optionally validate
+    const schemaDialect =
+      typeof rootSchema === 'object' && rootSchema !== null ? rootSchema.$schema : undefined;
+    const isModernDraft =
+      schemaDialect && (schemaDialect.includes('2020-12') || schemaDialect.includes('2019-09'));
+    const defaultContentAssertion = !isModernDraft;
+
     this.options = {
       formatAssertion: options.formatAssertion ?? true,
+      contentAssertion: options.contentAssertion ?? defaultContentAssertion,
       remotes: options.remotes ?? {},
       legacyRef: options.legacyRef ?? true,
     };
