@@ -6,7 +6,7 @@
 
 import type { JsonSchema, JsonSchemaBase } from '../types.js';
 import { CodeBuilder, escapeString, propAccess, stringify } from './codegen.js';
-import { CompileContext, type JITOptions } from './context.js';
+import { CompileContext, VOCABULARIES, type JITOptions } from './context.js';
 
 /**
  * Validation error type for internal use
@@ -38,16 +38,30 @@ export function compile(schema: JsonSchema, options: JITOptions = {}): ValidateF
   const mainFuncName = ctx.genFuncName();
   ctx.registerCompiled(schema, mainFuncName);
 
+  // Collect dynamic anchors from the root resource to add to scope at startup
+  const rootResourceId =
+    typeof schema === 'object' && schema !== null && schema.$id ? schema.$id : '__root__';
+  const rootDynamicAnchors = ctx.getResourceDynamicAnchors(rootResourceId);
+
+  // Queue root resource's dynamic anchors for compilation FIRST
+  // This ensures they get compiled before we process the queue
+  const anchorFuncNames: Array<{ anchor: string; funcName: string }> = [];
+  for (const { anchor, schema: anchorSchema } of rootDynamicAnchors) {
+    const funcName = ctx.getCompiledName(anchorSchema) ?? ctx.queueCompile(anchorSchema);
+    anchorFuncNames.push({ anchor, funcName });
+  }
+
   // Generate code for main schema
-  generateSchemaValidator(code, schema, 'data', "''", ctx);
+  // Pass dynamicScope for $dynamicRef resolution
+  generateSchemaValidator(code, schema, 'data', "''", ctx, 'dynamicScope');
 
   // Process any queued schemas (from $ref)
   let queued: { schema: JsonSchema; funcName: string } | undefined;
   while ((queued = ctx.nextToCompile())) {
     const q = queued; // Capture for closure
     code.blank();
-    code.block(`function ${q.funcName}(data, errors, path)`, () => {
-      generateSchemaValidator(code, q.schema, 'data', 'path', ctx);
+    code.block(`function ${q.funcName}(data, errors, path, dynamicScope)`, () => {
+      generateSchemaValidator(code, q.schema, 'data', 'path', ctx, 'dynamicScope');
       code.line('return true;');
     });
   }
@@ -57,7 +71,14 @@ export function compile(schema: JsonSchema, options: JITOptions = {}): ValidateF
   const runtimeNames = Array.from(runtimeFuncs.keys());
   const runtimeValues = Array.from(runtimeFuncs.values());
 
+  // Push root resource's dynamic anchors to scope at startup
+  let scopeInit = 'const dynamicScope = [];\n';
+  for (const { anchor, funcName } of anchorFuncNames) {
+    scopeInit += `dynamicScope.push({ anchor: ${stringify(anchor)}, validate: ${funcName} });\n`;
+  }
+
   const fullCode = `
+${scopeInit}
 ${code.toString()}
 return true;
 `;
@@ -76,13 +97,15 @@ return true;
 /**
  * Generate validation code for a schema
  * @param pathExpr - JavaScript expression that evaluates to the current path string
+ * @param dynamicScopeVar - Variable name for the dynamic scope array (for $dynamicRef)
  */
 function generateSchemaValidator(
   code: CodeBuilder,
   schema: JsonSchema,
   dataVar: string,
   pathExpr: string,
-  ctx: CompileContext
+  ctx: CompileContext,
+  dynamicScopeVar: string = 'dynamicScope'
 ): void {
   // Boolean schemas
   if (schema === true) {
@@ -98,6 +121,21 @@ function generateSchemaValidator(
     return;
   }
 
+  // Check if this schema is a new schema resource (has $id)
+  // If so, we need to push its dynamic anchors to scope
+  const schemaResourceId = schema.$id ? ctx.getBaseUri(schema) : undefined;
+  const resourceAnchors = schemaResourceId ? ctx.getResourceDynamicAnchors(schemaResourceId) : [];
+
+  if (resourceAnchors.length > 0) {
+    // Push dynamic anchors for this resource
+    for (const { anchor, schema: anchorSchema } of resourceAnchors) {
+      const anchorFuncName = ctx.getCompiledName(anchorSchema) ?? ctx.queueCompile(anchorSchema);
+      code.line(
+        `${dynamicScopeVar}.push({ anchor: ${stringify(anchor)}, validate: ${anchorFuncName} });`
+      );
+    }
+  }
+
   // Generate JIT code for each keyword
   generateTypeCheck(code, schema, dataVar, pathExpr, ctx);
   generateConstCheck(code, schema, dataVar, pathExpr, ctx);
@@ -110,14 +148,21 @@ function generateSchemaValidator(
   generatePropertiesChecks(code, schema, dataVar, pathExpr, ctx);
   generateItemsChecks(code, schema, dataVar, pathExpr, ctx);
   generateCompositionChecks(code, schema, dataVar, pathExpr, ctx);
-  generateRefCheck(code, schema, dataVar, pathExpr, ctx);
-  generateDynamicRefCheck(code, schema, dataVar, pathExpr, ctx);
+  generateRefCheck(code, schema, dataVar, pathExpr, ctx, dynamicScopeVar);
+  generateDynamicRefCheck(code, schema, dataVar, pathExpr, ctx, dynamicScopeVar);
   generateContainsCheck(code, schema, dataVar, pathExpr, ctx);
   generateDependentRequiredCheck(code, schema, dataVar, pathExpr, ctx);
   generatePropertyNamesCheck(code, schema, dataVar, pathExpr, ctx);
   generateDependentSchemasCheck(code, schema, dataVar, pathExpr, ctx);
   generateUnevaluatedPropertiesCheck(code, schema, dataVar, pathExpr, ctx);
   generateUnevaluatedItemsCheck(code, schema, dataVar, pathExpr, ctx);
+
+  // Pop dynamic anchors after validation (if we pushed any)
+  if (resourceAnchors.length > 0) {
+    for (let i = 0; i < resourceAnchors.length; i++) {
+      code.line(`${dynamicScopeVar}.pop();`);
+    }
+  }
 }
 
 /**
@@ -208,13 +253,15 @@ export function generateTypeCheck(
   schema: JsonSchemaBase,
   dataVar: string,
   pathExpr: string,
-  _ctx: CompileContext
+  ctx: CompileContext
 ): void {
   if (!schema.type) return;
+  // type is a validation vocabulary keyword
+  if (!ctx.isVocabularyEnabled(VOCABULARIES.validation)) return;
 
   const types = Array.isArray(schema.type) ? schema.type : [schema.type];
   const expectedType = types.join(' or ');
-
+  //TODO we dont't need this optimization, the multiple case is fine
   if (types.length === 1) {
     const type = types[0];
     const check = getTypeCheck(dataVar, type);
@@ -265,6 +312,8 @@ export function generateConstCheck(
 
   // For primitives, use strict equality
   if (schema.const === null || typeof schema.const !== 'object') {
+    // TODO let's make a conveninece function to do an if check with an error if true
+    // i.e. code.assertIf(condition, pathExpr, keyword, message)
     code.if(`${dataVar} !== ${stringify(schema.const)}`, () => {
       genError(code, pathExpr, 'const', `Expected constant value`);
     });
@@ -372,8 +421,11 @@ export function generateNumberChecks(
   schema: JsonSchemaBase,
   dataVar: string,
   pathExpr: string,
-  _ctx: CompileContext
+  ctx: CompileContext
 ): void {
+  // Number checks are validation vocabulary keywords
+  if (!ctx.isVocabularyEnabled(VOCABULARIES.validation)) return;
+
   const hasNumberChecks =
     schema.minimum !== undefined ||
     schema.maximum !== undefined ||
@@ -865,7 +917,8 @@ export function generateRefCheck(
   schema: JsonSchemaBase,
   dataVar: string,
   pathExpr: string,
-  ctx: CompileContext
+  ctx: CompileContext,
+  dynamicScopeVar: string = 'dynamicScope'
 ): void {
   if (!schema.$ref) return;
 
@@ -878,20 +931,47 @@ export function generateRefCheck(
     return;
   }
 
-  // Check if already compiled (avoid infinite recursion)
-  const existingName = ctx.getCompiledName(refSchema);
-  if (existingName) {
-    // Call the already-compiled function
-    code.if(`!${existingName}(${dataVar}, errors, ${pathExpr})`, () => {
-      code.line('return false;');
-    });
-  } else {
-    // Queue for compilation and generate a call
-    const funcName = ctx.queueCompile(refSchema);
-    code.if(`!${funcName}(${dataVar}, errors, ${pathExpr})`, () => {
-      code.line('return false;');
-    });
+  // Get the function name (queue for compilation if needed)
+  const funcName = ctx.getCompiledName(refSchema) ?? ctx.queueCompile(refSchema);
+
+  // Check if the $ref is entering a new schema resource
+  // This happens when the $ref has a URI part (not just a fragment)
+  // E.g., "second#/$defs/stuff" enters the "second" resource
+  const refResourceId = ctx.getRefResourceId(schema.$ref, schema);
+
+  if (refResourceId) {
+    const resourceAnchors = ctx.getResourceDynamicAnchors(refResourceId);
+    if (resourceAnchors.length > 0) {
+      // Push dynamic anchors for this resource, call validator, then pop
+      code.block('', () => {
+        const pushCount = resourceAnchors.length;
+        for (const { anchor, schema: anchorSchema } of resourceAnchors) {
+          const anchorFuncName =
+            ctx.getCompiledName(anchorSchema) ?? ctx.queueCompile(anchorSchema);
+          code.line(
+            `${dynamicScopeVar}.push({ anchor: ${stringify(anchor)}, validate: ${anchorFuncName} });`
+          );
+        }
+        code.if(`!${funcName}(${dataVar}, errors, ${pathExpr}, ${dynamicScopeVar})`, () => {
+          // Pop before returning
+          for (let i = 0; i < pushCount; i++) {
+            code.line(`${dynamicScopeVar}.pop();`);
+          }
+          code.line('return false;');
+        });
+        // Pop after successful validation
+        for (let i = 0; i < pushCount; i++) {
+          code.line(`${dynamicScopeVar}.pop();`);
+        }
+      });
+      return;
+    }
   }
+
+  // No dynamic anchors to push - simple call
+  code.if(`!${funcName}(${dataVar}, errors, ${pathExpr}, ${dynamicScopeVar})`, () => {
+    code.line('return false;');
+  });
 }
 
 /**
@@ -996,13 +1076,18 @@ export function generateCompositionChecks(
  * Generate a call to validate against a subschema for anyOf/oneOf/not
  * Returns a code expression that evaluates to true if the subschema matches
  */
-function generateSubschemaCheck(schema: JsonSchema, dataVar: string, ctx: CompileContext): string {
+function generateSubschemaCheck(
+  schema: JsonSchema,
+  dataVar: string,
+  ctx: CompileContext,
+  dynamicScopeVar: string = 'dynamicScope'
+): string {
   if (schema === true) return 'true';
   if (schema === false) return 'false';
 
   // Compile the subschema as a separate function to handle all keywords including composition
   const funcName = ctx.queueCompile(schema);
-  return `${funcName}(${dataVar}, null, '')`;
+  return `${funcName}(${dataVar}, null, '', ${dynamicScopeVar})`;
 }
 
 /**
@@ -1100,82 +1185,163 @@ export function generateDynamicRefCheck(
   schema: JsonSchemaBase,
   dataVar: string,
   pathExpr: string,
-  ctx: CompileContext
+  ctx: CompileContext,
+  dynamicScopeVar: string = 'dynamicScope'
 ): void {
   if (!schema.$dynamicRef) return;
 
-  // For $dynamicRef, we resolve it statically at compile time
-  // Dynamic resolution based on dynamic scope is complex and requires runtime support
-  // For now, we resolve it like a regular $ref and queue for compilation
-  const refSchema = ctx.resolveRef(schema.$dynamicRef, schema);
+  const ref = schema.$dynamicRef;
 
-  if (!refSchema) {
-    // Can't resolve - schema is invalid, always fail
-    genError(code, pathExpr, '$dynamicRef', `Cannot resolve reference ${schema.$dynamicRef}`);
-    return;
-  }
+  // Check if this ref contains an anchor fragment (like #items or extended#meta)
+  // The anchor must be a plain name (not a JSON pointer like #/defs/foo)
+  const anchorMatch = ref.match(/#([a-zA-Z][a-zA-Z0-9_-]*)$/);
 
-  // Check if already compiled (avoid infinite recursion)
-  const existingName = ctx.getCompiledName(refSchema);
-  if (existingName) {
-    code.if(`!${existingName}(${dataVar}, errors, ${pathExpr})`, () => {
-      code.line('return false;');
-    });
+  if (anchorMatch) {
+    // This is an anchor reference - first resolve statically
+    const anchorName = anchorMatch[1];
+
+    // Resolve the static fallback
+    const staticSchema = ctx.resolveRef(ref, schema);
+    if (!staticSchema) {
+      genError(code, pathExpr, '$dynamicRef', `Cannot resolve reference ${ref}`);
+      return;
+    }
+    const staticFuncName = ctx.queueCompile(staticSchema);
+
+    // Check if the statically resolved schema has a matching $dynamicAnchor
+    // If not, $dynamicRef behaves like a regular $ref (no dynamic scope search)
+    const hasDynamicAnchor =
+      typeof staticSchema === 'object' &&
+      staticSchema !== null &&
+      staticSchema.$dynamicAnchor === anchorName;
+
+    if (!hasDynamicAnchor) {
+      // No matching $dynamicAnchor - behave like a regular $ref
+      code.if(`!${staticFuncName}(${dataVar}, errors, ${pathExpr}, ${dynamicScopeVar})`, () => {
+        code.line('return false;');
+      });
+    } else {
+      // Has matching $dynamicAnchor - search dynamic scope at runtime
+      // The dynamic scope is searched from the BEGINNING (outermost/first) to find the first match
+      code.block('', () => {
+        code.line(`let dynamicValidator = null;`);
+        code.line(`for (let i = 0; i < ${dynamicScopeVar}.length; i++) {`);
+        code.line(`  if (${dynamicScopeVar}[i].anchor === ${stringify(anchorName)}) {`);
+        code.line(`    dynamicValidator = ${dynamicScopeVar}[i].validate;`);
+        code.line(`    break;`);
+        code.line(`  }`);
+        code.line(`}`);
+        // Use dynamic validator if found, otherwise use static fallback
+        code.line(`const validator = dynamicValidator || ${staticFuncName};`);
+        code.if(`!validator(${dataVar}, errors, ${pathExpr}, ${dynamicScopeVar})`, () => {
+          code.line('return false;');
+        });
+      });
+    }
   } else {
-    // Queue for compilation and generate a call
+    // Not an anchor reference - resolve statically like $ref
+    // This handles cases like $dynamicRef: "#/$defs/items"
+    const refSchema = ctx.resolveRef(ref, schema);
+
+    if (!refSchema) {
+      genError(code, pathExpr, '$dynamicRef', `Cannot resolve reference ${ref}`);
+      return;
+    }
+
     const funcName = ctx.queueCompile(refSchema);
-    code.if(`!${funcName}(${dataVar}, errors, ${pathExpr})`, () => {
+    code.if(`!${funcName}(${dataVar}, errors, ${pathExpr}, ${dynamicScopeVar})`, () => {
       code.line('return false;');
     });
   }
 }
 
 /**
- * Collect all property names that are evaluated by a schema (recursively)
- * @param visited Set of schemas already visited to prevent infinite recursion
+ * Collect properties evaluated by a schema recursively (follows all keywords that evaluate properties)
+ * This is used for runtime tracking of which branch matched
+ * @param recurseComposition - if true, also recurse into anyOf/oneOf (for branch evaluation)
  */
-function collectEvaluatedProperties(
+function collectLocalEvaluatedProperties(
   schema: JsonSchema,
   ctx: CompileContext,
-  visited: Set<JsonSchema> = new Set()
+  visited: Set<JsonSchema> = new Set(),
+  recurseComposition: boolean = true
 ): {
   props: string[];
   patterns: string[];
   hasAdditional: boolean;
+  hasUnevaluatedTrue: boolean;
 } {
   if (typeof schema !== 'object' || schema === null) {
-    return { props: [], patterns: [], hasAdditional: false };
+    return { props: [], patterns: [], hasAdditional: false, hasUnevaluatedTrue: false };
   }
 
-  // Prevent infinite recursion for circular refs
   if (visited.has(schema)) {
-    return { props: [], patterns: [], hasAdditional: false };
+    return { props: [], patterns: [], hasAdditional: false, hasUnevaluatedTrue: false };
   }
   visited.add(schema);
 
   const props: string[] = [];
   const patterns: string[] = [];
   let hasAdditional = false;
+  let hasUnevaluatedTrue = false;
 
-  // Follow $ref - properties from referenced schema are evaluated
+  // Check for unevaluatedProperties: true which evaluates all properties
+  if (schema.unevaluatedProperties === true) {
+    hasUnevaluatedTrue = true;
+  }
+
+  // Follow $ref
   if (schema.$ref) {
     const refSchema = ctx.resolveRef(schema.$ref, schema);
     if (refSchema) {
-      const collected = collectEvaluatedProperties(refSchema, ctx, visited);
+      const collected = collectLocalEvaluatedProperties(
+        refSchema,
+        ctx,
+        visited,
+        recurseComposition
+      );
       props.push(...collected.props);
       patterns.push(...collected.patterns);
       if (collected.hasAdditional) hasAdditional = true;
+      if (collected.hasUnevaluatedTrue) hasUnevaluatedTrue = true;
     }
   }
 
-  // Follow $dynamicRef
+  // Follow $dynamicRef - need to collect from ALL possible dynamic targets
   if (schema.$dynamicRef) {
-    const refSchema = ctx.resolveRef(schema.$dynamicRef, schema);
-    if (refSchema) {
-      const collected = collectEvaluatedProperties(refSchema, ctx, visited);
-      props.push(...collected.props);
-      patterns.push(...collected.patterns);
-      if (collected.hasAdditional) hasAdditional = true;
+    const ref = schema.$dynamicRef;
+    const anchorMatch = ref.match(/#([a-zA-Z][a-zA-Z0-9_-]*)$/);
+    if (anchorMatch) {
+      // Get all schemas with this dynamic anchor
+      const anchorName = anchorMatch[1];
+      const dynamicSchemas = ctx.getDynamicAnchors(anchorName);
+      for (const dynSchema of dynamicSchemas) {
+        const collected = collectLocalEvaluatedProperties(
+          dynSchema,
+          ctx,
+          new Set(visited),
+          recurseComposition
+        );
+        props.push(...collected.props);
+        patterns.push(...collected.patterns);
+        if (collected.hasAdditional) hasAdditional = true;
+        if (collected.hasUnevaluatedTrue) hasUnevaluatedTrue = true;
+      }
+    } else {
+      // Not a dynamic anchor ref, resolve statically
+      const refSchema = ctx.resolveRef(ref, schema);
+      if (refSchema) {
+        const collected = collectLocalEvaluatedProperties(
+          refSchema,
+          ctx,
+          visited,
+          recurseComposition
+        );
+        props.push(...collected.props);
+        patterns.push(...collected.patterns);
+        if (collected.hasAdditional) hasAdditional = true;
+        if (collected.hasUnevaluatedTrue) hasUnevaluatedTrue = true;
+      }
     }
   }
 
@@ -1194,41 +1360,206 @@ function collectEvaluatedProperties(
     hasAdditional = true;
   }
 
-  // allOf - all subschemas' properties are evaluated
+  // allOf - recurse (allOf always applies)
   if (schema.allOf) {
     for (const sub of schema.allOf) {
-      const collected = collectEvaluatedProperties(sub, ctx, visited);
+      const collected = collectLocalEvaluatedProperties(sub, ctx, visited, recurseComposition);
       props.push(...collected.props);
       patterns.push(...collected.patterns);
       if (collected.hasAdditional) hasAdditional = true;
+      if (collected.hasUnevaluatedTrue) hasUnevaluatedTrue = true;
     }
   }
 
-  // anyOf - properties from all branches are potentially evaluated
-  if (schema.anyOf) {
-    for (const sub of schema.anyOf) {
-      const collected = collectEvaluatedProperties(sub, ctx, visited);
+  // For branch evaluation, also recurse into anyOf/oneOf
+  if (recurseComposition) {
+    // anyOf - recurse
+    if (schema.anyOf) {
+      for (const sub of schema.anyOf) {
+        const collected = collectLocalEvaluatedProperties(sub, ctx, visited, true);
+        props.push(...collected.props);
+        patterns.push(...collected.patterns);
+        if (collected.hasAdditional) hasAdditional = true;
+        if (collected.hasUnevaluatedTrue) hasUnevaluatedTrue = true;
+      }
+    }
+
+    // oneOf - recurse
+    if (schema.oneOf) {
+      for (const sub of schema.oneOf) {
+        const collected = collectLocalEvaluatedProperties(sub, ctx, visited, true);
+        props.push(...collected.props);
+        patterns.push(...collected.patterns);
+        if (collected.hasAdditional) hasAdditional = true;
+        if (collected.hasUnevaluatedTrue) hasUnevaluatedTrue = true;
+      }
+    }
+
+    // if - collect from if schema when it matches
+    if (schema.if) {
+      const collected = collectLocalEvaluatedProperties(schema.if, ctx, visited, true);
       props.push(...collected.props);
       patterns.push(...collected.patterns);
       if (collected.hasAdditional) hasAdditional = true;
+      if (collected.hasUnevaluatedTrue) hasUnevaluatedTrue = true;
     }
-  }
 
-  // oneOf - properties from all branches are potentially evaluated
-  if (schema.oneOf) {
-    for (const sub of schema.oneOf) {
-      const collected = collectEvaluatedProperties(sub, ctx, visited);
+    // then - collect when if matches
+    if (schema.then) {
+      const collected = collectLocalEvaluatedProperties(schema.then, ctx, visited, true);
       props.push(...collected.props);
       patterns.push(...collected.patterns);
       if (collected.hasAdditional) hasAdditional = true;
+      if (collected.hasUnevaluatedTrue) hasUnevaluatedTrue = true;
+    }
+
+    // else - collect when if doesn't match
+    if (schema.else) {
+      const collected = collectLocalEvaluatedProperties(schema.else, ctx, visited, true);
+      props.push(...collected.props);
+      patterns.push(...collected.patterns);
+      if (collected.hasAdditional) hasAdditional = true;
+      if (collected.hasUnevaluatedTrue) hasUnevaluatedTrue = true;
     }
   }
 
-  // if/then/else - DON'T collect from these branches statically
-  // because we need runtime evaluation to know which branch was taken.
-  // The generateUnevaluatedPropertiesCheck will handle this specially.
+  return {
+    props: [...new Set(props)],
+    patterns: [...new Set(patterns)],
+    hasAdditional,
+    hasUnevaluatedTrue,
+  };
+}
 
-  return { props: [...new Set(props)], patterns: [...new Set(patterns)], hasAdditional };
+/**
+ * Collect nested composition keywords (anyOf/oneOf/if-then-else) from allOf branches
+ * These need runtime evaluation for unevaluatedProperties
+ */
+function collectNestedCompositions(
+  schema: JsonSchema,
+  ctx: CompileContext,
+  visited: Set<JsonSchema> = new Set()
+): Array<{ type: 'anyOf' | 'oneOf' | 'if'; schemas: readonly JsonSchema[] }> {
+  if (typeof schema !== 'object' || schema === null) return [];
+  if (visited.has(schema)) return [];
+  visited.add(schema);
+
+  const result: Array<{ type: 'anyOf' | 'oneOf' | 'if'; schemas: readonly JsonSchema[] }> = [];
+
+  // Follow $ref
+  if (schema.$ref) {
+    const refSchema = ctx.resolveRef(schema.$ref, schema);
+    if (refSchema) {
+      result.push(...collectNestedCompositions(refSchema, ctx, visited));
+    }
+  }
+
+  // Check allOf for nested composition keywords
+  if (schema.allOf) {
+    for (const sub of schema.allOf) {
+      if (typeof sub === 'object' && sub !== null) {
+        // Check for anyOf in this allOf branch
+        if (sub.anyOf && sub.anyOf.length > 0) {
+          result.push({ type: 'anyOf', schemas: sub.anyOf });
+        }
+        // Check for oneOf in this allOf branch
+        if (sub.oneOf && sub.oneOf.length > 0) {
+          result.push({ type: 'oneOf', schemas: sub.oneOf });
+        }
+        // Check for if/then/else in this allOf branch
+        if (sub.if !== undefined) {
+          const ifSchemas: JsonSchema[] = [sub.if];
+          if (sub.then) ifSchemas.push(sub.then);
+          if (sub.else) ifSchemas.push(sub.else);
+          result.push({ type: 'if', schemas: ifSchemas });
+        }
+        // Recurse into nested allOf
+        result.push(...collectNestedCompositions(sub, ctx, visited));
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Generate runtime code to collect evaluated properties from a matched branch,
+ * recursively handling nested oneOf/anyOf
+ */
+function generateBranchEvaluatedProperties(
+  code: CodeBuilder,
+  schema: JsonSchema,
+  dataVar: string,
+  ctx: CompileContext,
+  visited: Set<JsonSchema> = new Set()
+): void {
+  if (typeof schema !== 'object' || schema === null) return;
+  if (visited.has(schema)) return;
+  visited.add(schema);
+
+  // Collect static properties (not recursing into oneOf/anyOf)
+  const staticProps = collectLocalEvaluatedProperties(schema, ctx, new Set(), false);
+
+  // Add static props and patterns
+  if (staticProps.props.length > 0) {
+    code.line(`${stringify(staticProps.props)}.forEach(p => evaluatedProps.add(p));`);
+  }
+  if (staticProps.patterns.length > 0) {
+    code.line(`evaluatedPatterns.push(...${stringify(staticProps.patterns)});`);
+  }
+  if (staticProps.hasAdditional || staticProps.hasUnevaluatedTrue) {
+    code.line('allPropsEvaluated = true;');
+    return; // No need to check further
+  }
+
+  // Resolve $ref and check its nested compositions
+  let targetSchema = schema;
+  if (schema.$ref) {
+    const refSchema = ctx.resolveRef(schema.$ref, schema);
+    if (refSchema && typeof refSchema === 'object' && refSchema !== null) {
+      targetSchema = refSchema;
+    }
+  }
+
+  // Handle nested oneOf - check which branch matches and recursively collect
+  if (typeof targetSchema === 'object' && targetSchema !== null && targetSchema.oneOf) {
+    for (const subSchema of targetSchema.oneOf) {
+      const checkExpr = generateSubschemaCheck(subSchema, dataVar, ctx);
+      code.if(checkExpr, () => {
+        generateBranchEvaluatedProperties(code, subSchema, dataVar, ctx, new Set(visited));
+      });
+    }
+  }
+
+  // Handle nested anyOf - check all matching branches
+  if (typeof targetSchema === 'object' && targetSchema !== null && targetSchema.anyOf) {
+    for (const subSchema of targetSchema.anyOf) {
+      const checkExpr = generateSubschemaCheck(subSchema, dataVar, ctx);
+      code.if(checkExpr, () => {
+        generateBranchEvaluatedProperties(code, subSchema, dataVar, ctx, new Set(visited));
+      });
+    }
+  }
+
+  // Handle nested if/then/else
+  if (typeof targetSchema === 'object' && targetSchema !== null && targetSchema.if !== undefined) {
+    const ifSchema = targetSchema.if;
+    const condVar = code.genVar('nestedIfCond');
+    const condCheckExpr = generateSubschemaCheck(ifSchema, dataVar, ctx);
+    code.line(`const ${condVar} = ${condCheckExpr};`);
+
+    code.if(condVar, () => {
+      generateBranchEvaluatedProperties(code, ifSchema, dataVar, ctx, new Set(visited));
+      if (targetSchema.then) {
+        generateBranchEvaluatedProperties(code, targetSchema.then, dataVar, ctx, new Set(visited));
+      }
+    });
+    if (targetSchema.else) {
+      code.else(() => {
+        generateBranchEvaluatedProperties(code, targetSchema.else!, dataVar, ctx, new Set(visited));
+      });
+    }
+  }
 }
 
 /**
@@ -1246,129 +1577,196 @@ export function generateUnevaluatedPropertiesCheck(
 ): void {
   if (schema.unevaluatedProperties === undefined) return;
 
-  // Collect all property names that are "evaluated" by other keywords
+  // Collect static evaluated properties (from properties, patternProperties, additionalProperties, allOf, $ref)
+  // Don't recurse into anyOf/oneOf/if-then-else - those need runtime evaluation
   const {
-    props: evaluatedProps,
-    patterns,
+    props: staticProps,
+    patterns: staticPatterns,
     hasAdditional,
-  } = collectEvaluatedProperties(schema, ctx);
+    hasUnevaluatedTrue,
+  } = collectLocalEvaluatedProperties(schema, ctx, new Set(), false);
 
-  // If additionalProperties is set, all properties are evaluated
-  if (hasAdditional) {
+  // If additionalProperties is set or unevaluatedProperties: true is in allOf, all properties are evaluated
+  if (hasAdditional || hasUnevaluatedTrue) {
     return; // Nothing to check
   }
 
-  // Handle if/then/else specially - we need to know at runtime which branch was taken
+  // Collect information about runtime-evaluated branches
+  const hasAnyOf = schema.anyOf && schema.anyOf.length > 0;
+  const hasOneOf = schema.oneOf && schema.oneOf.length > 0;
   const hasIfThenElse = schema.if !== undefined;
-  let thenProps: string[] = [];
-  let elseProps: string[] = [];
-  let thenPatterns: string[] = [];
-  let elsePatterns: string[] = [];
+  const hasDependentSchemas =
+    schema.dependentSchemas && Object.keys(schema.dependentSchemas).length > 0;
 
-  if (hasIfThenElse) {
-    if (schema.then) {
-      const collected = collectEvaluatedProperties(schema.then, ctx);
-      thenProps = collected.props;
-      thenPatterns = collected.patterns;
-    }
-    if (schema.else) {
-      const collected = collectEvaluatedProperties(schema.else, ctx);
-      elseProps = collected.props;
-      elsePatterns = collected.patterns;
-    }
-  }
+  // Collect nested composition keywords from allOf that need runtime evaluation
+  const nestedCompositions = collectNestedCompositions(schema, ctx);
+  const hasNestedCompositions = nestedCompositions.length > 0;
+
+  // Need runtime evaluation if we have any conditional keywords
+  const needsRuntimeEval =
+    hasAnyOf || hasOneOf || hasIfThenElse || hasDependentSchemas || hasNestedCompositions;
 
   // Only check if data is an object
   code.if(
     `typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
     () => {
-      // If there's if/then/else, we need to evaluate the condition first
-      if (hasIfThenElse) {
-        const ifSchema = schema.if!;
-        const condVar = code.genVar('ifCond');
-        const checkExpr = generateSubschemaCheck(ifSchema, dataVar, ctx);
-        code.line(`const ${condVar} = ${checkExpr};`);
+      if (needsRuntimeEval) {
+        // Create runtime arrays/sets for evaluated properties
+        code.line(`const evaluatedProps = new Set(${stringify(staticProps)});`);
+        code.line(`const evaluatedPatterns = ${stringify(staticPatterns)}.slice();`);
+        code.line(`let allPropsEvaluated = false;`);
 
-        // Build runtime-evaluated property lists
-        code.line(`const evaluatedPropsRuntime = ${stringify(evaluatedProps)}.slice();`);
+        // Handle if/then/else
+        if (hasIfThenElse) {
+          const ifSchema = schema.if!;
+          const condVar = code.genVar('ifCond');
+          const checkExpr = generateSubschemaCheck(ifSchema, dataVar, ctx);
+          code.line(`const ${condVar} = ${checkExpr};`);
 
-        // Add properties from the matching branch
-        if (thenProps.length > 0 || elseProps.length > 0) {
+          // When if matches, collect properties from the if schema itself
           code.if(condVar, () => {
-            if (thenProps.length > 0) {
-              code.line(`evaluatedPropsRuntime.push(...${stringify(thenProps)});`);
+            const ifProps = collectLocalEvaluatedProperties(ifSchema, ctx);
+            if (ifProps.props.length > 0) {
+              code.line(`${stringify(ifProps.props)}.forEach(p => evaluatedProps.add(p));`);
+            }
+            if (ifProps.patterns.length > 0) {
+              code.line(`evaluatedPatterns.push(...${stringify(ifProps.patterns)});`);
+            }
+            if (ifProps.hasAdditional || ifProps.hasUnevaluatedTrue) {
+              code.line('allPropsEvaluated = true;');
+            }
+
+            // Also add then properties if then exists
+            if (schema.then) {
+              const thenProps = collectLocalEvaluatedProperties(schema.then, ctx);
+              if (thenProps.props.length > 0) {
+                code.line(`${stringify(thenProps.props)}.forEach(p => evaluatedProps.add(p));`);
+              }
+              if (thenProps.patterns.length > 0) {
+                code.line(`evaluatedPatterns.push(...${stringify(thenProps.patterns)});`);
+              }
+              if (thenProps.hasAdditional || thenProps.hasUnevaluatedTrue) {
+                code.line('allPropsEvaluated = true;');
+              }
             }
           });
-          if (elseProps.length > 0) {
+
+          // When if doesn't match, add else properties
+          if (schema.else) {
             code.else(() => {
-              code.line(`evaluatedPropsRuntime.push(...${stringify(elseProps)});`);
+              const elseProps = collectLocalEvaluatedProperties(schema.else!, ctx);
+              if (elseProps.props.length > 0) {
+                code.line(`${stringify(elseProps.props)}.forEach(p => evaluatedProps.add(p));`);
+              }
+              if (elseProps.patterns.length > 0) {
+                code.line(`evaluatedPatterns.push(...${stringify(elseProps.patterns)});`);
+              }
+              if (elseProps.hasAdditional || elseProps.hasUnevaluatedTrue) {
+                code.line('allPropsEvaluated = true;');
+              }
             });
           }
         }
 
-        // Now check unevaluated properties
-        code.forIn('key', dataVar, () => {
-          const conditions: string[] = ['!evaluatedPropsRuntime.includes(key)'];
-
-          for (const pattern of patterns) {
-            conditions.push(`!/${escapeString(pattern)}/.test(key)`);
-          }
-
-          // Add runtime pattern checks for if/then/else
-          if (thenPatterns.length > 0 || elsePatterns.length > 0) {
-            code.line(`let matchesConditionalPattern = false;`);
-            code.if(condVar, () => {
-              for (const pattern of thenPatterns) {
-                code.if(`/${escapeString(pattern)}/.test(key)`, () => {
-                  code.line('matchesConditionalPattern = true;');
-                });
-              }
+        // Handle anyOf - add properties from ALL matching branches
+        if (hasAnyOf) {
+          for (const subSchema of schema.anyOf!) {
+            const checkExpr = generateSubschemaCheck(subSchema, dataVar, ctx);
+            code.if(checkExpr, () => {
+              generateBranchEvaluatedProperties(code, subSchema, dataVar, ctx);
             });
-            if (elsePatterns.length > 0) {
-              code.else(() => {
-                for (const pattern of elsePatterns) {
-                  code.if(`/${escapeString(pattern)}/.test(key)`, () => {
-                    code.line('matchesConditionalPattern = true;');
-                  });
+          }
+        }
+
+        // Handle oneOf - add properties from THE matching branch
+        if (hasOneOf) {
+          for (const subSchema of schema.oneOf!) {
+            const checkExpr = generateSubschemaCheck(subSchema, dataVar, ctx);
+            code.if(checkExpr, () => {
+              generateBranchEvaluatedProperties(code, subSchema, dataVar, ctx);
+            });
+          }
+        }
+
+        // Handle dependentSchemas - add properties from matching schemas
+        if (hasDependentSchemas) {
+          for (const [triggerProp, depSchema] of Object.entries(schema.dependentSchemas!)) {
+            const depProps = collectLocalEvaluatedProperties(depSchema, ctx);
+            if (
+              depProps.props.length > 0 ||
+              depProps.patterns.length > 0 ||
+              depProps.hasAdditional ||
+              depProps.hasUnevaluatedTrue
+            ) {
+              code.if(`Object.hasOwn(${dataVar}, '${escapeString(triggerProp)}')`, () => {
+                if (depProps.props.length > 0) {
+                  code.line(`${stringify(depProps.props)}.forEach(p => evaluatedProps.add(p));`);
+                }
+                if (depProps.patterns.length > 0) {
+                  code.line(`evaluatedPatterns.push(...${stringify(depProps.patterns)});`);
+                }
+                if (depProps.hasAdditional || depProps.hasUnevaluatedTrue) {
+                  code.line('allPropsEvaluated = true;');
                 }
               });
             }
-            conditions.push('!matchesConditionalPattern');
           }
+        }
 
-          const condition = conditions.join(' && ');
-
-          const keyPathExpr = pathExpr === "''" ? 'key' : `${pathExpr} + '.' + key`;
-          code.if(condition, () => {
-            if (schema.unevaluatedProperties === false) {
-              code.line(
-                `if (errors) errors.push({ path: ${keyPathExpr}, message: 'Unevaluated property not allowed', keyword: 'unevaluatedProperties' });`
-              );
-              code.line('return false;');
-            } else if (
-              schema.unevaluatedProperties !== true &&
-              schema.unevaluatedProperties !== undefined
-            ) {
-              generateSchemaValidator(
-                code,
-                schema.unevaluatedProperties,
-                `${dataVar}[key]`,
-                keyPathExpr,
-                ctx
-              );
+        // Handle nested compositions from allOf (anyOf/oneOf/if inside allOf)
+        if (hasNestedCompositions) {
+          for (const comp of nestedCompositions) {
+            if (comp.type === 'anyOf' || comp.type === 'oneOf') {
+              // For each branch, check if it matches and add its properties
+              for (const subSchema of comp.schemas) {
+                const checkExpr = generateSubschemaCheck(subSchema, dataVar, ctx);
+                code.if(checkExpr, () => {
+                  generateBranchEvaluatedProperties(code, subSchema, dataVar, ctx);
+                });
+              }
             }
+            // Note: nested if/then/else is handled similarly but we'd need the if schema to check the condition
+          }
+        }
+
+        // Now check unevaluated properties using the runtime-built sets
+        code.if('!allPropsEvaluated', () => {
+          code.forIn('key', dataVar, () => {
+            code.if(
+              '!evaluatedProps.has(key) && !evaluatedPatterns.some(p => new RegExp(p).test(key))',
+              () => {
+                const keyPathExpr = pathExpr === "''" ? 'key' : `${pathExpr} + '.' + key`;
+                if (schema.unevaluatedProperties === false) {
+                  code.line(
+                    `if (errors) errors.push({ path: ${keyPathExpr}, message: 'Unevaluated property not allowed', keyword: 'unevaluatedProperties' });`
+                  );
+                  code.line('return false;');
+                } else if (
+                  schema.unevaluatedProperties !== true &&
+                  schema.unevaluatedProperties !== undefined
+                ) {
+                  generateSchemaValidator(
+                    code,
+                    schema.unevaluatedProperties,
+                    `${dataVar}[key]`,
+                    keyPathExpr,
+                    ctx
+                  );
+                }
+              }
+            );
           });
         });
       } else {
-        // No if/then/else, use static evaluation
+        // No runtime evaluation needed, use static evaluation
         code.forIn('key', dataVar, () => {
           const conditions: string[] = [];
 
-          if (evaluatedProps.length > 0) {
-            conditions.push(`!${stringify(evaluatedProps)}.includes(key)`);
+          if (staticProps.length > 0) {
+            conditions.push(`!${stringify(staticProps)}.includes(key)`);
           }
 
-          for (const pattern of patterns) {
+          for (const pattern of staticPatterns) {
             conditions.push(`!/${escapeString(pattern)}/.test(key)`);
           }
 
@@ -1402,97 +1800,139 @@ export function generateUnevaluatedPropertiesCheck(
 
 /**
  * Collect the highest evaluated item index from a schema (recursively)
+ * @param recurseComposition - if false, don't recurse into anyOf/oneOf/if-then-else
  */
 function collectEvaluatedItems(
   schema: JsonSchema,
   ctx: CompileContext,
-  visited: Set<JsonSchema> = new Set()
+  visited: Set<JsonSchema> = new Set(),
+  recurseComposition: boolean = true
 ): {
   prefixCount: number;
   hasItems: boolean;
-  containsSchema: JsonSchema | null;
+  hasUnevaluatedItemsTrue: boolean;
+  containsSchemas: JsonSchema[];
 } {
   if (typeof schema !== 'object' || schema === null) {
-    return { prefixCount: 0, hasItems: false, containsSchema: null };
+    return { prefixCount: 0, hasItems: false, hasUnevaluatedItemsTrue: false, containsSchemas: [] };
   }
 
   // Prevent infinite recursion for circular refs
   if (visited.has(schema)) {
-    return { prefixCount: 0, hasItems: false, containsSchema: null };
+    return { prefixCount: 0, hasItems: false, hasUnevaluatedItemsTrue: false, containsSchemas: [] };
   }
   visited.add(schema);
 
   let prefixCount = schema.prefixItems?.length ?? 0;
   let hasItems = schema.items !== undefined && schema.items !== false;
-  let containsSchema: JsonSchema | null = schema.contains ?? null;
+  let hasUnevaluatedItemsTrue = schema.unevaluatedItems === true;
+  const containsSchemas: JsonSchema[] = schema.contains ? [schema.contains] : [];
 
   // Follow $ref
   if (schema.$ref) {
     const refSchema = ctx.resolveRef(schema.$ref, schema);
     if (refSchema) {
-      const collected = collectEvaluatedItems(refSchema, ctx, visited);
+      const collected = collectEvaluatedItems(refSchema, ctx, visited, recurseComposition);
       prefixCount = Math.max(prefixCount, collected.prefixCount);
       if (collected.hasItems) hasItems = true;
-      if (collected.containsSchema) containsSchema = collected.containsSchema;
+      if (collected.hasUnevaluatedItemsTrue) hasUnevaluatedItemsTrue = true;
+      containsSchemas.push(...collected.containsSchemas);
     }
   }
 
-  // Follow $dynamicRef
+  // Follow $dynamicRef - need to collect from ALL possible dynamic targets
   if (schema.$dynamicRef) {
-    const refSchema = ctx.resolveRef(schema.$dynamicRef, schema);
-    if (refSchema) {
-      const collected = collectEvaluatedItems(refSchema, ctx, visited);
-      prefixCount = Math.max(prefixCount, collected.prefixCount);
-      if (collected.hasItems) hasItems = true;
-      if (collected.containsSchema) containsSchema = collected.containsSchema;
+    const ref = schema.$dynamicRef;
+    const anchorMatch = ref.match(/#([a-zA-Z][a-zA-Z0-9_-]*)$/);
+    if (anchorMatch) {
+      // Get all schemas with this dynamic anchor
+      const anchorName = anchorMatch[1];
+      const dynamicSchemas = ctx.getDynamicAnchors(anchorName);
+      for (const dynSchema of dynamicSchemas) {
+        const collected = collectEvaluatedItems(
+          dynSchema,
+          ctx,
+          new Set(visited),
+          recurseComposition
+        );
+        prefixCount = Math.max(prefixCount, collected.prefixCount);
+        if (collected.hasItems) hasItems = true;
+        if (collected.hasUnevaluatedItemsTrue) hasUnevaluatedItemsTrue = true;
+        containsSchemas.push(...collected.containsSchemas);
+      }
+    } else {
+      // Not a dynamic anchor ref, resolve statically
+      const refSchema = ctx.resolveRef(ref, schema);
+      if (refSchema) {
+        const collected = collectEvaluatedItems(refSchema, ctx, visited, recurseComposition);
+        prefixCount = Math.max(prefixCount, collected.prefixCount);
+        if (collected.hasItems) hasItems = true;
+        if (collected.hasUnevaluatedItemsTrue) hasUnevaluatedItemsTrue = true;
+        containsSchemas.push(...collected.containsSchemas);
+      }
     }
   }
 
   // allOf - take maximum prefix count
   if (schema.allOf) {
     for (const sub of schema.allOf) {
-      const collected = collectEvaluatedItems(sub, ctx, visited);
+      const collected = collectEvaluatedItems(sub, ctx, visited, recurseComposition);
       prefixCount = Math.max(prefixCount, collected.prefixCount);
       if (collected.hasItems) hasItems = true;
-      if (collected.containsSchema) containsSchema = collected.containsSchema;
+      if (collected.hasUnevaluatedItemsTrue) hasUnevaluatedItemsTrue = true;
+      containsSchemas.push(...collected.containsSchemas);
     }
   }
 
-  // anyOf - take maximum prefix count
-  if (schema.anyOf) {
-    for (const sub of schema.anyOf) {
-      const collected = collectEvaluatedItems(sub, ctx, visited);
+  // Only recurse into anyOf/oneOf/if-then-else if recurseComposition is true
+  if (recurseComposition) {
+    // anyOf - take maximum prefix count
+    if (schema.anyOf) {
+      for (const sub of schema.anyOf) {
+        const collected = collectEvaluatedItems(sub, ctx, visited, true);
+        prefixCount = Math.max(prefixCount, collected.prefixCount);
+        if (collected.hasItems) hasItems = true;
+        if (collected.hasUnevaluatedItemsTrue) hasUnevaluatedItemsTrue = true;
+        containsSchemas.push(...collected.containsSchemas);
+      }
+    }
+
+    // oneOf - take maximum prefix count
+    if (schema.oneOf) {
+      for (const sub of schema.oneOf) {
+        const collected = collectEvaluatedItems(sub, ctx, visited, true);
+        prefixCount = Math.max(prefixCount, collected.prefixCount);
+        if (collected.hasItems) hasItems = true;
+        if (collected.hasUnevaluatedItemsTrue) hasUnevaluatedItemsTrue = true;
+        containsSchemas.push(...collected.containsSchemas);
+      }
+    }
+
+    // if/then/else
+    if (schema.if) {
+      const collected = collectEvaluatedItems(schema.if, ctx, visited, true);
       prefixCount = Math.max(prefixCount, collected.prefixCount);
       if (collected.hasItems) hasItems = true;
-      if (collected.containsSchema) containsSchema = collected.containsSchema;
+      if (collected.hasUnevaluatedItemsTrue) hasUnevaluatedItemsTrue = true;
+      containsSchemas.push(...collected.containsSchemas);
+    }
+    if (schema.then) {
+      const collected = collectEvaluatedItems(schema.then, ctx, visited, true);
+      prefixCount = Math.max(prefixCount, collected.prefixCount);
+      if (collected.hasItems) hasItems = true;
+      if (collected.hasUnevaluatedItemsTrue) hasUnevaluatedItemsTrue = true;
+      containsSchemas.push(...collected.containsSchemas);
+    }
+    if (schema.else) {
+      const collected = collectEvaluatedItems(schema.else, ctx, visited, true);
+      prefixCount = Math.max(prefixCount, collected.prefixCount);
+      if (collected.hasItems) hasItems = true;
+      if (collected.hasUnevaluatedItemsTrue) hasUnevaluatedItemsTrue = true;
+      containsSchemas.push(...collected.containsSchemas);
     }
   }
 
-  // oneOf - take maximum prefix count
-  if (schema.oneOf) {
-    for (const sub of schema.oneOf) {
-      const collected = collectEvaluatedItems(sub, ctx, visited);
-      prefixCount = Math.max(prefixCount, collected.prefixCount);
-      if (collected.hasItems) hasItems = true;
-      if (collected.containsSchema) containsSchema = collected.containsSchema;
-    }
-  }
-
-  // if/then/else
-  if (schema.then) {
-    const collected = collectEvaluatedItems(schema.then, ctx, visited);
-    prefixCount = Math.max(prefixCount, collected.prefixCount);
-    if (collected.hasItems) hasItems = true;
-    if (collected.containsSchema) containsSchema = collected.containsSchema;
-  }
-  if (schema.else) {
-    const collected = collectEvaluatedItems(schema.else, ctx, visited);
-    prefixCount = Math.max(prefixCount, collected.prefixCount);
-    if (collected.hasItems) hasItems = true;
-    if (collected.containsSchema) containsSchema = collected.containsSchema;
-  }
-
-  return { prefixCount, hasItems, containsSchema };
+  return { prefixCount, hasItems, hasUnevaluatedItemsTrue, containsSchemas };
 }
 
 /**
@@ -1510,28 +1950,40 @@ export function generateUnevaluatedItemsCheck(
 ): void {
   if (schema.unevaluatedItems === undefined) return;
 
-  // Collect info about evaluated items from the schema tree
-  const { prefixCount, hasItems, containsSchema } = collectEvaluatedItems(schema, ctx);
+  // Collect info about evaluated items from the schema tree (static, without anyOf/oneOf/if-then-else)
+  const {
+    prefixCount: staticPrefixCount,
+    hasItems,
+    hasUnevaluatedItemsTrue,
+    containsSchemas,
+  } = collectEvaluatedItems(schema, ctx, new Set(), false);
 
-  // If items is defined and not false anywhere, all items are evaluated
-  if (hasItems) {
+  // If items is defined and not false anywhere, or unevaluatedItems: true is in allOf, all items are evaluated
+  if (hasItems || hasUnevaluatedItemsTrue) {
     return; // Nothing to check
   }
 
+  // Check if we need runtime evaluation for anyOf/oneOf/if-then-else
+  const hasAnyOf = schema.anyOf && schema.anyOf.length > 0;
+  const hasOneOf = schema.oneOf && schema.oneOf.length > 0;
+  const hasIfThenElse = schema.if !== undefined;
+  const hasContains = containsSchemas.length > 0;
+  const needsRuntimeEval = hasAnyOf || hasOneOf || hasIfThenElse || hasContains;
+
   // Only check if data is an array
   code.if(`Array.isArray(${dataVar})`, () => {
-    // If contains is present, we need to track which items matched contains at runtime
-    if (containsSchema !== null) {
-      // Create a set to track which items are evaluated (matched contains or are in prefixItems)
+    if (needsRuntimeEval) {
+      // Create a set to track which items are evaluated
       const evaluatedSetVar = code.genVar('evaluatedItems');
       code.line(`const ${evaluatedSetVar} = new Set();`);
+      code.line(`let maxEvaluatedIndex = ${staticPrefixCount - 1};`);
 
-      // Mark prefixItems as evaluated
-      if (prefixCount > 0) {
+      // Mark static prefixItems as evaluated
+      if (staticPrefixCount > 0) {
         const iVar = code.genVar('i');
         code.for(
           `let ${iVar} = 0`,
-          `${iVar} < Math.min(${prefixCount}, ${dataVar}.length)`,
+          `${iVar} < Math.min(${staticPrefixCount}, ${dataVar}.length)`,
           `${iVar}++`,
           () => {
             code.line(`${evaluatedSetVar}.add(${iVar});`);
@@ -1539,16 +1991,102 @@ export function generateUnevaluatedItemsCheck(
         );
       }
 
-      // Check each item against contains and mark matched ones as evaluated
-      const iVar = code.genVar('i');
-      code.for(`let ${iVar} = 0`, `${iVar} < ${dataVar}.length`, `${iVar}++`, () => {
-        const checkExpr = generateSubschemaCheck(containsSchema, `${dataVar}[${iVar}]`, ctx);
-        code.line(`if (${checkExpr}) ${evaluatedSetVar}.add(${iVar});`);
-      });
+      // Handle contains - check each item against all contains schemas
+      for (const containsSchema of containsSchemas) {
+        const iVar = code.genVar('i');
+        code.for(`let ${iVar} = 0`, `${iVar} < ${dataVar}.length`, `${iVar}++`, () => {
+          const checkExpr = generateSubschemaCheck(containsSchema, `${dataVar}[${iVar}]`, ctx);
+          code.if(checkExpr, () => {
+            code.line(`${evaluatedSetVar}.add(${iVar});`);
+          });
+        });
+      }
+
+      // Handle anyOf - check which branches match and get their prefixItems count
+      if (hasAnyOf) {
+        for (const subSchema of schema.anyOf!) {
+          const subCollected = collectEvaluatedItems(subSchema, ctx, new Set(), true);
+          if (
+            subCollected.prefixCount > 0 ||
+            subCollected.hasItems ||
+            subCollected.containsSchemas.length > 0
+          ) {
+            const checkExpr = generateSubschemaCheck(subSchema, dataVar, ctx);
+            code.if(checkExpr, () => {
+              if (subCollected.hasItems) {
+                // All items are evaluated
+                code.line(`for (let k = 0; k < ${dataVar}.length; k++) ${evaluatedSetVar}.add(k);`);
+              } else {
+                if (subCollected.prefixCount > 0) {
+                  code.line(
+                    `for (let k = 0; k < Math.min(${subCollected.prefixCount}, ${dataVar}.length); k++) ${evaluatedSetVar}.add(k);`
+                  );
+                }
+                // Handle nested contains
+                for (const nestedContains of subCollected.containsSchemas) {
+                  const kVar = code.genVar('k');
+                  code.for(`let ${kVar} = 0`, `${kVar} < ${dataVar}.length`, `${kVar}++`, () => {
+                    const nestedCheck = generateSubschemaCheck(
+                      nestedContains,
+                      `${dataVar}[${kVar}]`,
+                      ctx
+                    );
+                    code.if(nestedCheck, () => {
+                      code.line(`${evaluatedSetVar}.add(${kVar});`);
+                    });
+                  });
+                }
+              }
+            });
+          }
+        }
+      }
+
+      // Handle oneOf - similar to anyOf
+      if (hasOneOf) {
+        for (const subSchema of schema.oneOf!) {
+          const subCollected = collectEvaluatedItems(subSchema, ctx, new Set(), true);
+          if (
+            subCollected.prefixCount > 0 ||
+            subCollected.hasItems ||
+            subCollected.containsSchemas.length > 0
+          ) {
+            const checkExpr = generateSubschemaCheck(subSchema, dataVar, ctx);
+            code.if(checkExpr, () => {
+              if (subCollected.hasItems) {
+                code.line(`for (let k = 0; k < ${dataVar}.length; k++) ${evaluatedSetVar}.add(k);`);
+              } else {
+                if (subCollected.prefixCount > 0) {
+                  code.line(
+                    `for (let k = 0; k < Math.min(${subCollected.prefixCount}, ${dataVar}.length); k++) ${evaluatedSetVar}.add(k);`
+                  );
+                }
+                for (const nestedContains of subCollected.containsSchemas) {
+                  const kVar = code.genVar('k');
+                  code.for(`let ${kVar} = 0`, `${kVar} < ${dataVar}.length`, `${kVar}++`, () => {
+                    const nestedCheck = generateSubschemaCheck(
+                      nestedContains,
+                      `${dataVar}[${kVar}]`,
+                      ctx
+                    );
+                    code.if(nestedCheck, () => {
+                      code.line(`${evaluatedSetVar}.add(${kVar});`);
+                    });
+                  });
+                }
+              }
+            });
+          }
+        }
+      }
+
+      // Handle if/then/else - recursively handles nested if/then/else in then/else branches
+      if (hasIfThenElse) {
+        generateIfThenElseEvaluatedItems(code, schema, dataVar, evaluatedSetVar, ctx);
+      }
 
       // Now validate unevaluated items
       if (schema.unevaluatedItems === false) {
-        // Check if there are any items not in the evaluated set
         const jVar = code.genVar('j');
         code.for(`let ${jVar} = 0`, `${jVar} < ${dataVar}.length`, `${jVar}++`, () => {
           code.if(`!${evaluatedSetVar}.has(${jVar})`, () => {
@@ -1561,7 +2099,6 @@ export function generateUnevaluatedItemsCheck(
           });
         });
       } else if (schema.unevaluatedItems !== true) {
-        // Validate unevaluated items against the schema
         const jVar = code.genVar('j');
         code.for(`let ${jVar} = 0`, `${jVar} < ${dataVar}.length`, `${jVar}++`, () => {
           code.if(`!${evaluatedSetVar}.has(${jVar})`, () => {
@@ -1578,14 +2115,14 @@ export function generateUnevaluatedItemsCheck(
         });
       }
     } else {
-      // No contains, use simpler static evaluation
+      // No runtime evaluation needed, use simpler static evaluation
       if (schema.unevaluatedItems === false) {
-        if (prefixCount > 0) {
-          code.if(`${dataVar}.length > ${prefixCount}`, () => {
+        if (staticPrefixCount > 0) {
+          code.if(`${dataVar}.length > ${staticPrefixCount}`, () => {
             const itemPathExpr =
               pathExpr === "''"
-                ? `'[' + ${prefixCount} + ']'`
-                : `${pathExpr} + '[' + ${prefixCount} + ']'`;
+                ? `'[' + ${staticPrefixCount} + ']'`
+                : `${pathExpr} + '[' + ${staticPrefixCount} + ']'`;
             code.line(
               `if (errors) errors.push({ path: ${itemPathExpr}, message: 'Unevaluated item not allowed', keyword: 'unevaluatedItems' });`
             );
@@ -1599,18 +2136,120 @@ export function generateUnevaluatedItemsCheck(
       } else if (schema.unevaluatedItems !== true) {
         // Validate unevaluated items against the schema
         const iVar = code.genVar('i');
-        code.for(`let ${iVar} = ${prefixCount}`, `${iVar} < ${dataVar}.length`, `${iVar}++`, () => {
-          const itemPathExpr =
-            pathExpr === "''" ? `'[' + ${iVar} + ']'` : `${pathExpr} + '[' + ${iVar} + ']'`;
-          generateSchemaValidator(
-            code,
-            schema.unevaluatedItems as JsonSchema,
-            `${dataVar}[${iVar}]`,
-            itemPathExpr,
-            ctx
-          );
-        });
+        code.for(
+          `let ${iVar} = ${staticPrefixCount}`,
+          `${iVar} < ${dataVar}.length`,
+          `${iVar}++`,
+          () => {
+            const itemPathExpr =
+              pathExpr === "''" ? `'[' + ${iVar} + ']'` : `${pathExpr} + '[' + ${iVar} + ']'`;
+            generateSchemaValidator(
+              code,
+              schema.unevaluatedItems as JsonSchema,
+              `${dataVar}[${iVar}]`,
+              itemPathExpr,
+              ctx
+            );
+          }
+        );
       }
     }
   });
+}
+
+/**
+ * Recursively generate code to track evaluated items for if/then/else
+ * This handles nested if/then/else structures properly
+ */
+function generateIfThenElseEvaluatedItems(
+  code: CodeBuilder,
+  schema: JsonSchemaBase,
+  dataVar: string,
+  evaluatedSetVar: string,
+  ctx: CompileContext
+): void {
+  if (schema.if === undefined) return;
+
+  const ifSchema = schema.if;
+  const condVar = code.genVar('ifCond');
+  const checkExpr = generateSubschemaCheck(ifSchema, dataVar, ctx);
+  code.line(`const ${condVar} = ${checkExpr};`);
+
+  // When if matches, add items from if and then
+  code.if(condVar, () => {
+    // Add evaluated items from the if schema itself
+    const ifCollected = collectEvaluatedItems(ifSchema, ctx, new Set(), false);
+    if (ifCollected.prefixCount > 0) {
+      code.line(
+        `for (let k = 0; k < Math.min(${ifCollected.prefixCount}, ${dataVar}.length); k++) ${evaluatedSetVar}.add(k);`
+      );
+    }
+    // Add items matched by contains in the if schema
+    for (const nestedContains of ifCollected.containsSchemas) {
+      const kVar = code.genVar('k');
+      code.for(`let ${kVar} = 0`, `${kVar} < ${dataVar}.length`, `${kVar}++`, () => {
+        const nestedCheck = generateSubschemaCheck(nestedContains, `${dataVar}[${kVar}]`, ctx);
+        code.if(nestedCheck, () => {
+          code.line(`${evaluatedSetVar}.add(${kVar});`);
+        });
+      });
+    }
+
+    // Handle the then branch
+    if (schema.then) {
+      const thenSchema = schema.then;
+      // First add simple items from then (not from nested if/then)
+      const thenCollected = collectEvaluatedItems(thenSchema, ctx, new Set(), false);
+      if (thenCollected.hasItems) {
+        code.line(`for (let k = 0; k < ${dataVar}.length; k++) ${evaluatedSetVar}.add(k);`);
+      } else if (thenCollected.prefixCount > 0) {
+        code.line(
+          `for (let k = 0; k < Math.min(${thenCollected.prefixCount}, ${dataVar}.length); k++) ${evaluatedSetVar}.add(k);`
+        );
+      }
+      for (const nestedContains of thenCollected.containsSchemas) {
+        const kVar = code.genVar('k');
+        code.for(`let ${kVar} = 0`, `${kVar} < ${dataVar}.length`, `${kVar}++`, () => {
+          const nestedCheck = generateSubschemaCheck(nestedContains, `${dataVar}[${kVar}]`, ctx);
+          code.if(nestedCheck, () => {
+            code.line(`${evaluatedSetVar}.add(${kVar});`);
+          });
+        });
+      }
+
+      // Recursively handle nested if/then/else in the then branch
+      if (typeof thenSchema === 'object' && thenSchema !== null && thenSchema.if !== undefined) {
+        generateIfThenElseEvaluatedItems(code, thenSchema, dataVar, evaluatedSetVar, ctx);
+      }
+    }
+  });
+
+  // When if doesn't match, add items from else
+  if (schema.else) {
+    code.else(() => {
+      const elseSchema = schema.else!;
+      const elseCollected = collectEvaluatedItems(elseSchema, ctx, new Set(), false);
+      if (elseCollected.hasItems) {
+        code.line(`for (let k = 0; k < ${dataVar}.length; k++) ${evaluatedSetVar}.add(k);`);
+      } else if (elseCollected.prefixCount > 0) {
+        code.line(
+          `for (let k = 0; k < Math.min(${elseCollected.prefixCount}, ${dataVar}.length); k++) ${evaluatedSetVar}.add(k);`
+        );
+      }
+      for (const nestedContains of elseCollected.containsSchemas) {
+        const kVar = code.genVar('k');
+        code.for(`let ${kVar} = 0`, `${kVar} < ${dataVar}.length`, `${kVar}++`, () => {
+          const nestedCheck = generateSubschemaCheck(nestedContains, `${dataVar}[${kVar}]`, ctx);
+          code.if(nestedCheck, () => {
+            code.line(`${evaluatedSetVar}.add(${kVar});`);
+          });
+        });
+      }
+
+      // Recursively handle nested if/then/else in the else branch
+      if (typeof elseSchema === 'object' && elseSchema !== null && elseSchema.if !== undefined) {
+        generateIfThenElseEvaluatedItems(code, elseSchema, dataVar, evaluatedSetVar, ctx);
+      }
+    });
+  }
 }

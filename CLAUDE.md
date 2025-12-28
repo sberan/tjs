@@ -20,3 +20,5 @@ json-schema-ts - A JSON Schema validator library with TypeScript type inference.
 - Type tests use the `Expect<Equal<...>>` pattern for compile-time assertions
 - The `schema()` function returns a `Validator<T>` where T is inferred from the schema
 - Run `npm test` to verify type inference is working correctly
+- When creating debug test files, use `/private/tmp/debug.js` instead of files in the project directory
+- Use Write tool to create files instead of cat/heredoc in Bash
