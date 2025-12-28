@@ -2,7 +2,7 @@
  * JSON Schema validator
  */
 
-import type { JsonSchema, JsonSchemaBase } from '../types.js';
+import type { JsonSchema } from '../types.js';
 import { compile, type CompileError } from './compiler.js';
 import type { CompileOptions } from './context.js';
 import { coerceValue } from './coercion.js';

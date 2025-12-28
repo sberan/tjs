@@ -1,5 +1,5 @@
 import type { JsonSchema } from '../../src/types.js';
-import { Validator } from '../../src/index.js';
+import { Validator } from '../../src/index';
 import type { TestFile, TestResult, ComplianceReport } from './types.js';
 
 export interface RunnerOptions {
@@ -38,7 +38,7 @@ export function runTestSuite(files: TestFile[], options: RunnerOptions = {}): Co
     // Skip unimplemented keywords
     if (options.skipUnimplemented && UNIMPLEMENTED_KEYWORDS.includes(keyword)) {
       for (const group of file.groups) {
-        for (const test of group.tests) {
+        for (const _test of group.tests) {
           total++;
           skipped++;
           byKeyword[keyword].skipped++;
@@ -49,7 +49,7 @@ export function runTestSuite(files: TestFile[], options: RunnerOptions = {}): Co
 
     if (options.skipKeywords?.includes(keyword)) {
       for (const group of file.groups) {
-        for (const test of group.tests) {
+        for (const _test of group.tests) {
           total++;
           skipped++;
           byKeyword[keyword].skipped++;
