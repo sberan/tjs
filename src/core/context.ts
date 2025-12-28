@@ -122,6 +122,7 @@ export class CompileContext {
       contentAssertion: options.contentAssertion ?? false,
       remotes: options.remotes ?? {},
       legacyRef: options.legacyRef ?? true,
+      coerce: options.coerce ?? false,
     };
 
     // Register remote schemas
