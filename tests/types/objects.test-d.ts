@@ -13,13 +13,13 @@ const Person = struct({
 });
 expectTypeOf(Person.type).toEqualTypeOf<{ firstName: string; lastName: string; age: number }>();
 
-// Struct with optional fields
+// Struct with optional fields using { optional: true }
 const PersonOptional = struct({
   firstName: 'string',
   lastName: 'string',
-  age: 'number',
-  middleName: 'string',
-}).optional('middleName', 'age');
+  age: { type: 'number', optional: true },
+  middleName: { type: 'string', optional: true },
+});
 expectTypeOf(PersonOptional.type).toEqualTypeOf<{
   firstName: string;
   lastName: string;
@@ -31,8 +31,8 @@ expectTypeOf(PersonOptional.type).toEqualTypeOf<{
 const User = struct({
   id: 'number',
   email: { type: 'string', format: 'email' },
-  tags: { type: 'array', items: { type: 'string' } },
-}).optional('tags');
+  tags: { type: 'array', items: { type: 'string' }, optional: true },
+});
 expectTypeOf(User.type).toEqualTypeOf<{ id: number; email: string; tags?: string[] }>();
 
 // Struct with nested objects - use structural matching
@@ -51,6 +51,15 @@ const Company = struct({
 expectTypeOf(Company.type.name).toBeString();
 expectTypeOf(Company.type.address.street).toBeString();
 expectTypeOf(Company.type.address.city).toBeString();
+
+// Struct with self-reference ($ref: '#')
+const LinkedNode = struct({
+  value: 'string',
+  next: { $ref: '#', optional: true },
+});
+// next should be the same type as the struct itself (recursive)
+expectTypeOf(LinkedNode.type.value).toBeString();
+expectTypeOf(LinkedNode.type.next?.value).toBeString();
 
 // =============================================================================
 // Basic Object Types

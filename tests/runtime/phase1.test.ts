@@ -15,13 +15,13 @@ describe('struct helper', () => {
     expect(Person.validate({})).toBe(false);
   });
 
-  it('validates struct with optional fields', () => {
+  it('validates struct with optional fields using { optional: true }', () => {
     const Person = struct({
       firstName: 'string',
-      middleName: 'string',
+      middleName: { type: 'string', optional: true },
       lastName: 'string',
-      age: 'number',
-    }).optional('middleName', 'age');
+      age: { type: 'number', optional: true },
+    });
 
     expect(Person.validate({ firstName: 'John', lastName: 'Doe' })).toBe(true);
     expect(Person.validate({ firstName: 'John', middleName: 'M', lastName: 'Doe' })).toBe(true);
@@ -54,6 +54,18 @@ describe('struct helper', () => {
     expect(S.validate({ str: 'hello', num: 42, bool: true })).toBe(true);
     expect(S.validate({ str: 123, num: 42, bool: true })).toBe(false); // wrong str type
     expect(S.validate({ str: 'hello', num: '42', bool: true })).toBe(false); // wrong num type
+  });
+
+  it('validates self-referential structs with $ref', () => {
+    const Node = struct({
+      value: 'string',
+      next: { $ref: '#', optional: true },
+    });
+
+    expect(Node.validate({ value: 'a' })).toBe(true);
+    expect(Node.validate({ value: 'a', next: { value: 'b' } })).toBe(true);
+    expect(Node.validate({ value: 'a', next: { value: 'b', next: { value: 'c' } } })).toBe(true);
+    expect(Node.validate({ value: 'a', next: { value: 123 } })).toBe(false); // wrong nested type
   });
 });
 

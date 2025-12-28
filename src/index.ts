@@ -62,4 +62,4 @@ export type { Validator as ValidatorType } from './core/index.js';
 export { metaSchemas, draft04Schema, draft06Schema, draft07Schema } from './meta-schemas/index.js';
 
 // Export struct helper
-export { struct, type StructBuilder } from './struct.js';
+export { struct, type StructPropertyDef, type StructSchema } from './struct.js';
