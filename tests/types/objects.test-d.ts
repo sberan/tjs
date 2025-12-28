@@ -1,4 +1,4 @@
-import { schema, struct } from 'json-schema-ts';
+import { schema, struct } from 'tjs';
 import { expectTypeOf } from 'expect-type';
 
 // =============================================================================

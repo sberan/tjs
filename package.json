@@ -1,5 +1,5 @@
 {
-  "name": "json-schema-ts",
+  "name": "tjs",
   "version": "0.0.1",
   "description": "JSON Schema validator with TypeScript type inference",
   "type": "module",
