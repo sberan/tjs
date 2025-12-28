@@ -33,7 +33,7 @@ export type { JsonSchema, JsonSchemaBase, JsonValue, JsonObject, JsonArray } fro
 export type { Infer } from './infer.js';
 export type {
   ValidationError,
-  ParseResult,
+  ValidationResult,
   CompileOptions as ValidatorOptions,
   LoadRemotesOptions,
 } from './core/index.js';

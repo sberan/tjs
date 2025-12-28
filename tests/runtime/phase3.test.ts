@@ -18,29 +18,31 @@ describe('dependentSchemas', () => {
   });
 
   it('passes when trigger property is absent', () => {
-    expect(Payment.validate({})).toBe(true);
-    expect(Payment.validate({ name: 'Alice' })).toBe(true);
-    expect(Payment.validate({ billingAddress: '123 Main St' })).toBe(true);
+    expect(Payment.validate({}).error).toBeUndefined();
+    expect(Payment.validate({ name: 'Alice' }).error).toBeUndefined();
+    expect(Payment.validate({ billingAddress: '123 Main St' }).error).toBeUndefined();
   });
 
   it('passes when trigger and required dependent are present', () => {
-    expect(Payment.validate({ creditCard: '1234', billingAddress: '123 Main St' })).toBe(true);
     expect(
-      Payment.validate({ name: 'Alice', creditCard: '1234', billingAddress: '123 Main St' })
-    ).toBe(true);
+      Payment.validate({ creditCard: '1234', billingAddress: '123 Main St' }).error
+    ).toBeUndefined();
+    expect(
+      Payment.validate({ name: 'Alice', creditCard: '1234', billingAddress: '123 Main St' }).error
+    ).toBeUndefined();
   });
 
   it('fails when trigger is present but dependent required is missing', () => {
-    expect(Payment.validate({ creditCard: '1234' })).toBe(false);
-    expect(Payment.validate({ name: 'Alice', creditCard: '1234' })).toBe(false);
+    expect(Payment.validate({ creditCard: '1234' }).error).toBeDefined();
+    expect(Payment.validate({ name: 'Alice', creditCard: '1234' }).error).toBeDefined();
   });
 
   it('returns correct error message', () => {
-    const result = Payment.parse({ creditCard: '1234' });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.errors[0].keyword).toBe('required');
-      expect(result.errors[0].path).toBe('billingAddress');
+    const result = Payment.validate({ creditCard: '1234' });
+    expect(result.error === undefined).toBe(false);
+    if (result.error !== undefined) {
+      expect(result.error[0].keyword).toBe('required');
+      expect(result.error[0].path).toBe('billingAddress');
     }
   });
 
@@ -61,13 +63,15 @@ describe('dependentSchemas', () => {
   });
 
   it('applies property schema when trigger is present', () => {
-    expect(ConditionalType.validate({ type: 'numeric', value: 42 })).toBe(true);
-    expect(ConditionalType.validate({ type: 'numeric', value: 'not a number' })).toBe(false);
+    expect(ConditionalType.validate({ type: 'numeric', value: 42 }).error).toBeUndefined();
+    expect(
+      ConditionalType.validate({ type: 'numeric', value: 'not a number' }).error
+    ).toBeDefined();
   });
 
   it('does not apply schema when trigger is absent', () => {
-    expect(ConditionalType.validate({ value: 'anything' })).toBe(true);
-    expect(ConditionalType.validate({ value: 42 })).toBe(true);
+    expect(ConditionalType.validate({ value: 'anything' }).error).toBeUndefined();
+    expect(ConditionalType.validate({ value: 42 }).error).toBeUndefined();
   });
 
   // Multiple dependent schemas
@@ -95,16 +99,18 @@ describe('dependentSchemas', () => {
 
   it('applies multiple dependent schemas independently', () => {
     // Only foo trigger
-    expect(Multi.validate({ foo: 'x', fooExtra: 1 })).toBe(true);
-    expect(Multi.validate({ foo: 'x' })).toBe(false);
+    expect(Multi.validate({ foo: 'x', fooExtra: 1 }).error).toBeUndefined();
+    expect(Multi.validate({ foo: 'x' }).error).toBeDefined();
 
     // Only bar trigger
-    expect(Multi.validate({ bar: 'x', barExtra: true })).toBe(true);
-    expect(Multi.validate({ bar: 'x' })).toBe(false);
+    expect(Multi.validate({ bar: 'x', barExtra: true }).error).toBeUndefined();
+    expect(Multi.validate({ bar: 'x' }).error).toBeDefined();
 
     // Both triggers
-    expect(Multi.validate({ foo: 'x', bar: 'x', fooExtra: 1, barExtra: true })).toBe(true);
-    expect(Multi.validate({ foo: 'x', bar: 'x', fooExtra: 1 })).toBe(false);
+    expect(
+      Multi.validate({ foo: 'x', bar: 'x', fooExtra: 1, barExtra: true }).error
+    ).toBeUndefined();
+    expect(Multi.validate({ foo: 'x', bar: 'x', fooExtra: 1 }).error).toBeDefined();
   });
 
   // Nested objects in dependent schema
@@ -130,10 +136,10 @@ describe('dependentSchemas', () => {
   });
 
   it('validates nested dependent schemas', () => {
-    expect(Nested.validate({})).toBe(true);
-    expect(Nested.validate({ advanced: true, settings: { timeout: 30 } })).toBe(true);
-    expect(Nested.validate({ advanced: true })).toBe(false);
-    expect(Nested.validate({ advanced: true, settings: {} })).toBe(false);
+    expect(Nested.validate({}).error).toBeUndefined();
+    expect(Nested.validate({ advanced: true, settings: { timeout: 30 } }).error).toBeUndefined();
+    expect(Nested.validate({ advanced: true }).error).toBeDefined();
+    expect(Nested.validate({ advanced: true, settings: {} }).error).toBeDefined();
   });
 });
 
@@ -148,21 +154,21 @@ describe('unevaluatedProperties', () => {
   });
 
   it('allows defined properties', () => {
-    expect(Strict.validate({ name: 'Alice' })).toBe(true);
-    expect(Strict.validate({})).toBe(true);
+    expect(Strict.validate({ name: 'Alice' }).error).toBeUndefined();
+    expect(Strict.validate({}).error).toBeUndefined();
   });
 
   it('rejects unevaluated properties when false', () => {
-    expect(Strict.validate({ name: 'Alice', extra: 'value' })).toBe(false);
-    expect(Strict.validate({ other: 123 })).toBe(false);
+    expect(Strict.validate({ name: 'Alice', extra: 'value' }).error).toBeDefined();
+    expect(Strict.validate({ other: 123 }).error).toBeDefined();
   });
 
   it('returns correct error message', () => {
-    const result = Strict.parse({ name: 'Alice', extra: 'value' });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.errors[0].keyword).toBe('unevaluatedProperties');
-      expect(result.errors[0].path).toBe('extra');
+    const result = Strict.validate({ name: 'Alice', extra: 'value' });
+    expect(result.error === undefined).toBe(false);
+    if (result.error !== undefined) {
+      expect(result.error[0].keyword).toBe('unevaluatedProperties');
+      expect(result.error[0].path).toBe('extra');
     }
   });
 
@@ -182,14 +188,14 @@ describe('unevaluatedProperties', () => {
   });
 
   it('evaluates properties from allOf subschemas', () => {
-    expect(AllOfExtended.validate({ name: 'Alice', age: 30 })).toBe(true);
-    expect(AllOfExtended.validate({ name: 'Alice' })).toBe(true);
-    expect(AllOfExtended.validate({ age: 30 })).toBe(true);
-    expect(AllOfExtended.validate({})).toBe(true);
+    expect(AllOfExtended.validate({ name: 'Alice', age: 30 }).error).toBeUndefined();
+    expect(AllOfExtended.validate({ name: 'Alice' }).error).toBeUndefined();
+    expect(AllOfExtended.validate({ age: 30 }).error).toBeUndefined();
+    expect(AllOfExtended.validate({}).error).toBeUndefined();
   });
 
   it('rejects extra properties not in any allOf subschema', () => {
-    expect(AllOfExtended.validate({ name: 'Alice', age: 30, extra: 'x' })).toBe(false);
+    expect(AllOfExtended.validate({ name: 'Alice', age: 30, extra: 'x' }).error).toBeDefined();
   });
 
   // unevaluatedProperties with anyOf
@@ -208,12 +214,12 @@ describe('unevaluatedProperties', () => {
   });
 
   it('evaluates properties from matching anyOf branch', () => {
-    expect(AnyOfSchema.validate({ kind: 'a', a: 'hello' })).toBe(true);
-    expect(AnyOfSchema.validate({ kind: 'b', b: 42 })).toBe(true);
+    expect(AnyOfSchema.validate({ kind: 'a', a: 'hello' }).error).toBeUndefined();
+    expect(AnyOfSchema.validate({ kind: 'b', b: 42 }).error).toBeUndefined();
   });
 
   it('rejects extra properties with anyOf', () => {
-    expect(AnyOfSchema.validate({ kind: 'a', a: 'hello', extra: true })).toBe(false);
+    expect(AnyOfSchema.validate({ kind: 'a', a: 'hello', extra: true }).error).toBeDefined();
   });
 
   // unevaluatedProperties with if/then/else
@@ -235,16 +241,20 @@ describe('unevaluatedProperties', () => {
   });
 
   it('evaluates properties from if/then branch', () => {
-    expect(Conditional.validate({ type: 'person', name: 'Alice' })).toBe(true);
+    expect(Conditional.validate({ type: 'person', name: 'Alice' }).error).toBeUndefined();
   });
 
   it('evaluates properties from if/else branch', () => {
-    expect(Conditional.validate({ type: 'company', title: 'Acme Corp' })).toBe(true);
+    expect(Conditional.validate({ type: 'company', title: 'Acme Corp' }).error).toBeUndefined();
   });
 
   it('rejects extra properties not in conditional branch', () => {
-    expect(Conditional.validate({ type: 'person', name: 'Alice', title: 'ignored' })).toBe(false);
-    expect(Conditional.validate({ type: 'company', title: 'Acme', name: 'ignored' })).toBe(false);
+    expect(
+      Conditional.validate({ type: 'person', name: 'Alice', title: 'ignored' }).error
+    ).toBeDefined();
+    expect(
+      Conditional.validate({ type: 'company', title: 'Acme', name: 'ignored' }).error
+    ).toBeDefined();
   });
 
   // unevaluatedProperties with schema (not just false)
@@ -257,13 +267,13 @@ describe('unevaluatedProperties', () => {
   });
 
   it('validates unevaluated properties against schema', () => {
-    expect(WithSchema.validate({ id: 'abc', extra: 42 })).toBe(true);
-    expect(WithSchema.validate({ id: 'abc', foo: 1, bar: 2 })).toBe(true);
+    expect(WithSchema.validate({ id: 'abc', extra: 42 }).error).toBeUndefined();
+    expect(WithSchema.validate({ id: 'abc', foo: 1, bar: 2 }).error).toBeUndefined();
   });
 
   it('rejects unevaluated properties not matching schema', () => {
-    expect(WithSchema.validate({ id: 'abc', extra: 'string' })).toBe(false);
-    expect(WithSchema.validate({ id: 'abc', extra: true })).toBe(false);
+    expect(WithSchema.validate({ id: 'abc', extra: 'string' }).error).toBeDefined();
+    expect(WithSchema.validate({ id: 'abc', extra: true }).error).toBeDefined();
   });
 
   // Interaction with patternProperties
@@ -279,12 +289,12 @@ describe('unevaluatedProperties', () => {
   });
 
   it('considers patternProperties as evaluated', () => {
-    expect(WithPattern.validate({ id: 'abc', x_count: 42 })).toBe(true);
-    expect(WithPattern.validate({ id: 'abc', x_foo: 1, x_bar: 2 })).toBe(true);
+    expect(WithPattern.validate({ id: 'abc', x_count: 42 }).error).toBeUndefined();
+    expect(WithPattern.validate({ id: 'abc', x_foo: 1, x_bar: 2 }).error).toBeUndefined();
   });
 
   it('rejects properties not matching patterns', () => {
-    expect(WithPattern.validate({ id: 'abc', other: 'value' })).toBe(false);
+    expect(WithPattern.validate({ id: 'abc', other: 'value' }).error).toBeDefined();
   });
 
   // Interaction with additionalProperties
@@ -298,9 +308,9 @@ describe('unevaluatedProperties', () => {
   });
 
   it('additionalProperties marks properties as evaluated', () => {
-    expect(WithAdditional.validate({ id: 'abc', extra: 42 })).toBe(true);
+    expect(WithAdditional.validate({ id: 'abc', extra: 42 }).error).toBeUndefined();
     // If additionalProperties validates, unevaluatedProperties should not trigger
-    expect(WithAdditional.validate({ id: 'abc', foo: 1, bar: 2 })).toBe(true);
+    expect(WithAdditional.validate({ id: 'abc', foo: 1, bar: 2 }).error).toBeUndefined();
   });
 });
 
@@ -313,21 +323,21 @@ describe('unevaluatedItems', () => {
   });
 
   it('allows items matching prefixItems', () => {
-    expect(StrictTuple.validate(['hello', 42])).toBe(true);
-    expect(StrictTuple.validate(['x', 1])).toBe(true);
+    expect(StrictTuple.validate(['hello', 42]).error).toBeUndefined();
+    expect(StrictTuple.validate(['x', 1]).error).toBeUndefined();
   });
 
   it('rejects extra items when unevaluatedItems is false', () => {
-    expect(StrictTuple.validate(['hello', 42, 'extra'])).toBe(false);
-    expect(StrictTuple.validate(['hello', 42, 1, 2, 3])).toBe(false);
+    expect(StrictTuple.validate(['hello', 42, 'extra']).error).toBeDefined();
+    expect(StrictTuple.validate(['hello', 42, 1, 2, 3]).error).toBeDefined();
   });
 
   it('returns correct error message', () => {
-    const result = StrictTuple.parse(['hello', 42, 'extra']);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.errors[0].keyword).toBe('unevaluatedItems');
-      expect(result.errors[0].path).toBe('[2]');
+    const result = StrictTuple.validate(['hello', 42, 'extra']);
+    expect(result.error === undefined).toBe(false);
+    if (result.error !== undefined) {
+      expect(result.error[0].keyword).toBe('unevaluatedItems');
+      expect(result.error[0].path).toBe('[2]');
     }
   });
 
@@ -339,13 +349,13 @@ describe('unevaluatedItems', () => {
   });
 
   it('validates unevaluated items against schema', () => {
-    expect(WithSchema.validate(['hello', 1, 2, 3])).toBe(true);
-    expect(WithSchema.validate(['hello'])).toBe(true);
+    expect(WithSchema.validate(['hello', 1, 2, 3]).error).toBeUndefined();
+    expect(WithSchema.validate(['hello']).error).toBeUndefined();
   });
 
   it('rejects unevaluated items not matching schema', () => {
-    expect(WithSchema.validate(['hello', 'world'])).toBe(false);
-    expect(WithSchema.validate(['hello', 1, 'bad'])).toBe(false);
+    expect(WithSchema.validate(['hello', 'world']).error).toBeDefined();
+    expect(WithSchema.validate(['hello', 1, 'bad']).error).toBeDefined();
   });
 
   // unevaluatedItems with allOf
@@ -364,12 +374,12 @@ describe('unevaluatedItems', () => {
   });
 
   it('merges evaluated items from allOf subschemas', () => {
-    expect(AllOfTuple.validate(['hello', 42])).toBe(true);
-    expect(AllOfTuple.validate(['x', 1])).toBe(true);
+    expect(AllOfTuple.validate(['hello', 42]).error).toBeUndefined();
+    expect(AllOfTuple.validate(['x', 1]).error).toBeUndefined();
   });
 
   it('rejects extra items not in any allOf subschema', () => {
-    expect(AllOfTuple.validate(['hello', 42, 'extra'])).toBe(false);
+    expect(AllOfTuple.validate(['hello', 42, 'extra']).error).toBeDefined();
   });
 
   // unevaluatedItems with contains
@@ -381,13 +391,13 @@ describe('unevaluatedItems', () => {
 
   it('marks items matching contains as evaluated', () => {
     // 'hello' matches contains, 1 and 2 are unevaluated but match schema
-    expect(WithContains.validate(['hello', 1, 2])).toBe(true);
-    expect(WithContains.validate([1, 'hello', 2])).toBe(true);
+    expect(WithContains.validate(['hello', 1, 2]).error).toBeUndefined();
+    expect(WithContains.validate([1, 'hello', 2]).error).toBeUndefined();
   });
 
   it('rejects unevaluated items not matching schema when contains present', () => {
     // 'hello' matches contains, true is unevaluated and doesn't match number
-    expect(WithContains.validate(['hello', true])).toBe(false);
+    expect(WithContains.validate(['hello', true]).error).toBeDefined();
   });
 
   // Interaction with items (not prefixItems)
@@ -398,14 +408,14 @@ describe('unevaluatedItems', () => {
   });
 
   it('items marks all positions as evaluated', () => {
-    expect(WithItems.validate([1, 2, 3])).toBe(true);
-    expect(WithItems.validate([])).toBe(true);
+    expect(WithItems.validate([1, 2, 3]).error).toBeUndefined();
+    expect(WithItems.validate([]).error).toBeUndefined();
   });
 
   // When items validates all, unevaluatedItems should never trigger
   it('unevaluatedItems never triggers when items is present', () => {
     // All items are evaluated by 'items', so unevaluatedItems: false has nothing to reject
-    expect(WithItems.validate([1, 2, 3, 4, 5])).toBe(true);
+    expect(WithItems.validate([1, 2, 3, 4, 5]).error).toBeUndefined();
   });
 
   // Partial tuple with items for rest
@@ -417,8 +427,8 @@ describe('unevaluatedItems', () => {
   });
 
   it('prefixItems + items marks all as evaluated', () => {
-    expect(PartialTuple.validate(['hello', 1, 2, 3])).toBe(true);
-    expect(PartialTuple.validate(['hello'])).toBe(true);
+    expect(PartialTuple.validate(['hello', 1, 2, 3]).error).toBeUndefined();
+    expect(PartialTuple.validate(['hello']).error).toBeUndefined();
   });
 });
 
@@ -433,12 +443,12 @@ describe('contentEncoding (annotation-only by default)', () => {
   });
 
   it('accepts all strings (content keywords are annotation-only)', () => {
-    expect(Base64String.validate('SGVsbG8gV29ybGQ=')).toBe(true); // valid base64
-    expect(Base64String.validate('dGVzdA==')).toBe(true); // valid base64
-    expect(Base64String.validate('')).toBe(true); // empty string
+    expect(Base64String.validate('SGVsbG8gV29ybGQ=').error).toBeUndefined(); // valid base64
+    expect(Base64String.validate('dGVzdA==').error).toBeUndefined(); // valid base64
+    expect(Base64String.validate('').error).toBeUndefined(); // empty string
     // Per spec, invalid content still passes validation
-    expect(Base64String.validate('not valid base64!!!')).toBe(true);
-    expect(Base64String.validate('SGVsbG8@V29ybGQ=')).toBe(true); // invalid char @
+    expect(Base64String.validate('not valid base64!!!').error).toBeUndefined();
+    expect(Base64String.validate('SGVsbG8@V29ybGQ=').error).toBeUndefined(); // invalid char @
   });
 });
 
@@ -449,15 +459,15 @@ describe('contentMediaType (annotation-only by default)', () => {
   });
 
   it('accepts all strings (content keywords are annotation-only)', () => {
-    expect(JsonString.validate('{"name":"Alice"}')).toBe(true); // valid JSON
-    expect(JsonString.validate('[1,2,3]')).toBe(true); // valid JSON
-    expect(JsonString.validate('"hello"')).toBe(true); // valid JSON
-    expect(JsonString.validate('42')).toBe(true); // valid JSON
-    expect(JsonString.validate('null')).toBe(true); // valid JSON
+    expect(JsonString.validate('{"name":"Alice"}').error).toBeUndefined(); // valid JSON
+    expect(JsonString.validate('[1,2,3]').error).toBeUndefined(); // valid JSON
+    expect(JsonString.validate('"hello"').error).toBeUndefined(); // valid JSON
+    expect(JsonString.validate('42').error).toBeUndefined(); // valid JSON
+    expect(JsonString.validate('null').error).toBeUndefined(); // valid JSON
     // Per spec, invalid content still passes validation
-    expect(JsonString.validate('{invalid json}')).toBe(true);
-    expect(JsonString.validate('{"unclosed": ')).toBe(true);
-    expect(JsonString.validate('undefined')).toBe(true);
+    expect(JsonString.validate('{invalid json}').error).toBeUndefined();
+    expect(JsonString.validate('{"unclosed": ').error).toBeUndefined();
+    expect(JsonString.validate('undefined').error).toBeUndefined();
   });
 });
 
@@ -477,11 +487,11 @@ describe('contentSchema (annotation-only by default)', () => {
   });
 
   it('accepts all strings (content keywords are annotation-only)', () => {
-    expect(JsonWithSchema.validate('{"name":"Alice","age":30}')).toBe(true);
-    expect(JsonWithSchema.validate('{"name":"Bob"}')).toBe(true);
+    expect(JsonWithSchema.validate('{"name":"Alice","age":30}').error).toBeUndefined();
+    expect(JsonWithSchema.validate('{"name":"Bob"}').error).toBeUndefined();
     // Per spec, invalid content still passes validation
-    expect(JsonWithSchema.validate('{"age":30}')).toBe(true);
-    expect(JsonWithSchema.validate('{"name":123}')).toBe(true);
+    expect(JsonWithSchema.validate('{"age":30}').error).toBeUndefined();
+    expect(JsonWithSchema.validate('{"name":123}').error).toBeUndefined();
   });
 
   // Base64 encoded JSON with schema annotation
@@ -500,9 +510,9 @@ describe('contentSchema (annotation-only by default)', () => {
 
   it('accepts all strings (content keywords are annotation-only)', () => {
     // {"id":42} encoded as base64 - valid
-    expect(Base64JsonWithSchema.validate('eyJpZCI6NDJ9')).toBe(true);
+    expect(Base64JsonWithSchema.validate('eyJpZCI6NDJ9').error).toBeUndefined();
     // Per spec, invalid content still passes validation
-    expect(Base64JsonWithSchema.validate('not-base64!!!')).toBe(true);
-    expect(Base64JsonWithSchema.validate('bm90IGpzb24=')).toBe(true); // "not json" encoded
+    expect(Base64JsonWithSchema.validate('not-base64!!!').error).toBeUndefined();
+    expect(Base64JsonWithSchema.validate('bm90IGpzb24=').error).toBeUndefined(); // "not json" encoded
   });
 });

@@ -9,10 +9,10 @@ describe('struct helper', () => {
       age: 'number',
     });
 
-    expect(Person.validate({ firstName: 'John', lastName: 'Doe', age: 30 })).toBe(true);
-    expect(Person.validate({ firstName: 'John', lastName: 'Doe' })).toBe(false); // missing age
-    expect(Person.validate({ firstName: 'John', age: 30 })).toBe(false); // missing lastName
-    expect(Person.validate({})).toBe(false);
+    expect(Person.validate({ firstName: 'John', lastName: 'Doe', age: 30 }).error).toBeUndefined();
+    expect(Person.validate({ firstName: 'John', lastName: 'Doe' }).error).toBeDefined(); // missing age
+    expect(Person.validate({ firstName: 'John', age: 30 }).error).toBeDefined(); // missing lastName
+    expect(Person.validate({}).error).toBeDefined();
   });
 
   it('validates struct with optional fields using { optional: true }', () => {
@@ -23,13 +23,15 @@ describe('struct helper', () => {
       age: { type: 'number', optional: true },
     });
 
-    expect(Person.validate({ firstName: 'John', lastName: 'Doe' })).toBe(true);
-    expect(Person.validate({ firstName: 'John', middleName: 'M', lastName: 'Doe' })).toBe(true);
-    expect(Person.validate({ firstName: 'John', lastName: 'Doe', age: 30 })).toBe(true);
-    expect(Person.validate({ firstName: 'John', middleName: 'M', lastName: 'Doe', age: 30 })).toBe(
-      true
-    );
-    expect(Person.validate({ firstName: 'John' })).toBe(false); // missing required lastName
+    expect(Person.validate({ firstName: 'John', lastName: 'Doe' }).error).toBeUndefined();
+    expect(
+      Person.validate({ firstName: 'John', middleName: 'M', lastName: 'Doe' }).error
+    ).toBeUndefined();
+    expect(Person.validate({ firstName: 'John', lastName: 'Doe', age: 30 }).error).toBeUndefined();
+    expect(
+      Person.validate({ firstName: 'John', middleName: 'M', lastName: 'Doe', age: 30 }).error
+    ).toBeUndefined();
+    expect(Person.validate({ firstName: 'John' }).error).toBeDefined(); // missing required lastName
   });
 
   it('validates struct with full schema definitions', () => {
@@ -38,10 +40,10 @@ describe('struct helper', () => {
       tags: { type: 'array', items: { type: 'string' } },
     });
 
-    expect(User.validate({ id: 1, tags: ['a', 'b'] })).toBe(true);
-    expect(User.validate({ id: 1, tags: [] })).toBe(true);
-    expect(User.validate({ id: 1, tags: [1, 2] })).toBe(false); // wrong item type
-    expect(User.validate({ id: 1 })).toBe(false); // missing tags
+    expect(User.validate({ id: 1, tags: ['a', 'b'] }).error).toBeUndefined();
+    expect(User.validate({ id: 1, tags: [] }).error).toBeUndefined();
+    expect(User.validate({ id: 1, tags: [1, 2] }).error).toBeDefined(); // wrong item type
+    expect(User.validate({ id: 1 }).error).toBeDefined(); // missing tags
   });
 
   it('validates types correctly', () => {
@@ -51,9 +53,9 @@ describe('struct helper', () => {
       bool: 'boolean',
     });
 
-    expect(S.validate({ str: 'hello', num: 42, bool: true })).toBe(true);
-    expect(S.validate({ str: 123, num: 42, bool: true })).toBe(false); // wrong str type
-    expect(S.validate({ str: 'hello', num: '42', bool: true })).toBe(false); // wrong num type
+    expect(S.validate({ str: 'hello', num: 42, bool: true }).error).toBeUndefined();
+    expect(S.validate({ str: 123, num: 42, bool: true }).error).toBeDefined(); // wrong str type
+    expect(S.validate({ str: 'hello', num: '42', bool: true }).error).toBeDefined(); // wrong num type
   });
 
   it('validates self-referential structs with $ref', () => {
@@ -62,66 +64,68 @@ describe('struct helper', () => {
       next: { $ref: '#', optional: true },
     });
 
-    expect(Node.validate({ value: 'a' })).toBe(true);
-    expect(Node.validate({ value: 'a', next: { value: 'b' } })).toBe(true);
-    expect(Node.validate({ value: 'a', next: { value: 'b', next: { value: 'c' } } })).toBe(true);
-    expect(Node.validate({ value: 'a', next: { value: 123 } })).toBe(false); // wrong nested type
+    expect(Node.validate({ value: 'a' }).error).toBeUndefined();
+    expect(Node.validate({ value: 'a', next: { value: 'b' } }).error).toBeUndefined();
+    expect(
+      Node.validate({ value: 'a', next: { value: 'b', next: { value: 'c' } } }).error
+    ).toBeUndefined();
+    expect(Node.validate({ value: 'a', next: { value: 123 } }).error).toBeDefined(); // wrong nested type
   });
 });
 
 describe('shorthand type syntax', () => {
   it('validates string shorthand', () => {
     const S = schema('string');
-    expect(S.validate('hello')).toBe(true);
-    expect(S.validate(123)).toBe(false);
-    expect(S.validate(null)).toBe(false);
+    expect(S.validate('hello').error).toBeUndefined();
+    expect(S.validate(123).error).toBeDefined();
+    expect(S.validate(null).error).toBeDefined();
   });
 
   it('validates number shorthand', () => {
     const N = schema('number');
-    expect(N.validate(123)).toBe(true);
-    expect(N.validate(12.5)).toBe(true);
-    expect(N.validate('123')).toBe(false);
-    expect(N.validate(null)).toBe(false);
+    expect(N.validate(123).error).toBeUndefined();
+    expect(N.validate(12.5).error).toBeUndefined();
+    expect(N.validate('123').error).toBeDefined();
+    expect(N.validate(null).error).toBeDefined();
   });
 
   it('validates integer shorthand', () => {
     const I = schema('integer');
-    expect(I.validate(123)).toBe(true);
-    expect(I.validate(12.5)).toBe(false);
-    expect(I.validate('123')).toBe(false);
+    expect(I.validate(123).error).toBeUndefined();
+    expect(I.validate(12.5).error).toBeDefined();
+    expect(I.validate('123').error).toBeDefined();
   });
 
   it('validates boolean shorthand', () => {
     const B = schema('boolean');
-    expect(B.validate(true)).toBe(true);
-    expect(B.validate(false)).toBe(true);
-    expect(B.validate(1)).toBe(false);
-    expect(B.validate('true')).toBe(false);
+    expect(B.validate(true).error).toBeUndefined();
+    expect(B.validate(false).error).toBeUndefined();
+    expect(B.validate(1).error).toBeDefined();
+    expect(B.validate('true').error).toBeDefined();
   });
 
   it('validates null shorthand', () => {
     const Null = schema('null');
-    expect(Null.validate(null)).toBe(true);
-    expect(Null.validate(undefined)).toBe(false);
-    expect(Null.validate('')).toBe(false);
+    expect(Null.validate(null).error).toBeUndefined();
+    expect(Null.validate(undefined).error).toBeDefined();
+    expect(Null.validate('').error).toBeDefined();
   });
 
   it('validates object shorthand', () => {
     const Obj = schema('object');
-    expect(Obj.validate({})).toBe(true);
-    expect(Obj.validate({ foo: 'bar' })).toBe(true);
-    expect(Obj.validate([])).toBe(false);
-    expect(Obj.validate(null)).toBe(false);
-    expect(Obj.validate('object')).toBe(false);
+    expect(Obj.validate({}).error).toBeUndefined();
+    expect(Obj.validate({ foo: 'bar' }).error).toBeUndefined();
+    expect(Obj.validate([]).error).toBeDefined();
+    expect(Obj.validate(null).error).toBeDefined();
+    expect(Obj.validate('object').error).toBeDefined();
   });
 
   it('validates array shorthand', () => {
     const Arr = schema('array');
-    expect(Arr.validate([])).toBe(true);
-    expect(Arr.validate([1, 2, 3])).toBe(true);
-    expect(Arr.validate({})).toBe(false);
-    expect(Arr.validate('array')).toBe(false);
+    expect(Arr.validate([]).error).toBeUndefined();
+    expect(Arr.validate([1, 2, 3]).error).toBeUndefined();
+    expect(Arr.validate({}).error).toBeDefined();
+    expect(Arr.validate('array').error).toBeDefined();
   });
 });
 
@@ -143,23 +147,23 @@ describe('minProperties / maxProperties', () => {
   });
 
   it('validates minProperties', () => {
-    expect(MinProps.validate({})).toBe(false);
-    expect(MinProps.validate({ a: 1 })).toBe(false);
-    expect(MinProps.validate({ a: 1, b: 2 })).toBe(true);
-    expect(MinProps.validate({ a: 1, b: 2, c: 3 })).toBe(true);
+    expect(MinProps.validate({}).error).toBeDefined();
+    expect(MinProps.validate({ a: 1 }).error).toBeDefined();
+    expect(MinProps.validate({ a: 1, b: 2 }).error).toBeUndefined();
+    expect(MinProps.validate({ a: 1, b: 2, c: 3 }).error).toBeUndefined();
   });
 
   it('validates maxProperties', () => {
-    expect(MaxProps.validate({})).toBe(true);
-    expect(MaxProps.validate({ a: 1, b: 2, c: 3 })).toBe(true);
-    expect(MaxProps.validate({ a: 1, b: 2, c: 3, d: 4 })).toBe(false);
+    expect(MaxProps.validate({}).error).toBeUndefined();
+    expect(MaxProps.validate({ a: 1, b: 2, c: 3 }).error).toBeUndefined();
+    expect(MaxProps.validate({ a: 1, b: 2, c: 3, d: 4 }).error).toBeDefined();
   });
 
   it('validates both min and max', () => {
-    expect(BothProps.validate({})).toBe(false);
-    expect(BothProps.validate({ a: 1 })).toBe(true);
-    expect(BothProps.validate({ a: 1, b: 2 })).toBe(true);
-    expect(BothProps.validate({ a: 1, b: 2, c: 3 })).toBe(false);
+    expect(BothProps.validate({}).error).toBeDefined();
+    expect(BothProps.validate({ a: 1 }).error).toBeUndefined();
+    expect(BothProps.validate({ a: 1, b: 2 }).error).toBeUndefined();
+    expect(BothProps.validate({ a: 1, b: 2, c: 3 }).error).toBeDefined();
   });
 });
 
@@ -177,27 +181,27 @@ describe('dependentRequired', () => {
   });
 
   it('passes when trigger is absent', () => {
-    expect(DepReq.validate({})).toBe(true);
-    expect(DepReq.validate({ bar: 1 })).toBe(true);
+    expect(DepReq.validate({}).error).toBeUndefined();
+    expect(DepReq.validate({ bar: 1 }).error).toBeUndefined();
   });
 
   it('passes when trigger and all dependents are present', () => {
-    expect(DepReq.validate({ foo: 'x', bar: 1, baz: true })).toBe(true);
+    expect(DepReq.validate({ foo: 'x', bar: 1, baz: true }).error).toBeUndefined();
   });
 
   it('fails when trigger is present but dependents are missing', () => {
-    expect(DepReq.validate({ foo: 'x' })).toBe(false);
-    expect(DepReq.validate({ foo: 'x', bar: 1 })).toBe(false);
-    expect(DepReq.validate({ foo: 'x', baz: true })).toBe(false);
+    expect(DepReq.validate({ foo: 'x' }).error).toBeDefined();
+    expect(DepReq.validate({ foo: 'x', bar: 1 }).error).toBeDefined();
+    expect(DepReq.validate({ foo: 'x', baz: true }).error).toBeDefined();
   });
 
   it('returns correct error messages', () => {
-    const result = DepReq.parse({ foo: 'x' });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.errors.length).toBe(1);
-      expect(result.errors[0].keyword).toBe('dependentRequired');
-      expect(result.errors[0].path).toBe('bar');
+    const result = DepReq.validate({ foo: 'x' });
+    expect(result.error === undefined).toBe(false);
+    if (result.error !== undefined) {
+      expect(result.error.length).toBe(1);
+      expect(result.error[0].keyword).toBe('dependentRequired');
+      expect(result.error[0].path).toBe('bar');
     }
   });
 });
@@ -209,13 +213,13 @@ describe('contains', () => {
   });
 
   it('validates array with matching element', () => {
-    expect(HasString.validate([1, 'hello', 3])).toBe(true);
-    expect(HasString.validate(['a'])).toBe(true);
+    expect(HasString.validate([1, 'hello', 3]).error).toBeUndefined();
+    expect(HasString.validate(['a']).error).toBeUndefined();
   });
 
   it('rejects array without matching element', () => {
-    expect(HasString.validate([1, 2, 3])).toBe(false);
-    expect(HasString.validate([])).toBe(false);
+    expect(HasString.validate([1, 2, 3]).error).toBeDefined();
+    expect(HasString.validate([]).error).toBeDefined();
   });
 });
 
@@ -246,28 +250,28 @@ describe('minContains / maxContains', () => {
   });
 
   it('validates minContains', () => {
-    expect(AtLeastTwo.validate(['a'])).toBe(false);
-    expect(AtLeastTwo.validate(['a', 'b'])).toBe(true);
-    expect(AtLeastTwo.validate(['a', 1, 'b', 2])).toBe(true);
+    expect(AtLeastTwo.validate(['a']).error).toBeDefined();
+    expect(AtLeastTwo.validate(['a', 'b']).error).toBeUndefined();
+    expect(AtLeastTwo.validate(['a', 1, 'b', 2]).error).toBeUndefined();
   });
 
   it('validates maxContains', () => {
-    expect(AtMostTwo.validate(['a', 'b'])).toBe(true);
-    expect(AtMostTwo.validate(['a', 'b', 'c'])).toBe(false);
-    expect(AtMostTwo.validate([1, 2, 3])).toBe(false); // 0 matches, but minContains defaults to 1
+    expect(AtMostTwo.validate(['a', 'b']).error).toBeUndefined();
+    expect(AtMostTwo.validate(['a', 'b', 'c']).error).toBeDefined();
+    expect(AtMostTwo.validate([1, 2, 3]).error).toBeDefined(); // 0 matches, but minContains defaults to 1
   });
 
   it('validates exact count', () => {
-    expect(ExactlyTwo.validate(['a'])).toBe(false);
-    expect(ExactlyTwo.validate(['a', 'b'])).toBe(true);
-    expect(ExactlyTwo.validate(['a', 1, 'b'])).toBe(true);
-    expect(ExactlyTwo.validate(['a', 'b', 'c'])).toBe(false);
+    expect(ExactlyTwo.validate(['a']).error).toBeDefined();
+    expect(ExactlyTwo.validate(['a', 'b']).error).toBeUndefined();
+    expect(ExactlyTwo.validate(['a', 1, 'b']).error).toBeUndefined();
+    expect(ExactlyTwo.validate(['a', 'b', 'c']).error).toBeDefined();
   });
 
   it('minContains: 0 disables contains validation', () => {
-    expect(Disabled.validate([])).toBe(true);
-    expect(Disabled.validate([1, 2, 3])).toBe(true);
-    expect(Disabled.validate(['a', 'b'])).toBe(true);
+    expect(Disabled.validate([]).error).toBeUndefined();
+    expect(Disabled.validate([1, 2, 3]).error).toBeUndefined();
+    expect(Disabled.validate(['a', 'b']).error).toBeUndefined();
   });
 });
 
@@ -278,14 +282,14 @@ describe('format validators', () => {
     const DateSchema = schema({ type: 'string', format: 'date' });
 
     it('accepts valid dates', () => {
-      expect(DateSchema.validate('2024-01-15')).toBe(true);
-      expect(DateSchema.validate('2024-12-31')).toBe(true);
+      expect(DateSchema.validate('2024-01-15').error).toBeUndefined();
+      expect(DateSchema.validate('2024-12-31').error).toBeUndefined();
     });
 
     it('rejects invalid dates', () => {
-      expect(DateSchema.validate('2024-1-15')).toBe(false); // not zero-padded
-      expect(DateSchema.validate('2024/01/15')).toBe(false); // wrong separator
-      expect(DateSchema.validate('2024-01-15T10:00:00')).toBe(false); // date-time
+      expect(DateSchema.validate('2024-1-15').error).toBeDefined(); // not zero-padded
+      expect(DateSchema.validate('2024/01/15').error).toBeDefined(); // wrong separator
+      expect(DateSchema.validate('2024-01-15T10:00:00').error).toBeDefined(); // date-time
     });
   });
 
@@ -293,16 +297,16 @@ describe('format validators', () => {
     const TimeSchema = schema({ type: 'string', format: 'time' });
 
     it('accepts valid times', () => {
-      expect(TimeSchema.validate('14:30:00Z')).toBe(true);
-      expect(TimeSchema.validate('14:30:00.123Z')).toBe(true);
-      expect(TimeSchema.validate('14:30:00+05:30')).toBe(true);
-      expect(TimeSchema.validate('14:30:00-08:00')).toBe(true);
+      expect(TimeSchema.validate('14:30:00Z').error).toBeUndefined();
+      expect(TimeSchema.validate('14:30:00.123Z').error).toBeUndefined();
+      expect(TimeSchema.validate('14:30:00+05:30').error).toBeUndefined();
+      expect(TimeSchema.validate('14:30:00-08:00').error).toBeUndefined();
     });
 
     it('rejects invalid times', () => {
-      expect(TimeSchema.validate('14:30:00')).toBe(false); // missing timezone (RFC 3339 requires it)
-      expect(TimeSchema.validate('14:30')).toBe(false); // missing seconds
-      expect(TimeSchema.validate('2:30:00Z')).toBe(false); // not zero-padded
+      expect(TimeSchema.validate('14:30:00').error).toBeDefined(); // missing timezone (RFC 3339 requires it)
+      expect(TimeSchema.validate('14:30').error).toBeDefined(); // missing seconds
+      expect(TimeSchema.validate('2:30:00Z').error).toBeDefined(); // not zero-padded
     });
   });
 
@@ -310,19 +314,19 @@ describe('format validators', () => {
     const DurationSchema = schema({ type: 'string', format: 'duration' });
 
     it('accepts valid durations', () => {
-      expect(DurationSchema.validate('P1Y')).toBe(true);
-      expect(DurationSchema.validate('P1M')).toBe(true);
-      expect(DurationSchema.validate('P1D')).toBe(true);
-      expect(DurationSchema.validate('PT1H')).toBe(true);
-      expect(DurationSchema.validate('PT1M')).toBe(true);
-      expect(DurationSchema.validate('PT1S')).toBe(true);
-      expect(DurationSchema.validate('P1Y2M3DT4H5M6S')).toBe(true);
+      expect(DurationSchema.validate('P1Y').error).toBeUndefined();
+      expect(DurationSchema.validate('P1M').error).toBeUndefined();
+      expect(DurationSchema.validate('P1D').error).toBeUndefined();
+      expect(DurationSchema.validate('PT1H').error).toBeUndefined();
+      expect(DurationSchema.validate('PT1M').error).toBeUndefined();
+      expect(DurationSchema.validate('PT1S').error).toBeUndefined();
+      expect(DurationSchema.validate('P1Y2M3DT4H5M6S').error).toBeUndefined();
     });
 
     it('rejects invalid durations', () => {
-      expect(DurationSchema.validate('P')).toBe(false); // empty
-      expect(DurationSchema.validate('PT')).toBe(false); // empty time
-      expect(DurationSchema.validate('1Y')).toBe(false); // missing P
+      expect(DurationSchema.validate('P').error).toBeDefined(); // empty
+      expect(DurationSchema.validate('PT').error).toBeDefined(); // empty time
+      expect(DurationSchema.validate('1Y').error).toBeDefined(); // missing P
     });
   });
 
@@ -330,16 +334,16 @@ describe('format validators', () => {
     const HostnameSchema = schema({ type: 'string', format: 'hostname' });
 
     it('accepts valid hostnames', () => {
-      expect(HostnameSchema.validate('example.com')).toBe(true);
-      expect(HostnameSchema.validate('sub.example.com')).toBe(true);
-      expect(HostnameSchema.validate('localhost')).toBe(true);
-      expect(HostnameSchema.validate('my-server')).toBe(true);
+      expect(HostnameSchema.validate('example.com').error).toBeUndefined();
+      expect(HostnameSchema.validate('sub.example.com').error).toBeUndefined();
+      expect(HostnameSchema.validate('localhost').error).toBeUndefined();
+      expect(HostnameSchema.validate('my-server').error).toBeUndefined();
     });
 
     it('rejects invalid hostnames', () => {
-      expect(HostnameSchema.validate('-invalid.com')).toBe(false); // starts with hyphen
-      expect(HostnameSchema.validate('invalid-.com')).toBe(false); // ends with hyphen
-      expect(HostnameSchema.validate('inva lid.com')).toBe(false); // space
+      expect(HostnameSchema.validate('-invalid.com').error).toBeDefined(); // starts with hyphen
+      expect(HostnameSchema.validate('invalid-.com').error).toBeDefined(); // ends with hyphen
+      expect(HostnameSchema.validate('inva lid.com').error).toBeDefined(); // space
     });
   });
 
@@ -347,17 +351,17 @@ describe('format validators', () => {
     const JsonPointerSchema = schema({ type: 'string', format: 'json-pointer' });
 
     it('accepts valid JSON pointers', () => {
-      expect(JsonPointerSchema.validate('')).toBe(true); // root
-      expect(JsonPointerSchema.validate('/foo')).toBe(true);
-      expect(JsonPointerSchema.validate('/foo/bar')).toBe(true);
-      expect(JsonPointerSchema.validate('/foo/0')).toBe(true);
-      expect(JsonPointerSchema.validate('/~0')).toBe(true); // escaped ~
-      expect(JsonPointerSchema.validate('/~1')).toBe(true); // escaped /
+      expect(JsonPointerSchema.validate('').error).toBeUndefined(); // root
+      expect(JsonPointerSchema.validate('/foo').error).toBeUndefined();
+      expect(JsonPointerSchema.validate('/foo/bar').error).toBeUndefined();
+      expect(JsonPointerSchema.validate('/foo/0').error).toBeUndefined();
+      expect(JsonPointerSchema.validate('/~0').error).toBeUndefined(); // escaped ~
+      expect(JsonPointerSchema.validate('/~1').error).toBeUndefined(); // escaped /
     });
 
     it('rejects invalid JSON pointers', () => {
-      expect(JsonPointerSchema.validate('foo')).toBe(false); // missing leading /
-      expect(JsonPointerSchema.validate('/~2')).toBe(false); // invalid escape
+      expect(JsonPointerSchema.validate('foo').error).toBeDefined(); // missing leading /
+      expect(JsonPointerSchema.validate('/~2').error).toBeDefined(); // invalid escape
     });
   });
 
@@ -365,14 +369,14 @@ describe('format validators', () => {
     const RegexSchema = schema({ type: 'string', format: 'regex' });
 
     it('accepts valid regex patterns', () => {
-      expect(RegexSchema.validate('^[a-z]+$')).toBe(true);
-      expect(RegexSchema.validate('\\d+')).toBe(true);
-      expect(RegexSchema.validate('.*')).toBe(true);
+      expect(RegexSchema.validate('^[a-z]+$').error).toBeUndefined();
+      expect(RegexSchema.validate('\\d+').error).toBeUndefined();
+      expect(RegexSchema.validate('.*').error).toBeUndefined();
     });
 
     it('rejects invalid regex patterns', () => {
-      expect(RegexSchema.validate('[')).toBe(false); // unclosed bracket
-      expect(RegexSchema.validate('*')).toBe(false); // nothing to repeat
+      expect(RegexSchema.validate('[').error).toBeDefined(); // unclosed bracket
+      expect(RegexSchema.validate('*').error).toBeDefined(); // nothing to repeat
     });
   });
 
@@ -383,8 +387,8 @@ describe('format validators', () => {
         { formatAssertion: false }
       );
       // Invalid dates pass when format assertion is disabled
-      expect(DateSchemaNoAssert.validate('not-a-date')).toBe(true);
-      expect(DateSchemaNoAssert.validate('2024-1-15')).toBe(true);
+      expect(DateSchemaNoAssert.validate('not-a-date').error).toBeUndefined();
+      expect(DateSchemaNoAssert.validate('2024-1-15').error).toBeUndefined();
     });
   });
 });
@@ -415,9 +419,9 @@ describe('annotation keywords', () => {
     });
 
     // Annotations don't affect validation
-    expect(Schema.validate({ name: 'Alice', email: 'alice@example.com', role: 'admin' })).toBe(
-      true
-    );
-    expect(Schema.validate({})).toBe(true);
+    expect(
+      Schema.validate({ name: 'Alice', email: 'alice@example.com', role: 'admin' }).error
+    ).toBeUndefined();
+    expect(Schema.validate({}).error).toBeUndefined();
   });
 });

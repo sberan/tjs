@@ -235,7 +235,8 @@ function testDraft(draft: Draft) {
 
                 let actual: boolean;
                 try {
-                  actual = validator.validate(test.data);
+                  const validateResult = validator.validate(test.data);
+                  actual = validateResult.error === undefined;
                 } catch (err) {
                   result.error = `Validation threw: ${err}`;
                   allResults.push(result);

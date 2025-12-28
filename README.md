@@ -175,37 +175,38 @@ npm install tjs
 Create a validator from a JSON Schema:
 
 ```typescript
-const validator = schema({
-  type: 'string',
-  minLength: 1,
+const User = schema({
+  type: 'object',
+  properties: {
+    name: { type: 'string' },
+    age: { type: 'integer' },
+  },
+  required: ['name'],
 });
-
-validator('hello');           // true
-validator('');                // false
-validator.validate('hello');  // true (same as calling directly)
 ```
 
-### `validator.parse(data)`
+### `validator.validate(data)`
 
-Parse and validate, returning a result object:
+Validate and return result with value or error:
 
 ```typescript
-const result = validator.parse(input);
+const result = User.validate(input);
 
-if (result.ok) {
-  console.log(result.data);  // Typed data
+if (result.error === undefined) {
+  console.log(result.value);  // Typed & coerced data
 } else {
-  console.log(result.errors);  // Validation errors with paths
+  console.log(result.error);  // Validation errors with paths
 }
 ```
 
 ### `validator.assert(data)`
 
-Assert validity, throwing on failure:
+Assert validity, throwing on failure. Returns coerced value:
 
 ```typescript
 try {
-  const data = validator.assert(input);  // Returns typed data
+  const user = User.assert(input);  // Returns typed, coerced data
+  console.log(user.name);
 } catch (e) {
   console.error('Invalid:', e.message);
 }
@@ -262,14 +263,14 @@ interface ValidatorOptions {
 
 ## Comparison
 
-| Feature | tjs | ajv | zod |
-|---------|-----|-----|-----|
-| JSON Schema compliance | ✅ 100% | ⚠️ 94.6% | ❌ N/A |
-| TypeScript inference | ✅ First-class | ⚠️ Via json-schema-to-ts | ✅ Native |
-| Runtime dependencies | ✅ 0 | ❌ 4+ | ✅ 0 |
-| Performance | ✅ Fastest | ⚠️ Fast | ❌ Slower |
-| Coercion support | ✅ Built-in | ⚠️ Via plugin | ✅ Built-in |
-| Bundle size | ✅ ~25KB | ❌ ~120KB | ⚠️ ~50KB |
+| Feature | tjs | ajv | zod | joi |
+|---------|-----|-----|-----|-----|
+| JSON Schema compliance | ✅ 100% | ⚠️ 94.6% | ❌ N/A | ❌ N/A |
+| TypeScript inference | ✅ First-class | ⚠️ Via json-schema-to-ts | ✅ Native | ❌ None |
+| Runtime dependencies | ✅ 0 | ❌ 4+ | ✅ 0 | ❌ 5+ |
+| Performance | ✅ Fastest | ⚠️ Fast | ❌ Slower | ❌ Slower |
+| Coercion support | ✅ Built-in | ⚠️ Via plugin | ✅ Built-in | ✅ Built-in |
+| Bundle size (min+gz) | ✅ ~16KB | ❌ ~35KB | ✅ ~13KB | ❌ ~50KB |
 
 ## Coercion Matrix
 

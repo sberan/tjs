@@ -98,7 +98,8 @@ export function runTestSuite(files: TestFile[], options: RunnerOptions = {}): Co
         let error: string | undefined;
 
         try {
-          actual = validator.validate(test.data);
+          const result = validator.validate(test.data);
+          actual = result.error === undefined;
         } catch (err) {
           actual = false;
           error = `Validation threw: ${err}`;

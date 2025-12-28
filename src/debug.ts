@@ -22,7 +22,7 @@ const NotStringNumber = schema({
     type: ['string', 'number'],
   },
 });
-const xss = NotStringNumber('hello');
+const xss = NotStringNumber.validate('hello');
 type NotStringNumberType = typeof NotStringNumber.type;
 //   ^? hover to see - should be boolean | null | JsonArray | JsonObject
 

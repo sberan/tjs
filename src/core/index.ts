@@ -222,26 +222,21 @@ export interface ValidationError {
 }
 
 /**
- * Parse result type
+ * Validation result type - returned by validate()
  */
-export type ParseResult<T> = { ok: true; data: T } | { ok: false; errors: ValidationError[] };
+export type ValidationResult<T> =
+  | { value: T; error: undefined }
+  | { value: undefined; error: ValidationError[] };
 
 /**
  * JSON Schema validator interface.
- * The validator is callable directly for maximum performance.
  */
 export interface Validator<T> {
-  /** Call directly to validate (fastest path) */
-  (data: unknown): data is T;
+  /** Validate data and return result with value or error */
+  validate(data: unknown): ValidationResult<T>;
 
-  /** Validate data against the schema */
-  validate(data: unknown): data is T;
-
-  /** Assert data is valid, throw if not */
+  /** Assert data is valid, throw if not. Returns coerced value. */
   assert(data: unknown): T;
-
-  /** Parse data and return result with errors */
-  parse(data: unknown): ParseResult<T>;
 
   /** Phantom type for TypeScript type inference */
   readonly type: T;
@@ -249,7 +244,7 @@ export interface Validator<T> {
 
 /**
  * Create a JSON Schema validator.
- * Returns a callable function with validate/assert/parse methods.
+ * Returns an object with validate() and assert() methods.
  */
 export function createValidator<T>(schema: JsonSchema, options: CompileOptions = {}): Validator<T> {
   const validateFn = compile(schema, options);
@@ -263,40 +258,37 @@ export function createValidator<T>(schema: JsonSchema, options: CompileOptions =
     return data;
   };
 
-  // Create the base validation function that handles coercion for validate()
-  const validatorFn = ((data: unknown): data is T => {
-    const coercedData = maybeCoerce(data);
-    return validateFn(coercedData);
-  }) as Validator<T>;
+  return {
+    validate(data: unknown): ValidationResult<T> {
+      const coercedData = maybeCoerce(data);
+      const errors: CompileError[] = [];
+      if (validateFn(coercedData, errors)) {
+        return { value: coercedData as T, error: undefined };
+      }
+      return {
+        value: undefined,
+        error:
+          errors.length > 0
+            ? errors
+            : [{ path: '', message: 'Validation failed', keyword: 'schema' }],
+      };
+    },
 
-  // Attach methods directly to the validator function
-  validatorFn.validate = (data: unknown): data is T => {
-    const coercedData = maybeCoerce(data);
-    return validateFn(coercedData);
+    assert(data: unknown): T {
+      const coercedData = maybeCoerce(data);
+      const errors: CompileError[] = [];
+      if (!validateFn(coercedData, errors)) {
+        const errorMsg =
+          errors.length > 0
+            ? errors.map((e) => `${e.path}: ${e.message}`).join('; ')
+            : 'Validation failed';
+        throw new Error(errorMsg);
+      }
+      return coercedData as T;
+    },
+
+    get type(): T {
+      throw new Error('type is a phantom property for type inference only');
+    },
   };
-
-  validatorFn.assert = (data: unknown): T => {
-    const coercedData = maybeCoerce(data);
-    if (!validateFn(coercedData)) {
-      throw new Error('Validation failed');
-    }
-    return coercedData as T;
-  };
-
-  validatorFn.parse = (data: unknown): ParseResult<T> => {
-    const coercedData = maybeCoerce(data);
-    const errors: CompileError[] = [];
-    if (validateFn(coercedData, errors)) {
-      return { ok: true, data: coercedData as T };
-    }
-    return {
-      ok: false,
-      errors:
-        errors.length > 0
-          ? errors
-          : [{ path: '', message: 'Validation failed', keyword: 'schema' }],
-    };
-  };
-
-  return validatorFn;
 }
