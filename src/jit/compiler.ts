@@ -1267,20 +1267,25 @@ export function generateCompositionChecks(
 
   // anyOf - at least one subschema must validate
   if (schema.anyOf && schema.anyOf.length > 0) {
-    const resultVar = code.genVar('anyOfResult');
-    code.line(`let ${resultVar} = false;`);
+    // If any schema is a no-op (true, {}), anyOf always passes
+    if (schema.anyOf.some((s) => isNoOpSchema(s))) {
+      // Skip generating anyOf check entirely
+    } else {
+      const resultVar = code.genVar('anyOfResult');
+      code.line(`let ${resultVar} = false;`);
 
-    for (const subSchema of schema.anyOf) {
-      // Try each subschema, set result to true if any passes
+      for (const subSchema of schema.anyOf) {
+        // Try each subschema, set result to true if any passes
+        code.if(`!${resultVar}`, () => {
+          const checkExpr = generateSubschemaCheck(subSchema, dataVar, ctx);
+          code.line(`${resultVar} = ${checkExpr};`);
+        });
+      }
+
       code.if(`!${resultVar}`, () => {
-        const checkExpr = generateSubschemaCheck(subSchema, dataVar, ctx);
-        code.line(`${resultVar} = ${checkExpr};`);
+        genError(code, pathExpr, 'anyOf', 'Value must match at least one schema');
       });
     }
-
-    code.if(`!${resultVar}`, () => {
-      genError(code, pathExpr, 'anyOf', 'Value must match at least one schema');
-    });
   }
 
   // oneOf - exactly one subschema must validate
@@ -1381,7 +1386,6 @@ export function generateItemsChecks(
     : schema.prefixItems
       ? [...schema.prefixItems]
       : [];
-  const hasTupleItems = tupleSchemas.length > 0;
 
   // For items after the tuple:
   // - draft-2020-12: use schema.items (if not array)
@@ -1393,22 +1397,27 @@ export function generateItemsChecks(
     // schema.items is boolean | JsonSchema (not array) here
     afterTupleSchema = schema.items as JsonSchema;
   }
-  const hasAfterTupleSchema = afterTupleSchema !== undefined;
+  // Skip no-op schemas (true, {})
+  const hasAfterTupleSchema = afterTupleSchema !== undefined && !isNoOpSchema(afterTupleSchema);
 
-  if (!hasTupleItems && !hasAfterTupleSchema) return;
+  // Filter out no-op tuple schemas
+  const nonTrivialTupleSchemas = tupleSchemas
+    .map((s, i) => ({ schema: s, index: i }))
+    .filter(({ schema }) => !isNoOpSchema(schema));
+  const hasNonTrivialTuples = nonTrivialTupleSchemas.length > 0;
+
+  if (!hasNonTrivialTuples && !hasAfterTupleSchema) return;
 
   // Only check if data is an array
   code.if(`Array.isArray(${dataVar})`, () => {
     // Handle tuple items (prefixItems in 2020-12, items array in draft-07)
-    if (hasTupleItems) {
-      for (let i = 0; i < tupleSchemas.length; i++) {
-        const itemSchema = tupleSchemas[i];
-        const itemPathExpr = pathExpr === "''" ? `'[${i}]'` : `${pathExpr} + '[${i}]'`;
-        code.if(`${dataVar}.length > ${i}`, () => {
-          const itemAccess = `${dataVar}[${i}]`;
-          generateSchemaValidator(code, itemSchema, itemAccess, itemPathExpr, ctx);
-        });
-      }
+    // Only validate non-trivial schemas
+    for (const { schema: itemSchema, index: i } of nonTrivialTupleSchemas) {
+      const itemPathExpr = pathExpr === "''" ? `'[${i}]'` : `${pathExpr} + '[${i}]'`;
+      code.if(`${dataVar}.length > ${i}`, () => {
+        const itemAccess = `${dataVar}[${i}]`;
+        generateSchemaValidator(code, itemSchema, itemAccess, itemPathExpr, ctx);
+      });
     }
 
     // Handle items after tuple (items in 2020-12, additionalItems in draft-07)
