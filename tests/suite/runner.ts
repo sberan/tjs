@@ -64,7 +64,7 @@ export function runTestSuite(files: TestFile[], options: RunnerOptions = {}): Co
       try {
         // Use formatAssertion: false for test suite compliance
         // (JSON Schema spec treats format as annotation-only by default)
-        validator = new Validator(group.schema as JsonSchema, {
+        validator = Validator(group.schema as JsonSchema, {
           formatAssertion: false,
           remotes: options.remotes,
         });

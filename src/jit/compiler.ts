@@ -718,47 +718,81 @@ export function generatePropertiesChecks(
         }
       }
 
-      // Handle patternProperties - applies to ALL properties (including defined ones)
-      if (hasPatternProps && schema.patternProperties) {
-        code.forIn('key', dataVar, () => {
-          const keyPathExpr = pathExpr === "''" ? 'key' : `${pathExpr} + '.' + key`;
-          for (const [pattern, patternSchema] of Object.entries(schema.patternProperties!)) {
-            const escapedPattern = escapeString(pattern);
-            code.if(`/${escapedPattern}/.test(key)`, () => {
-              const propAccessed = `${dataVar}[key]`;
-              generateSchemaValidator(code, patternSchema, propAccessed, keyPathExpr, ctx);
-            });
-          }
-        });
-      }
-
-      // Handle additionalProperties - only applies to undefined properties not matching patterns
-      if (hasAdditionalProps) {
+      // Handle patternProperties and additionalProperties in a single loop
+      if (hasPatternProps || hasAdditionalProps) {
         const definedProps = schema.properties ? Object.keys(schema.properties) : [];
         const patterns = schema.patternProperties ? Object.keys(schema.patternProperties) : [];
 
-        // Create a Set for O(1) property lookup if there are defined properties
-        let propsSetName: string | undefined;
-        if (definedProps.length > 0) {
-          propsSetName = ctx.genRuntimeName('propsSet');
-          ctx.addRuntimeFunction(propsSetName, new Set(definedProps));
+        // Pre-compile pattern regexes if we have patterns
+        const patternRegexNames: string[] = [];
+        for (const pattern of patterns) {
+          const regexName = ctx.genRuntimeName('patternRe');
+          ctx.addRuntimeFunction(regexName, new RegExp(pattern));
+          patternRegexNames.push(regexName);
         }
 
         code.forIn('key', dataVar, () => {
           const keyPathExpr = pathExpr === "''" ? 'key' : `${pathExpr} + '.' + key`;
-          const addPropsSchema = schema.additionalProperties!;
 
-          // Build condition: not a defined prop and not matching any pattern
-          const conditions: string[] = [];
-          if (propsSetName) {
-            conditions.push(`!${propsSetName}.has(key)`);
-          }
-          for (const pattern of patterns) {
-            conditions.push(`!/${escapeString(pattern)}/.test(key)`);
+          // Generate patternProperties checks first (skip empty schemas that always pass)
+          if (hasPatternProps && schema.patternProperties) {
+            const patternEntries = Object.entries(schema.patternProperties);
+            for (let i = 0; i < patternEntries.length; i++) {
+              const [, patternSchema] = patternEntries[i];
+              // Skip generating checks for schemas that always pass (true, {}, empty object)
+              if (patternSchema === true) continue;
+              if (
+                typeof patternSchema === 'object' &&
+                patternSchema !== null &&
+                Object.keys(patternSchema).length === 0
+              ) {
+                continue;
+              }
+              const regexName = patternRegexNames[i];
+              code.if(`${regexName}.test(key)`, () => {
+                const propAccessed = `${dataVar}[key]`;
+                generateSchemaValidator(code, patternSchema, propAccessed, keyPathExpr, ctx);
+              });
+            }
           }
 
-          if (conditions.length > 0) {
-            code.if(conditions.join(' && '), () => {
+          // Generate additionalProperties check
+          if (hasAdditionalProps) {
+            const addPropsSchema = schema.additionalProperties!;
+
+            // Build condition: not a defined prop and not matching any pattern
+            // Use inline comparisons for small numbers of properties (faster than Set.has)
+            const conditions: string[] = [];
+
+            // For defined properties, use inline comparison for up to ~10 props
+            if (definedProps.length > 0 && definedProps.length <= 10) {
+              const propChecks = definedProps
+                .map((p) => `key !== "${escapeString(p)}"`)
+                .join(' && ');
+              conditions.push(`(${propChecks})`);
+            } else if (definedProps.length > 10) {
+              // Use Set for larger number of properties
+              const propsSetName = ctx.genRuntimeName('propsSet');
+              ctx.addRuntimeFunction(propsSetName, new Set(definedProps));
+              conditions.push(`!${propsSetName}.has(key)`);
+            }
+
+            // Pattern checks using pre-compiled regexes
+            for (const regexName of patternRegexNames) {
+              conditions.push(`!${regexName}.test(key)`);
+            }
+
+            if (conditions.length > 0) {
+              code.if(conditions.join(' && '), () => {
+                generateAdditionalPropsCheck(
+                  code,
+                  addPropsSchema,
+                  `${dataVar}[key]`,
+                  keyPathExpr,
+                  ctx
+                );
+              });
+            } else {
               generateAdditionalPropsCheck(
                 code,
                 addPropsSchema,
@@ -766,9 +800,7 @@ export function generatePropertiesChecks(
                 keyPathExpr,
                 ctx
               );
-            });
-          } else {
-            generateAdditionalPropsCheck(code, addPropsSchema, `${dataVar}[key]`, keyPathExpr, ctx);
+            }
           }
         });
       }

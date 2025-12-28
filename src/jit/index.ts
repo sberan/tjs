@@ -3,7 +3,7 @@
  */
 
 import type { JsonSchema } from '../types.js';
-import { compile, type ValidateFn, type JITError } from './compiler.js';
+import { compile, type JITError } from './compiler.js';
 import type { JITOptions } from './context.js';
 
 export type { JITOptions } from './context.js';
@@ -25,49 +25,51 @@ export interface ValidationError {
 export type ParseResult<T> = { ok: true; data: T } | { ok: false; errors: ValidationError[] };
 
 /**
- * JIT-compiled JSON Schema validator
- *
- * Uses JIT compilation for maximum performance. Error messages are simplified
- * compared to the interpreter-based validator.
+ * JIT-compiled JSON Schema validator interface.
+ * The validator is callable directly for maximum performance.
  */
-export class ValidatorJIT<T> {
-  readonly #validateFn: ValidateFn;
+export interface ValidatorJIT<T> {
+  /** Call directly to validate (fastest path) */
+  (data: unknown): data is T;
+
+  /** Validate data against the schema */
+  validate(data: unknown): data is T;
+
+  /** Assert data is valid, throw if not */
+  assert(data: unknown): T;
+
+  /** Parse data and return result with errors */
+  parse(data: unknown): ParseResult<T>;
 
   /** Phantom type for TypeScript type inference */
-  declare readonly type: T;
+  readonly type: T;
+}
 
-  constructor(schema: JsonSchema, options: JITOptions = {}) {
-    // Create JIT-compiled validator
-    this.#validateFn = compile(schema, options);
-  }
+/**
+ * Create a JIT-compiled JSON Schema validator.
+ * Returns a callable function with validate/assert/parse methods.
+ */
+export function createValidator<T>(schema: JsonSchema, options: JITOptions = {}): ValidatorJIT<T> {
+  const validateFn = compile(schema, options);
 
-  /**
-   * Validate data against the schema (fast path - boolean only)
-   */
-  validate(data: unknown): data is T {
-    return this.#validateFn(data);
-  }
+  // Cast the compiled function directly - it's already callable
+  const validator = validateFn as unknown as ValidatorJIT<T>;
 
-  /**
-   * Assert data is valid, throw if not
-   */
-  assert(data: unknown): T {
-    if (!this.#validateFn(data)) {
+  // Attach methods directly to the compiled function
+  validator.validate = validateFn as (data: unknown) => data is T;
+
+  validator.assert = (data: unknown): T => {
+    if (!validateFn(data)) {
       throw new Error('Validation failed');
     }
     return data as T;
-  }
+  };
 
-  /**
-   * Parse data and return result with errors
-   */
-  parse(data: unknown): ParseResult<T> {
+  validator.parse = (data: unknown): ParseResult<T> => {
     const errors: JITError[] = [];
-    if (this.#validateFn(data, errors)) {
+    if (validateFn(data, errors)) {
       return { ok: true, data: data as T };
     }
-
-    // Return collected errors (or a generic one if none were collected)
     return {
       ok: false,
       errors:
@@ -75,5 +77,10 @@ export class ValidatorJIT<T> {
           ? errors
           : [{ path: '', message: 'Validation failed', keyword: 'schema' }],
     };
-  }
+  };
+
+  return validator;
 }
+
+// Keep the class for backwards compatibility
+export { createValidator as ValidatorJIT };
