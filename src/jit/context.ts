@@ -158,9 +158,13 @@ export class CompileContext {
     let currentBaseUri = baseUri;
     let currentResourceId = resourceId;
 
+    // In legacy mode, $ref causes sibling keywords (including $id) to be ignored
+    // So we don't update the base URI from a sibling $id when $ref is present
+    const hasRefSibling = this.options.legacyRef && schema.$ref !== undefined;
+
     // Handle $id (draft-06+) and id (draft-04)
     const schemaId = schema.$id ?? schema.id;
-    if (schemaId) {
+    if (schemaId && !hasRefSibling) {
       // In draft-07 and earlier, $id/id can be a plain fragment like "#foo" which acts as an anchor
       if (schemaId.startsWith('#')) {
         // Plain fragment id - treat as anchor (legacy draft behavior)
