@@ -11,18 +11,18 @@ describe('patternProperties', () => {
   });
 
   it('validates properties matching patterns', () => {
-    expect(Prefixed.validate({ S_name: 'hello', N_count: 42 })).toBe(true);
-    expect(Prefixed.validate({ S_foo: 'bar' })).toBe(true);
-    expect(Prefixed.validate({ N_value: 123 })).toBe(true);
+    expect(Prefixed.validate({ S_name: 'hello', N_count: 42 }).error).toBeUndefined();
+    expect(Prefixed.validate({ S_foo: 'bar' }).error).toBeUndefined();
+    expect(Prefixed.validate({ N_value: 123 }).error).toBeUndefined();
   });
 
   it('rejects properties with wrong types for patterns', () => {
-    expect(Prefixed.validate({ S_name: 123 })).toBe(false); // should be string
-    expect(Prefixed.validate({ N_count: 'abc' })).toBe(false); // should be number
+    expect(Prefixed.validate({ S_name: 123 }).error).toBeDefined(); // should be string
+    expect(Prefixed.validate({ N_count: 'abc' }).error).toBeDefined(); // should be number
   });
 
   it('allows properties not matching any pattern', () => {
-    expect(Prefixed.validate({ other: 'anything' })).toBe(true);
+    expect(Prefixed.validate({ other: 'anything' }).error).toBeUndefined();
   });
 
   it('works with additionalProperties: false', () => {
@@ -37,8 +37,8 @@ describe('patternProperties', () => {
       additionalProperties: false,
     });
 
-    expect(Strict.validate({ id: 'abc', x_value: 42 })).toBe(true);
-    expect(Strict.validate({ id: 'abc', other: 'x' })).toBe(false); // other not allowed
+    expect(Strict.validate({ id: 'abc', x_value: 42 }).error).toBeUndefined();
+    expect(Strict.validate({ id: 'abc', other: 'x' }).error).toBeDefined(); // other not allowed
   });
 
   it('validates against multiple matching patterns', () => {
@@ -51,9 +51,9 @@ describe('patternProperties', () => {
     });
 
     // 'ab' matches both patterns: must be string AND have minLength 2
-    expect(MultiMatch.validate({ ab: 'hi' })).toBe(true);
-    expect(MultiMatch.validate({ ab: 'x' })).toBe(false); // too short
-    expect(MultiMatch.validate({ ab: 123 })).toBe(false); // not a string
+    expect(MultiMatch.validate({ ab: 'hi' }).error).toBeUndefined();
+    expect(MultiMatch.validate({ ab: 'x' }).error).toBeDefined(); // too short
+    expect(MultiMatch.validate({ ab: 123 }).error).toBeDefined(); // not a string
   });
 });
 
@@ -66,14 +66,14 @@ describe('propertyNames', () => {
   });
 
   it('validates property names matching pattern', () => {
-    expect(LowerCase.validate({ foo: 1, bar: 2 })).toBe(true);
-    expect(LowerCase.validate({})).toBe(true);
+    expect(LowerCase.validate({ foo: 1, bar: 2 }).error).toBeUndefined();
+    expect(LowerCase.validate({}).error).toBeUndefined();
   });
 
   it('rejects property names not matching pattern', () => {
-    expect(LowerCase.validate({ Foo: 1 })).toBe(false); // uppercase
-    expect(LowerCase.validate({ foo_bar: 1 })).toBe(false); // underscore
-    expect(LowerCase.validate({ '123': 1 })).toBe(false); // numbers
+    expect(LowerCase.validate({ Foo: 1 }).error).toBeDefined(); // uppercase
+    expect(LowerCase.validate({ foo_bar: 1 }).error).toBeDefined(); // underscore
+    expect(LowerCase.validate({ '123': 1 }).error).toBeDefined(); // numbers
   });
 
   const LengthConstrained = schema({
@@ -85,18 +85,18 @@ describe('propertyNames', () => {
   });
 
   it('validates property name length', () => {
-    expect(LengthConstrained.validate({ ab: 1, abcde: 2 })).toBe(true);
-    expect(LengthConstrained.validate({ a: 1 })).toBe(false); // too short
-    expect(LengthConstrained.validate({ abcdef: 1 })).toBe(false); // too long
+    expect(LengthConstrained.validate({ ab: 1, abcde: 2 }).error).toBeUndefined();
+    expect(LengthConstrained.validate({ a: 1 }).error).toBeDefined(); // too short
+    expect(LengthConstrained.validate({ abcdef: 1 }).error).toBeDefined(); // too long
   });
 
   it('returns correct error messages', () => {
-    const result = LowerCase.parse({ BadKey: 1 });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.errors.length).toBe(1);
-      expect(result.errors[0].keyword).toBe('pattern');
-      expect(result.errors[0].path).toBe('BadKey');
+    const result = LowerCase.validate({ BadKey: 1 });
+    expect(result.error === undefined).toBe(false);
+    if (result.error !== undefined) {
+      expect(result.error.length).toBe(1);
+      expect(result.error[0].keyword).toBe('pattern');
+      expect(result.error[0].path).toBe('BadKey');
     }
   });
 });
@@ -126,16 +126,16 @@ describe('$anchor', () => {
       WithAnchor.validate({
         home: { street: '123 Main', city: 'Boston' },
         work: { street: '456 Oak', city: 'Cambridge' },
-      })
-    ).toBe(true);
+      }).error
+    ).toBeUndefined();
   });
 
   it('validates against anchor schema', () => {
     expect(
       WithAnchor.validate({
         home: { street: '123 Main' }, // missing city
-      })
-    ).toBe(false);
+      }).error
+    ).toBeDefined();
   });
 
   it('works with nested anchors', () => {
@@ -161,8 +161,8 @@ describe('$anchor', () => {
       },
     });
 
-    expect(Nested.validate({ data: { nested: { value: 42 } } })).toBe(true);
-    expect(Nested.validate({ data: { nested: { value: 'x' } } })).toBe(false);
+    expect(Nested.validate({ data: { nested: { value: 42 } } }).error).toBeUndefined();
+    expect(Nested.validate({ data: { nested: { value: 'x' } } }).error).toBeDefined();
   });
 
   it('anchor takes precedence when name could conflict', () => {
@@ -188,7 +188,7 @@ describe('$anchor', () => {
       WithBothRefs.validate({
         byDef: { name: 'foo' },
         byAnchor: { name: 'bar' },
-      })
-    ).toBe(true);
+      }).error
+    ).toBeUndefined();
   });
 });

@@ -11,13 +11,13 @@ describe('coercion', () => {
   describe('disabled by default', () => {
     it('does not coerce when coerce option is not set', () => {
       const NumberSchema = schema({ type: 'number' });
-      expect(NumberSchema.validate('42')).toBe(false);
-      expect(NumberSchema.validate(42)).toBe(true);
+      expect(NumberSchema.validate('42').error).toBeDefined();
+      expect(NumberSchema.validate(42).error).toBeUndefined();
     });
 
     it('does not coerce when coerce is explicitly false', () => {
       const NumberSchema = schema({ type: 'number' }, { coerce: false });
-      expect(NumberSchema.validate('42')).toBe(false);
+      expect(NumberSchema.validate('42').error).toBeDefined();
     });
   });
 
@@ -25,51 +25,51 @@ describe('coercion', () => {
     const StringSchema = schema({ type: 'string' }, { coerce: true });
 
     it('coerces number to string', () => {
-      const result = StringSchema.parse(42);
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe('42');
+      const result = StringSchema.validate(42);
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe('42');
       }
     });
 
     it('coerces floating point number to string', () => {
-      const result = StringSchema.parse(3.14);
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe('3.14');
+      const result = StringSchema.validate(3.14);
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe('3.14');
       }
     });
 
     it('coerces boolean to string', () => {
-      expect(StringSchema.parse(true)).toEqual({ ok: true, data: 'true' });
-      expect(StringSchema.parse(false)).toEqual({ ok: true, data: 'false' });
+      expect(StringSchema.validate(true)).toEqual({ value: 'true', error: undefined });
+      expect(StringSchema.validate(false)).toEqual({ value: 'false', error: undefined });
     });
 
     it('does not coerce null to string', () => {
-      const result = StringSchema.parse(null);
-      expect(result.ok).toBe(false);
+      const result = StringSchema.validate(null);
+      expect(result.error === undefined).toBe(false);
     });
 
     it('does not coerce undefined to string', () => {
-      const result = StringSchema.parse(undefined);
-      expect(result.ok).toBe(false);
+      const result = StringSchema.validate(undefined);
+      expect(result.error === undefined).toBe(false);
     });
 
     it('does not coerce object to string', () => {
-      const result = StringSchema.parse({ foo: 'bar' });
-      expect(result.ok).toBe(false);
+      const result = StringSchema.validate({ foo: 'bar' });
+      expect(result.error === undefined).toBe(false);
     });
 
     it('does not coerce array to string', () => {
-      const result = StringSchema.parse(['a', 'b']);
-      expect(result.ok).toBe(false);
+      const result = StringSchema.validate(['a', 'b']);
+      expect(result.error === undefined).toBe(false);
     });
 
     it('passes through valid strings unchanged', () => {
-      const result = StringSchema.parse('hello');
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe('hello');
+      const result = StringSchema.validate('hello');
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe('hello');
       }
     });
   });
@@ -78,70 +78,70 @@ describe('coercion', () => {
     const NumberSchema = schema({ type: 'number' }, { coerce: true });
 
     it('coerces numeric string to number', () => {
-      const result = NumberSchema.parse('42');
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe(42);
+      const result = NumberSchema.validate('42');
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe(42);
       }
     });
 
     it('coerces floating point string to number', () => {
-      const result = NumberSchema.parse('3.14');
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe(3.14);
+      const result = NumberSchema.validate('3.14');
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe(3.14);
       }
     });
 
     it('coerces negative number string to number', () => {
-      const result = NumberSchema.parse('-42');
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe(-42);
+      const result = NumberSchema.validate('-42');
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe(-42);
       }
     });
 
     it('coerces scientific notation string to number', () => {
-      const result = NumberSchema.parse('1e10');
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe(1e10);
+      const result = NumberSchema.validate('1e10');
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe(1e10);
       }
     });
 
     it('trims whitespace before coercing', () => {
-      const result = NumberSchema.parse('  42  ');
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe(42);
+      const result = NumberSchema.validate('  42  ');
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe(42);
       }
     });
 
     it('does not coerce empty string to number', () => {
-      const result = NumberSchema.parse('');
-      expect(result.ok).toBe(false);
+      const result = NumberSchema.validate('');
+      expect(result.error === undefined).toBe(false);
     });
 
     it('does not coerce non-numeric string to number', () => {
-      const result = NumberSchema.parse('abc');
-      expect(result.ok).toBe(false);
+      const result = NumberSchema.validate('abc');
+      expect(result.error === undefined).toBe(false);
     });
 
     it('does not coerce boolean to number', () => {
-      expect(NumberSchema.parse(true).ok).toBe(false);
-      expect(NumberSchema.parse(false).ok).toBe(false);
+      expect(NumberSchema.validate(true).error).toBeDefined();
+      expect(NumberSchema.validate(false).error).toBeDefined();
     });
 
     it('does not coerce null to number', () => {
-      const result = NumberSchema.parse(null);
-      expect(result.ok).toBe(false);
+      const result = NumberSchema.validate(null);
+      expect(result.error === undefined).toBe(false);
     });
 
     it('passes through valid numbers unchanged', () => {
-      const result = NumberSchema.parse(42);
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe(42);
+      const result = NumberSchema.validate(42);
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe(42);
       }
     });
 
@@ -150,9 +150,9 @@ describe('coercion', () => {
         { type: 'number', minimum: 0, maximum: 100 },
         { coerce: true }
       );
-      expect(ConstrainedNumber.parse('50').ok).toBe(true);
-      expect(ConstrainedNumber.parse('150').ok).toBe(false);
-      expect(ConstrainedNumber.parse('-10').ok).toBe(false);
+      expect(ConstrainedNumber.validate('50').error).toBeUndefined();
+      expect(ConstrainedNumber.validate('150').error).toBeDefined();
+      expect(ConstrainedNumber.validate('-10').error).toBeDefined();
     });
   });
 
@@ -160,43 +160,43 @@ describe('coercion', () => {
     const IntegerSchema = schema({ type: 'integer' }, { coerce: true });
 
     it('coerces integer string to integer', () => {
-      const result = IntegerSchema.parse('42');
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe(42);
+      const result = IntegerSchema.validate('42');
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe(42);
       }
     });
 
     it('coerces string ending in .0 to integer', () => {
-      const result = IntegerSchema.parse('42.0');
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe(42);
+      const result = IntegerSchema.validate('42.0');
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe(42);
       }
     });
 
     it('does not coerce non-integer decimal string', () => {
-      const result = IntegerSchema.parse('42.5');
-      expect(result.ok).toBe(false);
+      const result = IntegerSchema.validate('42.5');
+      expect(result.error === undefined).toBe(false);
     });
 
     it('does not coerce floating point string to integer', () => {
-      const result = IntegerSchema.parse('3.14');
-      expect(result.ok).toBe(false);
+      const result = IntegerSchema.validate('3.14');
+      expect(result.error === undefined).toBe(false);
     });
 
     it('passes through valid integers unchanged', () => {
-      const result = IntegerSchema.parse(42);
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe(42);
+      const result = IntegerSchema.validate(42);
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe(42);
       }
     });
 
     it('validates coerced integer against constraints', () => {
       const ConstrainedInt = schema({ type: 'integer', minimum: 1, maximum: 10 }, { coerce: true });
-      expect(ConstrainedInt.parse('5').ok).toBe(true);
-      expect(ConstrainedInt.parse('15').ok).toBe(false);
+      expect(ConstrainedInt.validate('5').error).toBeUndefined();
+      expect(ConstrainedInt.validate('15').error).toBeDefined();
     });
   });
 
@@ -204,89 +204,89 @@ describe('coercion', () => {
     const BooleanSchema = schema({ type: 'boolean' }, { coerce: true });
 
     it('coerces "true" string to true', () => {
-      const result = BooleanSchema.parse('true');
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe(true);
+      const result = BooleanSchema.validate('true');
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe(true);
       }
     });
 
     it('coerces "false" string to false', () => {
-      const result = BooleanSchema.parse('false');
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe(false);
+      const result = BooleanSchema.validate('false');
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe(false);
       }
     });
 
     it('coerces "TRUE" string (case-insensitive) to true', () => {
-      const result = BooleanSchema.parse('TRUE');
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe(true);
+      const result = BooleanSchema.validate('TRUE');
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe(true);
       }
     });
 
     it('coerces "FALSE" string (case-insensitive) to false', () => {
-      const result = BooleanSchema.parse('FALSE');
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe(false);
+      const result = BooleanSchema.validate('FALSE');
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe(false);
       }
     });
 
     it('coerces "1" string to true', () => {
-      const result = BooleanSchema.parse('1');
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe(true);
+      const result = BooleanSchema.validate('1');
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe(true);
       }
     });
 
     it('coerces "0" string to false', () => {
-      const result = BooleanSchema.parse('0');
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe(false);
+      const result = BooleanSchema.validate('0');
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe(false);
       }
     });
 
     it('coerces number 1 to true', () => {
-      const result = BooleanSchema.parse(1);
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe(true);
+      const result = BooleanSchema.validate(1);
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe(true);
       }
     });
 
     it('coerces number 0 to false', () => {
-      const result = BooleanSchema.parse(0);
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe(false);
+      const result = BooleanSchema.validate(0);
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe(false);
       }
     });
 
     it('does not coerce other strings to boolean', () => {
-      expect(BooleanSchema.parse('yes').ok).toBe(false);
-      expect(BooleanSchema.parse('no').ok).toBe(false);
-      expect(BooleanSchema.parse('on').ok).toBe(false);
-      expect(BooleanSchema.parse('off').ok).toBe(false);
+      expect(BooleanSchema.validate('yes').error).toBeDefined();
+      expect(BooleanSchema.validate('no').error).toBeDefined();
+      expect(BooleanSchema.validate('on').error).toBeDefined();
+      expect(BooleanSchema.validate('off').error).toBeDefined();
     });
 
     it('does not coerce other numbers to boolean', () => {
-      expect(BooleanSchema.parse(2).ok).toBe(false);
-      expect(BooleanSchema.parse(-1).ok).toBe(false);
+      expect(BooleanSchema.validate(2).error).toBeDefined();
+      expect(BooleanSchema.validate(-1).error).toBeDefined();
     });
 
     it('does not coerce null to boolean', () => {
-      const result = BooleanSchema.parse(null);
-      expect(result.ok).toBe(false);
+      const result = BooleanSchema.validate(null);
+      expect(result.error === undefined).toBe(false);
     });
 
     it('passes through valid booleans unchanged', () => {
-      expect(BooleanSchema.parse(true)).toEqual({ ok: true, data: true });
-      expect(BooleanSchema.parse(false)).toEqual({ ok: true, data: false });
+      expect(BooleanSchema.validate(true)).toEqual({ value: true, error: undefined });
+      expect(BooleanSchema.validate(false)).toEqual({ value: false, error: undefined });
     });
   });
 
@@ -294,39 +294,39 @@ describe('coercion', () => {
     const NullSchema = schema({ type: 'null' }, { coerce: true });
 
     it('coerces empty string to null', () => {
-      const result = NullSchema.parse('');
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe(null);
+      const result = NullSchema.validate('');
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe(null);
       }
     });
 
     it('coerces "null" string to null', () => {
-      const result = NullSchema.parse('null');
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe(null);
+      const result = NullSchema.validate('null');
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe(null);
       }
     });
 
     it('does not coerce other strings to null', () => {
-      expect(NullSchema.parse('undefined').ok).toBe(false);
-      expect(NullSchema.parse('nil').ok).toBe(false);
+      expect(NullSchema.validate('undefined').error).toBeDefined();
+      expect(NullSchema.validate('nil').error).toBeDefined();
     });
 
     it('does not coerce number to null', () => {
-      expect(NullSchema.parse(0).ok).toBe(false);
+      expect(NullSchema.validate(0).error).toBeDefined();
     });
 
     it('does not coerce boolean to null', () => {
-      expect(NullSchema.parse(false).ok).toBe(false);
+      expect(NullSchema.validate(false).error).toBeDefined();
     });
 
     it('passes through null unchanged', () => {
-      const result = NullSchema.parse(null);
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe(null);
+      const result = NullSchema.validate(null);
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe(null);
       }
     });
   });
@@ -335,45 +335,45 @@ describe('coercion', () => {
     const ArraySchema = schema({ type: 'array', items: { type: 'string' } }, { coerce: true });
 
     it('wraps single value in array', () => {
-      const result = ArraySchema.parse('foo');
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toEqual(['foo']);
+      const result = ArraySchema.validate('foo');
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toEqual(['foo']);
       }
     });
 
     it('wraps number in array (with item coercion)', () => {
-      const result = ArraySchema.parse(42);
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toEqual(['42']);
+      const result = ArraySchema.validate(42);
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toEqual(['42']);
       }
     });
 
     it('wraps object in array', () => {
       const ObjArraySchema = schema({ type: 'array', items: { type: 'object' } }, { coerce: true });
-      const result = ObjArraySchema.parse({ foo: 'bar' });
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toEqual([{ foo: 'bar' }]);
+      const result = ObjArraySchema.validate({ foo: 'bar' });
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toEqual([{ foo: 'bar' }]);
       }
     });
 
     it('does not coerce null to array', () => {
-      const result = ArraySchema.parse(null);
-      expect(result.ok).toBe(false);
+      const result = ArraySchema.validate(null);
+      expect(result.error === undefined).toBe(false);
     });
 
     it('does not coerce undefined to array', () => {
-      const result = ArraySchema.parse(undefined);
-      expect(result.ok).toBe(false);
+      const result = ArraySchema.validate(undefined);
+      expect(result.error === undefined).toBe(false);
     });
 
     it('passes through valid arrays unchanged', () => {
-      const result = ArraySchema.parse(['a', 'b', 'c']);
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toEqual(['a', 'b', 'c']);
+      const result = ArraySchema.validate(['a', 'b', 'c']);
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toEqual(['a', 'b', 'c']);
       }
     });
 
@@ -382,10 +382,10 @@ describe('coercion', () => {
         { type: 'array', items: { type: 'number' } },
         { coerce: true }
       );
-      const result = NumberArraySchema.parse(['1', '2', '3']);
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toEqual([1, 2, 3]);
+      const result = NumberArraySchema.validate(['1', '2', '3']);
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toEqual([1, 2, 3]);
       }
     });
   });
@@ -394,23 +394,23 @@ describe('coercion', () => {
     it('coerces to first matching type in union', () => {
       const UnionSchema = schema({ type: ['string', 'number'] }, { coerce: true });
       // Already a string - no coercion needed
-      expect(UnionSchema.parse('hello')).toEqual({ ok: true, data: 'hello' });
+      expect(UnionSchema.validate('hello')).toEqual({ value: 'hello', error: undefined });
       // Already a number - no coercion needed
-      expect(UnionSchema.parse(42)).toEqual({ ok: true, data: 42 });
+      expect(UnionSchema.validate(42)).toEqual({ value: 42, error: undefined });
     });
 
     it('handles nullable types', () => {
       const NullableNumber = schema({ type: ['number', 'null'] }, { coerce: true });
-      const result1 = NullableNumber.parse('42');
-      expect(result1.ok).toBe(true);
-      if (result1.ok) {
-        expect(result1.data).toBe(42);
+      const result1 = NullableNumber.validate('42');
+      expect(result1.error === undefined).toBe(true);
+      if (result1.error === undefined) {
+        expect(result1.value).toBe(42);
       }
 
-      const result2 = NullableNumber.parse('');
-      expect(result2.ok).toBe(true);
-      if (result2.ok) {
-        expect(result2.data).toBe(null);
+      const result2 = NullableNumber.validate('');
+      expect(result2.error === undefined).toBe(true);
+      if (result2.error === undefined) {
+        expect(result2.value).toBe(null);
       }
     });
   });
@@ -418,45 +418,45 @@ describe('coercion', () => {
   describe('const and enum', () => {
     it('coerces value to match const', () => {
       const ConstSchema = schema({ const: 42 }, { coerce: true });
-      const result = ConstSchema.parse('42');
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe(42);
+      const result = ConstSchema.validate('42');
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe(42);
       }
     });
 
     it('coerces value to match enum', () => {
       const EnumSchema = schema({ enum: [1, 2, 3] }, { coerce: true });
-      const result = EnumSchema.parse('2');
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe(2);
+      const result = EnumSchema.validate('2');
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe(2);
       }
     });
 
     it('fails when coerced value does not match const', () => {
       const ConstSchema = schema({ const: 42 }, { coerce: true });
-      const result = ConstSchema.parse('43');
-      expect(result.ok).toBe(false);
+      const result = ConstSchema.validate('43');
+      expect(result.error === undefined).toBe(false);
     });
 
     it('fails when coerced value does not match enum', () => {
       const EnumSchema = schema({ enum: [1, 2, 3] }, { coerce: true });
-      const result = EnumSchema.parse('5');
-      expect(result.ok).toBe(false);
+      const result = EnumSchema.validate('5');
+      expect(result.error === undefined).toBe(false);
     });
 
     it('coerces boolean const', () => {
       const TrueConst = schema({ const: true }, { coerce: true });
-      expect(TrueConst.parse('true')).toEqual({ ok: true, data: true });
-      expect(TrueConst.parse('1')).toEqual({ ok: true, data: true });
+      expect(TrueConst.validate('true')).toEqual({ value: true, error: undefined });
+      expect(TrueConst.validate('1')).toEqual({ value: true, error: undefined });
     });
 
     it('coerces string enum', () => {
       const StringEnum = schema({ enum: ['a', 'b', 'c'] }, { coerce: true });
-      const result = StringEnum.parse(1);
+      const result = StringEnum.validate(1);
       // 1 coerces to '1', which doesn't match enum
-      expect(result.ok).toBe(false);
+      expect(result.error === undefined).toBe(false);
     });
   });
 
@@ -476,14 +476,14 @@ describe('coercion', () => {
     );
 
     it('coerces nested properties', () => {
-      const result = UserSchema.parse({
+      const result = UserSchema.validate({
         name: 'John',
         age: '30',
         active: 'true',
       });
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toEqual({
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toEqual({
           name: 'John',
           age: 30,
           active: true,
@@ -512,16 +512,16 @@ describe('coercion', () => {
         { coerce: true }
       );
 
-      const result = DeepSchema.parse({
+      const result = DeepSchema.validate({
         level1: {
           level2: {
             value: '42',
           },
         },
       });
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toEqual({
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toEqual({
           level1: {
             level2: {
               value: 42,
@@ -532,14 +532,14 @@ describe('coercion', () => {
     });
 
     it('coerces array items within objects', () => {
-      const result = UserSchema.parse({
+      const result = UserSchema.validate({
         name: 'John',
         age: '30',
         tags: [1, 2, 3],
       });
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data.tags).toEqual(['1', '2', '3']);
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value.tags).toEqual(['1', '2', '3']);
       }
     });
   });
@@ -553,10 +553,10 @@ describe('coercion', () => {
           },
           { coerce: true }
         );
-        const result = AllOfSchema.parse('42');
-        expect(result.ok).toBe(true);
-        if (result.ok) {
-          expect(result.data).toBe(42);
+        const result = AllOfSchema.validate('42');
+        expect(result.error === undefined).toBe(true);
+        if (result.error === undefined) {
+          expect(result.value).toBe(42);
         }
       });
 
@@ -567,8 +567,8 @@ describe('coercion', () => {
           },
           { coerce: true }
         );
-        const result = AllOfSchema.parse('42');
-        expect(result.ok).toBe(false);
+        const result = AllOfSchema.validate('42');
+        expect(result.error === undefined).toBe(false);
       });
     });
 
@@ -580,10 +580,10 @@ describe('coercion', () => {
           },
           { coerce: true }
         );
-        const result = AnyOfSchema.parse('42');
-        expect(result.ok).toBe(true);
-        if (result.ok) {
-          expect(result.data).toBe(42);
+        const result = AnyOfSchema.validate('42');
+        expect(result.error === undefined).toBe(true);
+        if (result.error === undefined) {
+          expect(result.value).toBe(42);
         }
       });
 
@@ -597,10 +597,10 @@ describe('coercion', () => {
           },
           { coerce: true }
         );
-        const result = AnyOfSchema.parse('42');
-        expect(result.ok).toBe(true);
-        if (result.ok) {
-          expect(result.data).toBe(42);
+        const result = AnyOfSchema.validate('42');
+        expect(result.error === undefined).toBe(true);
+        if (result.error === undefined) {
+          expect(result.value).toBe(42);
         }
       });
     });
@@ -616,10 +616,10 @@ describe('coercion', () => {
           },
           { coerce: true }
         );
-        const result = OneOfSchema.parse('42');
-        expect(result.ok).toBe(true);
-        if (result.ok) {
-          expect(result.data).toBe(42);
+        const result = OneOfSchema.validate('42');
+        expect(result.error === undefined).toBe(true);
+        if (result.error === undefined) {
+          expect(result.value).toBe(42);
         }
       });
 
@@ -634,8 +634,8 @@ describe('coercion', () => {
           { coerce: true }
         );
         // 42 matches both schemas after coercion
-        const result = OneOfSchema.parse('42');
-        expect(result.ok).toBe(false);
+        const result = OneOfSchema.validate('42');
+        expect(result.error === undefined).toBe(false);
       });
     });
 
@@ -662,16 +662,16 @@ describe('coercion', () => {
           { coerce: true }
         );
 
-        const result1 = ConditionalSchema.parse({ type: 'number', value: '42' });
-        expect(result1.ok).toBe(true);
-        if (result1.ok) {
-          expect(result1.data.value).toBe(42);
+        const result1 = ConditionalSchema.validate({ type: 'number', value: '42' });
+        expect(result1.error === undefined).toBe(true);
+        if (result1.error === undefined) {
+          expect(result1.value.value).toBe(42);
         }
 
-        const result2 = ConditionalSchema.parse({ type: 'string', value: 123 });
-        expect(result2.ok).toBe(true);
-        if (result2.ok) {
-          expect(result2.data.value).toBe('123');
+        const result2 = ConditionalSchema.validate({ type: 'string', value: 123 });
+        expect(result2.error === undefined).toBe(true);
+        if (result2.error === undefined) {
+          expect(result2.value.value).toBe('123');
         }
       });
     });
@@ -696,10 +696,10 @@ describe('coercion', () => {
         { coerce: true }
       );
 
-      const result = RefSchema.parse({ count: '42' });
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data.count).toBe(42);
+      const result = RefSchema.validate({ count: '42' });
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value.count).toBe(42);
       }
     });
   });
@@ -710,10 +710,10 @@ describe('coercion', () => {
         { type: 'number' },
         { coerce: { number: true, boolean: false } }
       );
-      const result = SelectiveSchema.parse('42');
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe(42);
+      const result = SelectiveSchema.validate('42');
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe(42);
       }
     });
 
@@ -722,8 +722,8 @@ describe('coercion', () => {
         { type: 'boolean' },
         { coerce: { number: true, boolean: false } }
       );
-      const result = SelectiveSchema.parse('true');
-      expect(result.ok).toBe(false);
+      const result = SelectiveSchema.validate('true');
+      expect(result.error === undefined).toBe(false);
     });
 
     it('allows granular control over coercion', () => {
@@ -738,9 +738,9 @@ describe('coercion', () => {
         { coerce: { number: true } }
       );
 
-      const result = NumberOnlyCoerce.parse({ count: '42', active: 'true' });
+      const result = NumberOnlyCoerce.validate({ count: '42', active: 'true' });
       // count should be coerced, active should fail
-      expect(result.ok).toBe(false);
+      expect(result.error === undefined).toBe(false);
     });
   });
 
@@ -757,13 +757,13 @@ describe('coercion', () => {
       );
 
       const input = { age: '42' };
-      const result = Schema.parse(input);
-      expect(result.ok).toBe(true);
+      const result = Schema.validate(input);
+      expect(result.error === undefined).toBe(true);
       // Original input should be unchanged
       expect(input.age).toBe('42');
       // Coerced data should be different
-      if (result.ok) {
-        expect(result.data.age).toBe(42);
+      if (result.error === undefined) {
+        expect(result.value.age).toBe(42);
       }
     });
 
@@ -771,30 +771,31 @@ describe('coercion', () => {
       const Schema = schema({ type: 'array', items: { type: 'number' } }, { coerce: true });
 
       const input = ['1', '2', '3'];
-      const result = Schema.parse(input);
-      expect(result.ok).toBe(true);
+      const result = Schema.validate(input);
+      expect(result.error === undefined).toBe(true);
       // Original input should be unchanged
       expect(input).toEqual(['1', '2', '3']);
       // Coerced data should be different
-      if (result.ok) {
-        expect(result.data).toEqual([1, 2, 3]);
+      if (result.error === undefined) {
+        expect(result.value).toEqual([1, 2, 3]);
       }
     });
   });
 
   describe('validate() method behavior', () => {
-    it('validate() returns true for coercible values when coerce is enabled', () => {
+    it('validate() returns value and no error for coercible values when coerce is enabled', () => {
       const Schema = schema({ type: 'number' }, { coerce: true });
-      expect(Schema.validate('42')).toBe(true);
+      const result = Schema.validate('42');
+      expect(result.error).toBeUndefined();
+      expect(result.value).toBe(42);
     });
 
-    it('validate() acts as type guard after coercion', () => {
+    it('validate() returns coerced value', () => {
       const Schema = schema({ type: 'number' }, { coerce: true });
-      const data: unknown = '42';
-      if (Schema.validate(data)) {
-        // TypeScript should allow treating data as number here
-        // Note: at runtime, data is still '42', but it's coercible
-        expect(true).toBe(true);
+      const result = Schema.validate('42');
+      if (result.error === undefined) {
+        // result.value is the coerced number
+        expect(result.value).toBe(42);
       }
     });
   });
@@ -815,42 +816,42 @@ describe('coercion', () => {
   describe('edge cases', () => {
     it('handles NaN string', () => {
       const NumberSchema = schema({ type: 'number' }, { coerce: true });
-      const result = NumberSchema.parse('NaN');
+      const result = NumberSchema.validate('NaN');
       // NaN is technically a number, but we may want to reject it
       // This test documents the behavior - implementation decides
-      expect(result.ok).toBe(false);
+      expect(result.error === undefined).toBe(false);
     });
 
     it('handles Infinity string', () => {
       const NumberSchema = schema({ type: 'number' }, { coerce: true });
-      const result = NumberSchema.parse('Infinity');
+      const result = NumberSchema.validate('Infinity');
       // Infinity is a valid number
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe(Infinity);
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe(Infinity);
       }
     });
 
     it('handles negative Infinity string', () => {
       const NumberSchema = schema({ type: 'number' }, { coerce: true });
-      const result = NumberSchema.parse('-Infinity');
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toBe(-Infinity);
+      const result = NumberSchema.validate('-Infinity');
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toBe(-Infinity);
       }
     });
 
     it('handles whitespace-only string for number coercion', () => {
       const NumberSchema = schema({ type: 'number' }, { coerce: true });
-      const result = NumberSchema.parse('   ');
-      expect(result.ok).toBe(false);
+      const result = NumberSchema.validate('   ');
+      expect(result.error === undefined).toBe(false);
     });
 
     it('handles zero string edge cases', () => {
       const NumberSchema = schema({ type: 'number' }, { coerce: true });
-      expect(NumberSchema.parse('0')).toEqual({ ok: true, data: 0 });
-      expect(NumberSchema.parse('-0')).toEqual({ ok: true, data: -0 });
-      expect(NumberSchema.parse('+0')).toEqual({ ok: true, data: 0 });
+      expect(NumberSchema.validate('0')).toEqual({ value: 0, error: undefined });
+      expect(NumberSchema.validate('-0')).toEqual({ value: -0, error: undefined });
+      expect(NumberSchema.validate('+0')).toEqual({ value: 0, error: undefined });
     });
 
     it('handles prefixItems tuple coercion', () => {
@@ -861,10 +862,10 @@ describe('coercion', () => {
         },
         { coerce: true }
       );
-      const result = TupleSchema.parse([123, '42', 'true']);
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toEqual(['123', 42, true]);
+      const result = TupleSchema.validate([123, '42', 'true']);
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toEqual(['123', 42, true]);
       }
     });
 
@@ -879,10 +880,10 @@ describe('coercion', () => {
         },
         { coerce: true }
       );
-      const result = Schema.parse({ known: 123, extra: '42' });
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toEqual({ known: '123', extra: 42 });
+      const result = Schema.validate({ known: 123, extra: '42' });
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toEqual({ known: '123', extra: 42 });
       }
     });
 
@@ -897,10 +898,10 @@ describe('coercion', () => {
         },
         { coerce: true }
       );
-      const result = Schema.parse({ num_value: '42', str_value: 123 });
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.data).toEqual({ num_value: 42, str_value: '123' });
+      const result = Schema.validate({ num_value: '42', str_value: 123 });
+      expect(result.error === undefined).toBe(true);
+      if (result.error === undefined) {
+        expect(result.value).toEqual({ num_value: 42, str_value: '123' });
       }
     });
   });
@@ -909,9 +910,9 @@ describe('coercion', () => {
     // TODO: Custom coercion error messages require changes to the compiler
     it.skip('provides helpful error when coercion fails', () => {
       const NumberSchema = schema({ type: 'number' }, { coerce: true });
-      const result = NumberSchema.parse('abc');
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
+      const result = NumberSchema.validate('abc');
+      expect(result.error === undefined).toBe(false);
+      if (!result.error === undefined) {
         expect(result.errors.length).toBeGreaterThan(0);
         expect(result.errors[0].keyword).toBe('type');
         // Error message should indicate coercion was attempted
@@ -934,9 +935,9 @@ describe('coercion', () => {
         },
         { coerce: true }
       );
-      const result = Schema.parse({ user: { age: 'not-a-number' } });
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
+      const result = Schema.validate({ user: { age: 'not-a-number' } });
+      expect(result.error === undefined).toBe(false);
+      if (!result.error === undefined) {
         expect(result.errors[0].path).toBe('user.age');
       }
     });
