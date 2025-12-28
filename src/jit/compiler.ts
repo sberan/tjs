@@ -244,6 +244,7 @@ function generateSchemaValidator(
     generateEnumCheck(code, schema, dataVar, pathExpr, ctx);
     generateStringChecks(code, schema, dataVar, pathExpr, ctx);
     generateFormatCheck(code, schema, dataVar, pathExpr, ctx);
+    generateContentChecks(code, schema, dataVar, pathExpr, ctx);
     generateNumberChecks(code, schema, dataVar, pathExpr, ctx);
     generateItemsChecks(code, schema, dataVar, pathExpr, ctx);
     generateArrayChecks(code, schema, dataVar, pathExpr, ctx);
@@ -1313,6 +1314,72 @@ export function generateStringChecks(
       code.if(`!${regexName}.test(${dataVar})`, () => {
         genError(code, pathExpr, 'pattern', `String must match pattern ${schema.pattern}`);
       });
+    }
+  });
+}
+
+/**
+ * Generate content validation checks (contentMediaType, contentEncoding)
+ * These are optional in draft-07 and later
+ * In draft 2020-12, content is annotation-only (no validation)
+ */
+export function generateContentChecks(
+  code: CodeBuilder,
+  schema: JsonSchemaBase,
+  dataVar: string,
+  pathExpr: string,
+  _ctx: CompileContext
+): void {
+  const hasContentChecks =
+    schema.contentMediaType !== undefined || schema.contentEncoding !== undefined;
+
+  if (!hasContentChecks) return;
+
+  // In draft 2020-12, content keywords are annotation-only (no validation)
+  // They only validate in draft-07 and earlier
+  const schemaDialect = schema.$schema;
+  if (schemaDialect && (schemaDialect.includes('2020-12') || schemaDialect.includes('2019-09'))) {
+    return; // Content is annotation-only in these drafts
+  }
+
+  // Only check if data is a string
+  code.if(`typeof ${dataVar} === 'string'`, () => {
+    // First check encoding if present
+    if (schema.contentEncoding !== undefined) {
+      if (schema.contentEncoding === 'base64') {
+        // Validate base64 encoding
+        // Base64 characters: A-Z, a-z, 0-9, +, /, and = for padding
+        code.if(`!/^[A-Za-z0-9+/]*={0,2}$/.test(${dataVar}) || ${dataVar}.length % 4 !== 0`, () => {
+          genError(code, pathExpr, 'contentEncoding', 'String must be valid base64');
+        });
+      }
+    }
+
+    // Then check media type if present
+    if (schema.contentMediaType !== undefined) {
+      if (schema.contentMediaType === 'application/json') {
+        // If there's also base64 encoding, we need to decode first
+        if (schema.contentEncoding === 'base64') {
+          const decodedVar = code.genVar('decoded');
+          code.block('', () => {
+            code.line('try {');
+            code.line(`  const ${decodedVar} = atob(${dataVar});`);
+            code.line(`  JSON.parse(${decodedVar});`);
+            code.line('} catch (e) {');
+            genError(code, pathExpr, 'contentMediaType', 'String must be valid JSON');
+            code.line('}');
+          });
+        } else {
+          // Validate directly as JSON
+          code.block('', () => {
+            code.line('try {');
+            code.line(`  JSON.parse(${dataVar});`);
+            code.line('} catch (e) {');
+            genError(code, pathExpr, 'contentMediaType', 'String must be valid JSON');
+            code.line('}');
+          });
+        }
+      }
     }
   });
 }
