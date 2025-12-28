@@ -1,4 +1,4 @@
-import { schema } from './index.js';
+import { schema, struct } from './index.js';
 
 const Obj1 = schema({
   type: 'object',
@@ -22,19 +22,27 @@ const NotStringNumber = schema({
     type: ['string', 'number'],
   },
 });
-
+const xss = NotStringNumber('hello');
 type NotStringNumberType = typeof NotStringNumber.type;
 //   ^? hover to see - should be boolean | null | JsonArray | JsonObject
 
-const Person = schema({
-  type: 'object',
-  properties: {
-    name: { type: 'string' },
-    friend: { $ref: '#' },
-  },
-  required: ['name'],
+const Person = struct({
+  name: { type: 'string' },
+  age: { type: 'integer', optional: true },
+  friend: { $ref: '#' },
 });
 
+// Person(data) returns boolean (type guard for validation)
+// Use Person.assert(data) to get typed data back
+const alice = Person.assert({
+  name: 'Alice',
+  friend: {
+    name: 'Bob',
+    friend: {
+      name: 'Charlie',
+    },
+  },
+});
 type PersonType = typeof Person.type;
 //   ^? hover to see - should be { name: string; friend?: PersonType }
 
