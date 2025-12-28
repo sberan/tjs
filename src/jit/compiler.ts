@@ -770,6 +770,15 @@ export function generateObjectChecks(
 /**
  * Generate properties, additionalProperties, patternProperties checks
  */
+// Check if a schema is a no-op (true, {})
+function isNoOpSchema(schema: JsonSchema): boolean {
+  if (schema === true) return true;
+  if (typeof schema === 'object' && schema !== null && Object.keys(schema).length === 0) {
+    return true;
+  }
+  return false;
+}
+
 export function generatePropertiesChecks(
   code: CodeBuilder,
   schema: JsonSchemaBase,
@@ -777,10 +786,18 @@ export function generatePropertiesChecks(
   pathExpr: string,
   ctx: CompileContext
 ): void {
-  const hasProps = schema.properties && Object.keys(schema.properties).length > 0;
-  const hasPatternProps =
-    schema.patternProperties && Object.keys(schema.patternProperties).length > 0;
-  const hasAdditionalProps = schema.additionalProperties !== undefined;
+  // Check for non-trivial property schemas
+  const nonTrivialProps = schema.properties
+    ? Object.entries(schema.properties).filter(([, s]) => !isNoOpSchema(s))
+    : [];
+  const nonTrivialPatternProps = schema.patternProperties
+    ? Object.entries(schema.patternProperties).filter(([, s]) => !isNoOpSchema(s))
+    : [];
+
+  const hasProps = nonTrivialProps.length > 0;
+  const hasPatternProps = nonTrivialPatternProps.length > 0;
+  const hasAdditionalProps =
+    schema.additionalProperties !== undefined && !isNoOpSchema(schema.additionalProperties);
 
   if (!hasProps && !hasPatternProps && !hasAdditionalProps) return;
 
@@ -788,27 +805,27 @@ export function generatePropertiesChecks(
   code.if(
     `typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
     () => {
-      // Validate defined properties
-      if (schema.properties) {
-        for (const [propName, propSchema] of Object.entries(schema.properties)) {
-          const propPathExpr =
-            pathExpr === "''"
-              ? `'${escapeString(propName)}'`
-              : `${pathExpr} + '.${escapeString(propName)}'`;
-          genPropertyCheck(code, dataVar, propName, (valueVar) => {
-            generateSchemaValidator(code, propSchema, valueVar, propPathExpr, ctx);
-          });
-        }
+      // Validate defined properties (only non-trivial ones)
+      for (const [propName, propSchema] of nonTrivialProps) {
+        const propPathExpr =
+          pathExpr === "''"
+            ? `'${escapeString(propName)}'`
+            : `${pathExpr} + '.${escapeString(propName)}'`;
+        genPropertyCheck(code, dataVar, propName, (valueVar) => {
+          generateSchemaValidator(code, propSchema, valueVar, propPathExpr, ctx);
+        });
       }
 
       // Handle patternProperties and additionalProperties in a single loop
       if (hasPatternProps || hasAdditionalProps) {
         const definedProps = schema.properties ? Object.keys(schema.properties) : [];
-        const patterns = schema.patternProperties ? Object.keys(schema.patternProperties) : [];
+        // For additionalProperties, we need ALL patternProperties patterns (even no-ops)
+        // because they affect which properties are considered "additional"
+        const allPatterns = schema.patternProperties ? Object.keys(schema.patternProperties) : [];
 
-        // Pre-compile pattern regexes if we have patterns
+        // Pre-compile pattern regexes for ALL patterns (needed for additionalProperties check)
         const patternRegexNames: string[] = [];
-        for (const pattern of patterns) {
+        for (const pattern of allPatterns) {
           const regexName = ctx.genRuntimeName('patternRe');
           ctx.addRuntimeFunction(regexName, new RegExp(pattern));
           patternRegexNames.push(regexName);
@@ -817,26 +834,16 @@ export function generatePropertiesChecks(
         code.forIn('key', dataVar, () => {
           const keyPathExpr = pathExpr === "''" ? 'key' : `${pathExpr} + '.' + key`;
 
-          // Generate patternProperties checks first (skip empty schemas that always pass)
-          if (hasPatternProps && schema.patternProperties) {
-            const patternEntries = Object.entries(schema.patternProperties);
-            for (let i = 0; i < patternEntries.length; i++) {
-              const [, patternSchema] = patternEntries[i];
-              // Skip generating checks for schemas that always pass (true, {}, empty object)
-              if (patternSchema === true) continue;
-              if (
-                typeof patternSchema === 'object' &&
-                patternSchema !== null &&
-                Object.keys(patternSchema).length === 0
-              ) {
-                continue;
-              }
-              const regexName = patternRegexNames[i];
-              code.if(`${regexName}.test(key)`, () => {
-                const propAccessed = `${dataVar}[key]`;
-                generateSchemaValidator(code, patternSchema, propAccessed, keyPathExpr, ctx);
-              });
-            }
+          // Generate patternProperties checks (only non-trivial ones)
+          for (let i = 0; i < nonTrivialPatternProps.length; i++) {
+            const [pattern, patternSchema] = nonTrivialPatternProps[i];
+            // Find the index in allPatterns to get the right regex
+            const regexIdx = allPatterns.indexOf(pattern);
+            const regexName = patternRegexNames[regexIdx];
+            code.if(`${regexName}.test(key)`, () => {
+              const propAccessed = `${dataVar}[key]`;
+              generateSchemaValidator(code, patternSchema, propAccessed, keyPathExpr, ctx);
+            });
           }
 
           // Generate additionalProperties check
