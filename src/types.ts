@@ -25,7 +25,7 @@ export interface JsonSchemaBase {
   $anchor?: string;
   $dynamicAnchor?: string;
   $dynamicRef?: string;
-  items?: boolean | JsonSchema;
+  items?: boolean | JsonSchema | readonly JsonSchema[];
   prefixItems?: readonly JsonSchema[];
   anyOf?: readonly JsonSchema[];
   oneOf?: readonly JsonSchema[];
@@ -58,6 +58,9 @@ export interface JsonSchemaBase {
   minContains?: number;
   maxContains?: number;
   unevaluatedItems?: boolean | JsonSchema;
+  // Legacy draft-07 keywords (for backwards compatibility)
+  additionalItems?: boolean | JsonSchema;
+  dependencies?: Record<string, JsonSchema | readonly string[]>;
   // Content keywords (for validating encoded content)
   contentEncoding?: string;
   contentMediaType?: string;

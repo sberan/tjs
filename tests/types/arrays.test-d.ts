@@ -80,3 +80,46 @@ const NestedArr = schema({
   },
 });
 NestedArr.type; // $ExpectType string[][]
+
+// =============================================
+// Draft-07 compatibility: items as array
+// =============================================
+
+// Draft-07 tuple - fixed length with additionalItems: false
+const Draft07Tuple = schema({
+  type: 'array',
+  items: [{ type: 'string' }, { type: 'number' }],
+  additionalItems: false,
+} as const);
+Draft07Tuple.type; // $ExpectType [string, number]
+
+// Draft-07 tuple with three elements
+const Draft07Tuple3 = schema({
+  type: 'array',
+  items: [{ type: 'string' }, { type: 'number' }, { type: 'boolean' }],
+  additionalItems: false,
+} as const);
+Draft07Tuple3.type; // $ExpectType [string, number, boolean]
+
+// Draft-07 tuple with rest elements (additionalItems schema)
+const Draft07TupleRest = schema({
+  type: 'array',
+  items: [{ type: 'string' }],
+  additionalItems: { type: 'number' },
+} as const);
+Draft07TupleRest.type; // $ExpectType [string, ...number[]]
+
+// Draft-07 tuple with multiple prefix and rest
+const Draft07TupleMultiRest = schema({
+  type: 'array',
+  items: [{ type: 'string' }, { type: 'boolean' }],
+  additionalItems: { type: 'number' },
+} as const);
+Draft07TupleMultiRest.type; // $ExpectType [string, boolean, ...number[]]
+
+// Draft-07 tuple without additionalItems (open tuple)
+const Draft07OpenTuple = schema({
+  type: 'array',
+  items: [{ type: 'string' }, { type: 'number' }],
+} as const);
+Draft07OpenTuple.type; // $ExpectType [string, number, ...unknown[]]

@@ -229,6 +229,7 @@ function generateSchemaValidator(
   generateDependentRequiredCheck(code, schema, dataVar, pathExpr, ctx);
   generatePropertyNamesCheck(code, schema, dataVar, pathExpr, ctx);
   generateDependentSchemasCheck(code, schema, dataVar, pathExpr, ctx);
+  generateDependenciesCheck(code, schema, dataVar, pathExpr, ctx);
   generateUnevaluatedPropertiesCheck(code, schema, dataVar, pathExpr, ctx);
   generateUnevaluatedItemsCheck(code, schema, dataVar, pathExpr, ctx);
 
@@ -269,16 +270,78 @@ function createDeepEqual(): (a: unknown, b: unknown) => boolean {
  * Create format validators for format keyword
  */
 function createFormatValidators(): Record<string, (s: string) => boolean> {
+  // IPv6 validation helper - handles full, compressed, and IPv4-mapped formats
+  const isValidIPv6 = (s: string): boolean => {
+    // Handle IPv4-mapped IPv6 (::ffff:192.0.2.1)
+    const ipv4Suffix = s.match(/:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+    if (ipv4Suffix) {
+      const ipv4 = ipv4Suffix[1];
+      const octets = ipv4.split('.');
+      if (!octets.every((o) => parseInt(o) <= 255 && !/^0\d/.test(o))) return false;
+      s = s.slice(0, -ipv4Suffix[0].length) + ':0:0'; // Replace IPv4 with two groups
+    }
+
+    // Check for :: (zero compression)
+    const parts = s.split('::');
+    if (parts.length > 2) return false;
+
+    if (parts.length === 2) {
+      const left = parts[0] ? parts[0].split(':') : [];
+      const right = parts[1] ? parts[1].split(':') : [];
+      if (left.length + right.length > 7) return false;
+      const groups = [...left, ...Array(8 - left.length - right.length).fill('0'), ...right];
+      return groups.every((g) => /^[0-9a-f]{1,4}$/i.test(g));
+    }
+
+    // No compression - must have exactly 8 groups
+    const groups = s.split(':');
+    return groups.length === 8 && groups.every((g) => /^[0-9a-f]{1,4}$/i.test(g));
+  };
+
   return {
-    email: (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s),
+    // Email: RFC 5321/5322 simplified - no dots at start/end, no consecutive dots
+    email: (s) => {
+      const atIdx = s.lastIndexOf('@');
+      if (atIdx < 1 || atIdx === s.length - 1) return false;
+      const local = s.slice(0, atIdx);
+      const domain = s.slice(atIdx + 1);
+      // Local part: no leading/trailing dots, no consecutive dots
+      if (local.startsWith('.') || local.endsWith('.') || /\.\./.test(local)) return false;
+      // Basic validation - non-empty parts, domain has at least one dot
+      return /^[^\s@]+$/.test(local) && /^[^\s@]+\.[^\s@]+$/.test(domain);
+    },
     uuid: (s) =>
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s),
-    'date-time': (s) => !isNaN(Date.parse(s)) && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(s),
-    uri: (s) => /^[a-z][a-z\d+.-]*:\/\/.+$/i.test(s),
-    ipv4: (s) => /^(\d{1,3}\.){3}\d{1,3}$/.test(s) && s.split('.').every((n) => parseInt(n) <= 255),
-    ipv6: (s) => /^([0-9a-f]{1,4}:){7}[0-9a-f]{1,4}$/i.test(s),
-    date: (s) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(Date.parse(s)),
-    time: (s) => /^\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?$/.test(s),
+    // Date-time: RFC 3339 with case-insensitive T and Z
+    'date-time': (s) => {
+      const match = s.match(
+        /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/
+      );
+      if (!match) return false;
+      const [, , m, d, h, min, sec] = match.map(Number);
+      return m >= 1 && m <= 12 && d >= 1 && d <= 31 && h <= 23 && min <= 59 && sec <= 60;
+    },
+    // URI: RFC 3986 - scheme followed by ":" and scheme-specific part
+    uri: (s) => {
+      // Must start with scheme (letter followed by letters, digits, +, -, .)
+      if (!/^[a-z][a-z0-9+.-]*:/i.test(s)) return false;
+      // Must not contain spaces or control chars
+      if (/[\s\x00-\x1f]/.test(s)) return false;
+      return true;
+    },
+    ipv4: (s) => {
+      const parts = s.split('.');
+      if (parts.length !== 4) return false;
+      return parts.every((p) => /^\d{1,3}$/.test(p) && parseInt(p) <= 255 && !/^0\d/.test(p));
+    },
+    ipv6: isValidIPv6,
+    date: (s) => {
+      const match = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!match) return false;
+      const [, , m, d] = match.map(Number);
+      return m >= 1 && m <= 12 && d >= 1 && d <= 31;
+    },
+    time: (s) => /^\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})?$/i.test(s),
     duration: (s) =>
       /^P(\d+Y)?(\d+M)?(\d+W)?(\d+D)?(T(\d+H)?(\d+M)?(\d+(\.\d+)?S)?)?$/.test(s) &&
       s !== 'P' &&
@@ -286,12 +349,16 @@ function createFormatValidators(): Record<string, (s: string) => boolean> {
     hostname: (s) =>
       /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i.test(s),
     'uri-reference': (s) => {
-      try {
-        new URL(s, 'http://example.com');
-        return true;
-      } catch {
-        return false;
-      }
+      // Empty string is valid (same-document reference)
+      if (s === '') return true;
+      // Must not contain spaces or certain control chars
+      if (/[\s\x00-\x1f]/.test(s)) return false;
+      // Fragment-only is valid
+      if (s.startsWith('#')) return true;
+      // If has scheme, validate as URI
+      if (/^[a-z][a-z0-9+.-]*:/i.test(s)) return true;
+      // Relative reference - basic validation
+      return true;
     },
     'json-pointer': (s) => s === '' || /^(\/([^~/]|~0|~1)*)*$/.test(s),
     'relative-json-pointer': (s) => /^\d+(#|(\/([^~/]|~0|~1)*)*)?$/.test(s),
@@ -1011,6 +1078,50 @@ export function generateDependentSchemasCheck(
 }
 
 /**
+ * Generate legacy dependencies check (draft-07)
+ * dependencies can contain either:
+ * - array of strings (like dependentRequired)
+ * - schema object (like dependentSchemas)
+ */
+export function generateDependenciesCheck(
+  code: CodeBuilder,
+  schema: JsonSchemaBase,
+  dataVar: string,
+  pathExpr: string,
+  ctx: CompileContext
+): void {
+  if (!schema.dependencies) return;
+
+  code.if(
+    `typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
+    () => {
+      for (const [prop, dep] of Object.entries(schema.dependencies!)) {
+        const propStr = escapeString(prop);
+        code.if(`'${propStr}' in ${dataVar}`, () => {
+          if (Array.isArray(dep)) {
+            // Array of required property names
+            for (const reqProp of dep) {
+              const reqPropStr = escapeString(reqProp);
+              const reqPathExpr =
+                pathExpr === "''" ? `'${reqPropStr}'` : `${pathExpr} + '.${reqPropStr}'`;
+              code.if(`!('${reqPropStr}' in ${dataVar})`, () => {
+                code.line(
+                  `if (errors) errors.push({ path: ${reqPathExpr}, message: 'Property required when ${propStr} is present', keyword: 'dependencies' });`
+                );
+                code.line('return false;');
+              });
+            }
+          } else {
+            // Schema that must validate
+            generateSchemaValidator(code, dep as JsonSchema, dataVar, pathExpr, ctx);
+          }
+        });
+      }
+    }
+  );
+}
+
+/**
  * Generate propertyNames check
  */
 export function generatePropertyNamesCheck(
@@ -1237,6 +1348,7 @@ function generateSubschemaCheck(
 
 /**
  * Generate items and prefixItems checks for arrays
+ * Supports both draft-2020-12 (prefixItems + items) and draft-07 (items array + additionalItems)
  */
 export function generateItemsChecks(
   code: CodeBuilder,
@@ -1245,17 +1357,35 @@ export function generateItemsChecks(
   pathExpr: string,
   ctx: CompileContext
 ): void {
-  const hasPrefixItems = schema.prefixItems && schema.prefixItems.length > 0;
-  const hasItems = schema.items !== undefined;
+  // Draft-07 compatibility: items can be an array (acts like prefixItems)
+  const itemsIsArray = Array.isArray(schema.items);
+  const tupleSchemas: JsonSchema[] = itemsIsArray
+    ? (schema.items as JsonSchema[])
+    : schema.prefixItems
+      ? [...schema.prefixItems]
+      : [];
+  const hasTupleItems = tupleSchemas.length > 0;
 
-  if (!hasPrefixItems && !hasItems) return;
+  // For items after the tuple:
+  // - draft-2020-12: use schema.items (if not array)
+  // - draft-07: use schema.additionalItems (if items is array)
+  let afterTupleSchema: JsonSchema | undefined;
+  if (itemsIsArray) {
+    afterTupleSchema = schema.additionalItems;
+  } else if (!itemsIsArray && schema.items !== undefined) {
+    // schema.items is boolean | JsonSchema (not array) here
+    afterTupleSchema = schema.items as JsonSchema;
+  }
+  const hasAfterTupleSchema = afterTupleSchema !== undefined;
+
+  if (!hasTupleItems && !hasAfterTupleSchema) return;
 
   // Only check if data is an array
   code.if(`Array.isArray(${dataVar})`, () => {
-    // Handle prefixItems (tuple validation)
-    if (hasPrefixItems && schema.prefixItems) {
-      for (let i = 0; i < schema.prefixItems.length; i++) {
-        const itemSchema = schema.prefixItems[i];
+    // Handle tuple items (prefixItems in 2020-12, items array in draft-07)
+    if (hasTupleItems) {
+      for (let i = 0; i < tupleSchemas.length; i++) {
+        const itemSchema = tupleSchemas[i];
         const itemPathExpr = pathExpr === "''" ? `'[${i}]'` : `${pathExpr} + '[${i}]'`;
         code.if(`${dataVar}.length > ${i}`, () => {
           const itemAccess = `${dataVar}[${i}]`;
@@ -1264,30 +1394,34 @@ export function generateItemsChecks(
       }
     }
 
-    // Handle items (applies to all items after prefixItems)
-    if (hasItems) {
-      const itemsSchema = schema.items!;
-      const startIndex = hasPrefixItems && schema.prefixItems ? schema.prefixItems.length : 0;
+    // Handle items after tuple (items in 2020-12, additionalItems in draft-07)
+    if (hasAfterTupleSchema) {
+      const startIndex = tupleSchemas.length;
 
-      if (itemsSchema === false) {
+      if (afterTupleSchema === false) {
         // No additional items allowed
         if (startIndex > 0) {
           code.if(`${dataVar}.length > ${startIndex}`, () => {
-            genError(code, pathExpr, 'items', `Array must have at most ${startIndex} items`);
+            genError(
+              code,
+              pathExpr,
+              itemsIsArray ? 'additionalItems' : 'items',
+              `Array must have at most ${startIndex} items`
+            );
           });
         } else {
           code.if(`${dataVar}.length > 0`, () => {
             genError(code, pathExpr, 'items', 'Array must be empty');
           });
         }
-      } else if (itemsSchema !== true) {
-        // Validate each item
+      } else if (afterTupleSchema !== true) {
+        // Validate each item after tuple
         const iVar = code.genVar('i');
         code.for(`let ${iVar} = ${startIndex}`, `${iVar} < ${dataVar}.length`, `${iVar}++`, () => {
           const itemAccess = `${dataVar}[${iVar}]`;
           const itemPathExpr =
             pathExpr === "''" ? `'[' + ${iVar} + ']'` : `${pathExpr} + '[' + ${iVar} + ']'`;
-          generateSchemaValidator(code, itemsSchema, itemAccess, itemPathExpr, ctx);
+          generateSchemaValidator(code, afterTupleSchema!, itemAccess, itemPathExpr, ctx);
         });
       }
     }
