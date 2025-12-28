@@ -1407,8 +1407,11 @@ export function generateNumberChecks(
 
   if (!hasNumberChecks) return;
 
-  // Only check if data is a number
-  code.if(`typeof ${dataVar} === 'number'`, () => {
+  // Check if we need the typeof guard - skip if type already constrains to number/integer
+  const needsTypeGuard =
+    !hasTypeConstraint(schema, 'number') && !hasTypeConstraint(schema, 'integer');
+
+  const genChecks = () => {
     // Handle minimum with optional exclusiveMinimum (draft4 boolean form)
     if (schema.minimum !== undefined) {
       // In draft4, exclusiveMinimum is a boolean that modifies minimum
@@ -1470,7 +1473,14 @@ export function generateNumberChecks(
         }
       );
     }
-  });
+  };
+
+  // Skip type guard if we already know it's a number/integer
+  if (needsTypeGuard) {
+    code.if(`typeof ${dataVar} === 'number'`, genChecks);
+  } else {
+    genChecks();
+  }
 }
 
 /**
