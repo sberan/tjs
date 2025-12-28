@@ -24,6 +24,21 @@ export interface JITError {
 export type ValidateFn = (data: unknown, errors?: JITError[]) => boolean;
 
 /**
+ * Tracking context for unevaluated items/properties
+ * When present, keyword generators emit code to track what they evaluate
+ */
+interface EvalTracking {
+  /** Variable name for Set tracking evaluated item indices (for arrays) */
+  itemsVar?: string;
+  /** Variable name for Set tracking evaluated property names (for objects) */
+  propsVar?: string;
+  /** Variable name for array of pattern strings that match evaluated properties */
+  patternsVar?: string;
+  /** Variable name for boolean flag when all props are evaluated (additionalProperties) */
+  allPropsVar?: string;
+}
+
+/**
  * Compile a JSON Schema into a validation function
  */
 export function compile(schema: JsonSchema, options: JITOptions = {}): ValidateFn {
@@ -56,14 +71,29 @@ export function compile(schema: JsonSchema, options: JITOptions = {}): ValidateF
   generateSchemaValidator(code, schema, 'data', "''", ctx, 'dynamicScope');
 
   // Process any queued schemas (from $ref)
+  // These functions accept optional tracking parameters for unevaluatedItems/Properties
+  // evalItems: Set<number> | undefined - tracks evaluated array indices
+  // evalProps: Set<string> | undefined - tracks evaluated property names
+  // evalPatterns: string[] | undefined - tracks pattern strings for patternProperties
+  // evalAllProps: { value: boolean } | undefined - boxed boolean for additionalProperties
   let queued: { schema: JsonSchema; funcName: string } | undefined;
   while ((queued = ctx.nextToCompile())) {
     const q = queued; // Capture for closure
     code.blank();
-    code.block(`function ${q.funcName}(data, errors, path, dynamicScope)`, () => {
-      generateSchemaValidator(code, q.schema, 'data', 'path', ctx, 'dynamicScope');
-      code.line('return true;');
-    });
+    code.block(
+      `function ${q.funcName}(data, errors, path, dynamicScope, evalItems, evalProps, evalPatterns, evalAllProps)`,
+      () => {
+        // Pass tracking using the parameter variable names
+        // The generators will emit code that conditionally adds to these if they exist
+        generateSchemaValidator(code, q.schema, 'data', 'path', ctx, 'dynamicScope', {
+          itemsVar: 'evalItems',
+          propsVar: 'evalProps',
+          patternsVar: 'evalPatterns',
+          allPropsVar: 'evalAllProps',
+        });
+        code.line('return true;');
+      }
+    );
   }
 
   // Build the final function
@@ -98,6 +128,7 @@ return true;
  * Generate validation code for a schema
  * @param pathExpr - JavaScript expression that evaluates to the current path string
  * @param dynamicScopeVar - Variable name for the dynamic scope array (for $dynamicRef)
+ * @param tracking - Optional tracking context for unevaluated items/properties
  */
 function generateSchemaValidator(
   code: CodeBuilder,
@@ -105,7 +136,8 @@ function generateSchemaValidator(
   dataVar: string,
   pathExpr: string,
   ctx: CompileContext,
-  dynamicScopeVar: string = 'dynamicScope'
+  dynamicScopeVar: string = 'dynamicScope',
+  tracking?: EvalTracking
 ): void {
   // Boolean schemas
   if (schema === true) {
@@ -136,6 +168,50 @@ function generateSchemaValidator(
     }
   }
 
+  // Create tracking context if this schema has unevaluatedItems or unevaluatedProperties
+  // For $ref functions, tracking is always passed structurally but values may be undefined at runtime
+  // So we check at runtime if tracking is actually provided
+  let localTracking = tracking;
+  if (schema.unevaluatedItems !== undefined || schema.unevaluatedProperties !== undefined) {
+    // This schema needs tracking - create local variables if not provided by parent
+    if (!tracking) {
+      // Not in a $ref function - create local tracking
+      localTracking = {};
+      if (schema.unevaluatedItems !== undefined) {
+        localTracking.itemsVar = code.genVar('evaluatedItems');
+        code.line(`const ${localTracking.itemsVar} = new Set();`);
+      }
+      if (schema.unevaluatedProperties !== undefined) {
+        localTracking.propsVar = code.genVar('evaluatedProps');
+        localTracking.patternsVar = code.genVar('evaluatedPatterns');
+        localTracking.allPropsVar = code.genVar('allPropsEvaluated');
+        code.line(`const ${localTracking.propsVar} = new Set();`);
+        code.line(`const ${localTracking.patternsVar} = [];`);
+        // Use boxed object so $ref functions can modify it
+        code.line(`const ${localTracking.allPropsVar} = { value: false };`);
+      }
+    } else {
+      // In a $ref function - check at runtime if tracking was actually passed
+      // If not, create local tracking
+      localTracking = {};
+      if (schema.unevaluatedItems !== undefined) {
+        localTracking.itemsVar = code.genVar('evaluatedItems');
+        // Use passed tracking if available, otherwise create new
+        code.line(`const ${localTracking.itemsVar} = ${tracking.itemsVar} ?? new Set();`);
+      }
+      if (schema.unevaluatedProperties !== undefined) {
+        localTracking.propsVar = code.genVar('evaluatedProps');
+        localTracking.patternsVar = code.genVar('evaluatedPatterns');
+        localTracking.allPropsVar = code.genVar('allPropsEvaluated');
+        code.line(`const ${localTracking.propsVar} = ${tracking.propsVar} ?? new Set();`);
+        code.line(`const ${localTracking.patternsVar} = ${tracking.patternsVar} ?? [];`);
+        code.line(
+          `const ${localTracking.allPropsVar} = ${tracking.allPropsVar} ?? { value: false };`
+        );
+      }
+    }
+  }
+
   // Generate JIT code for each keyword
   generateTypeCheck(code, schema, dataVar, pathExpr, ctx);
   generateConstCheck(code, schema, dataVar, pathExpr, ctx);
@@ -145,17 +221,17 @@ function generateSchemaValidator(
   generateNumberChecks(code, schema, dataVar, pathExpr, ctx);
   generateArrayChecks(code, schema, dataVar, pathExpr, ctx);
   generateObjectChecks(code, schema, dataVar, pathExpr, ctx);
-  generatePropertiesChecks(code, schema, dataVar, pathExpr, ctx);
-  generateItemsChecks(code, schema, dataVar, pathExpr, ctx);
-  generateCompositionChecks(code, schema, dataVar, pathExpr, ctx);
-  generateRefCheck(code, schema, dataVar, pathExpr, ctx, dynamicScopeVar);
-  generateDynamicRefCheck(code, schema, dataVar, pathExpr, ctx, dynamicScopeVar);
-  generateContainsCheck(code, schema, dataVar, pathExpr, ctx);
+  generatePropertiesChecks(code, schema, dataVar, pathExpr, ctx, localTracking);
+  generateItemsChecks(code, schema, dataVar, pathExpr, ctx, localTracking);
+  generateCompositionChecks(code, schema, dataVar, pathExpr, ctx, localTracking);
+  generateRefCheck(code, schema, dataVar, pathExpr, ctx, dynamicScopeVar, localTracking);
+  generateDynamicRefCheck(code, schema, dataVar, pathExpr, ctx, dynamicScopeVar, localTracking);
+  generateContainsCheck(code, schema, dataVar, pathExpr, ctx, localTracking);
   generateDependentRequiredCheck(code, schema, dataVar, pathExpr, ctx);
   generatePropertyNamesCheck(code, schema, dataVar, pathExpr, ctx);
-  generateDependentSchemasCheck(code, schema, dataVar, pathExpr, ctx);
-  generateUnevaluatedPropertiesCheck(code, schema, dataVar, pathExpr, ctx);
-  generateUnevaluatedItemsCheck(code, schema, dataVar, pathExpr, ctx);
+  generateDependentSchemasCheck(code, schema, dataVar, pathExpr, ctx, localTracking);
+  generateUnevaluatedPropertiesCheck(code, schema, dataVar, pathExpr, ctx, localTracking);
+  generateUnevaluatedItemsCheck(code, schema, dataVar, pathExpr, ctx, localTracking);
 
   // Pop dynamic anchors after validation (if we pushed any)
   if (resourceAnchors.length > 0) {
@@ -599,7 +675,8 @@ export function generatePropertiesChecks(
   schema: JsonSchemaBase,
   dataVar: string,
   pathExpr: string,
-  ctx: CompileContext
+  ctx: CompileContext,
+  tracking?: EvalTracking
 ): void {
   const hasProps = schema.properties && Object.keys(schema.properties).length > 0;
   const hasPatternProps =
@@ -623,12 +700,25 @@ export function generatePropertiesChecks(
           // Use Object.hasOwn for accurate property check (handles __proto__, toString, etc.)
           code.if(`Object.hasOwn(${dataVar}, '${escapeString(propName)}')`, () => {
             generateSchemaValidator(code, propSchema, propAccessed, propPathExpr, ctx);
+            // Track evaluated property (runtime check for $ref functions)
+            if (tracking?.propsVar) {
+              code.line(
+                `if (${tracking.propsVar}) ${tracking.propsVar}.add(${stringify(propName)});`
+              );
+            }
           });
         }
       }
 
       // Handle patternProperties - applies to ALL properties (including defined ones)
       if (hasPatternProps && schema.patternProperties) {
+        // Track patterns for unevaluatedProperties (runtime check for $ref functions)
+        if (tracking?.patternsVar) {
+          const patterns = Object.keys(schema.patternProperties);
+          code.line(
+            `if (${tracking.patternsVar}) ${tracking.patternsVar}.push(...${stringify(patterns)});`
+          );
+        }
         code.forIn('key', dataVar, () => {
           const keyPathExpr = pathExpr === "''" ? 'key' : `${pathExpr} + '.' + key`;
           for (const [pattern, patternSchema] of Object.entries(schema.patternProperties!)) {
@@ -643,6 +733,12 @@ export function generatePropertiesChecks(
 
       // Handle additionalProperties - only applies to undefined properties not matching patterns
       if (hasAdditionalProps) {
+        // When additionalProperties is present (even false), all remaining props are "evaluated"
+        // Note: allPropsVar is a boxed boolean { value: boolean } for $ref functions
+        if (tracking?.allPropsVar) {
+          code.line(`if (${tracking.allPropsVar}) ${tracking.allPropsVar}.value = true;`);
+        }
+
         const definedProps = schema.properties ? Object.keys(schema.properties) : [];
         const patterns = schema.patternProperties ? Object.keys(schema.patternProperties) : [];
 
@@ -709,7 +805,8 @@ export function generateContainsCheck(
   schema: JsonSchemaBase,
   dataVar: string,
   pathExpr: string,
-  ctx: CompileContext
+  ctx: CompileContext,
+  tracking?: EvalTracking
 ): void {
   if (schema.contains === undefined) return;
 
@@ -721,6 +818,12 @@ export function generateContainsCheck(
   if (containsSchema === true) {
     // Every item matches - just check array length against minContains/maxContains
     code.if(`Array.isArray(${dataVar})`, () => {
+      // Track: all items are evaluated when contains: true (runtime check for $ref functions)
+      if (tracking?.itemsVar) {
+        code.line(
+          `if (${tracking.itemsVar}) for (let k = 0; k < ${dataVar}.length; k++) ${tracking.itemsVar}.add(k);`
+        );
+      }
       code.if(`${dataVar}.length < ${minContains}`, () => {
         genError(
           code,
@@ -755,6 +858,7 @@ export function generateContainsCheck(
         );
       }
       // maxContains is always satisfied since count is 0
+      // Note: contains: false means no items match, so nothing to track
     });
     return;
   }
@@ -771,12 +875,16 @@ export function generateContainsCheck(
       const itemAccess = `${dataVar}[${iVar}]`;
 
       // Call the compiled contains validator (pass null for errors to skip collection)
-      code.if(`${containsFuncName}(${itemAccess}, null, '')`, () => {
+      code.if(`${containsFuncName}(${itemAccess}, null, '', dynamicScope)`, () => {
         code.line(`${countVar}++;`);
+        // Track: matching items are evaluated (runtime check for $ref functions)
+        if (tracking?.itemsVar) {
+          code.line(`if (${tracking.itemsVar}) ${tracking.itemsVar}.add(${iVar});`);
+        }
       });
 
-      // Early exit if we've found enough and no maxContains
-      if (maxContains === undefined) {
+      // Early exit if we've found enough and no maxContains AND no tracking needed
+      if (maxContains === undefined && !tracking?.itemsVar) {
         code.if(`${countVar} >= ${minContains}`, () => {
           code.line('break;');
         });
@@ -848,8 +956,11 @@ export function generateDependentSchemasCheck(
   schema: JsonSchemaBase,
   dataVar: string,
   pathExpr: string,
-  ctx: CompileContext
+  ctx: CompileContext,
+  _tracking?: EvalTracking
 ): void {
+  // Note: tracking for dependentSchemas is handled by unevaluated* checks
+  // because we need to know which trigger properties are present at runtime
   if (!schema.dependentSchemas) return;
 
   code.if(
@@ -918,7 +1029,8 @@ export function generateRefCheck(
   dataVar: string,
   pathExpr: string,
   ctx: CompileContext,
-  dynamicScopeVar: string = 'dynamicScope'
+  dynamicScopeVar: string = 'dynamicScope',
+  tracking?: EvalTracking
 ): void {
   if (!schema.$ref) return;
 
@@ -933,6 +1045,12 @@ export function generateRefCheck(
 
   // Get the function name (queue for compilation if needed)
   const funcName = ctx.getCompiledName(refSchema) ?? ctx.queueCompile(refSchema);
+
+  // Build tracking arguments for the $ref call
+  // Pass undefined for each parameter if not tracking
+  const trackingArgs = tracking
+    ? `, ${tracking.itemsVar ?? 'undefined'}, ${tracking.propsVar ?? 'undefined'}, ${tracking.patternsVar ?? 'undefined'}, ${tracking.allPropsVar ?? 'undefined'}`
+    : ', undefined, undefined, undefined, undefined';
 
   // Check if the $ref is entering a new schema resource
   // This happens when the $ref has a URI part (not just a fragment)
@@ -952,13 +1070,16 @@ export function generateRefCheck(
             `${dynamicScopeVar}.push({ anchor: ${stringify(anchor)}, validate: ${anchorFuncName} });`
           );
         }
-        code.if(`!${funcName}(${dataVar}, errors, ${pathExpr}, ${dynamicScopeVar})`, () => {
-          // Pop before returning
-          for (let i = 0; i < pushCount; i++) {
-            code.line(`${dynamicScopeVar}.pop();`);
+        code.if(
+          `!${funcName}(${dataVar}, errors, ${pathExpr}, ${dynamicScopeVar}${trackingArgs})`,
+          () => {
+            // Pop before returning
+            for (let i = 0; i < pushCount; i++) {
+              code.line(`${dynamicScopeVar}.pop();`);
+            }
+            code.line('return false;');
           }
-          code.line('return false;');
-        });
+        );
         // Pop after successful validation
         for (let i = 0; i < pushCount; i++) {
           code.line(`${dynamicScopeVar}.pop();`);
@@ -968,10 +1089,13 @@ export function generateRefCheck(
     }
   }
 
-  // No dynamic anchors to push - simple call
-  code.if(`!${funcName}(${dataVar}, errors, ${pathExpr}, ${dynamicScopeVar})`, () => {
-    code.line('return false;');
-  });
+  // No dynamic anchors to push - simple call with tracking args
+  code.if(
+    `!${funcName}(${dataVar}, errors, ${pathExpr}, ${dynamicScopeVar}${trackingArgs})`,
+    () => {
+      code.line('return false;');
+    }
+  );
 }
 
 /**
@@ -982,16 +1106,19 @@ export function generateCompositionChecks(
   schema: JsonSchemaBase,
   dataVar: string,
   pathExpr: string,
-  ctx: CompileContext
+  ctx: CompileContext,
+  tracking?: EvalTracking
 ): void {
-  // allOf - all subschemas must validate
+  // allOf - all subschemas must validate (tracking applies unconditionally)
   if (schema.allOf && schema.allOf.length > 0) {
     for (const subSchema of schema.allOf) {
-      generateSchemaValidator(code, subSchema, dataVar, pathExpr, ctx);
+      generateSchemaValidator(code, subSchema, dataVar, pathExpr, ctx, 'dynamicScope', tracking);
     }
   }
 
   // anyOf - at least one subschema must validate
+  // Note: tracking for anyOf is handled in generateUnevaluatedItemsCheck/generateUnevaluatedPropertiesCheck
+  // because we need to know which branch matched at runtime
   if (schema.anyOf && schema.anyOf.length > 0) {
     const resultVar = code.genVar('anyOfResult');
     code.line(`let ${resultVar} = false;`);
@@ -1010,6 +1137,7 @@ export function generateCompositionChecks(
   }
 
   // oneOf - exactly one subschema must validate
+  // Note: tracking for oneOf is handled in generateUnevaluatedItemsCheck/generateUnevaluatedPropertiesCheck
   if (schema.oneOf && schema.oneOf.length > 0) {
     const countVar = code.genVar('oneOfCount');
     code.line(`let ${countVar} = 0;`);
@@ -1029,7 +1157,7 @@ export function generateCompositionChecks(
     });
   }
 
-  // not - subschema must NOT validate
+  // not - subschema must NOT validate (doesn't affect tracking)
   if (schema.not !== undefined) {
     const notSchema = schema.not;
     const checkExpr = generateSubschemaCheck(notSchema, dataVar, ctx);
@@ -1038,7 +1166,7 @@ export function generateCompositionChecks(
     });
   }
 
-  // if-then-else
+  // if-then-else - tracking is passed to all branches
   if (schema.if !== undefined) {
     const ifSchema = schema.if;
     const thenSchema = schema.then;
@@ -1050,13 +1178,29 @@ export function generateCompositionChecks(
     code.line(`const ${condVar} = ${checkExpr};`);
 
     // Apply then or else based on condition
+    // When if matches, the if schema itself evaluates items, plus the then schema
     if (thenSchema !== undefined) {
       code.if(condVar, () => {
+        // The if schema evaluates items when it matches
+        generateSchemaValidator(code, ifSchema, dataVar, pathExpr, ctx, 'dynamicScope', tracking);
         if (thenSchema === false) {
           genError(code, pathExpr, 'then', 'Conditional validation failed');
         } else if (thenSchema !== true) {
-          generateSchemaValidator(code, thenSchema, dataVar, pathExpr, ctx);
+          generateSchemaValidator(
+            code,
+            thenSchema,
+            dataVar,
+            pathExpr,
+            ctx,
+            'dynamicScope',
+            tracking
+          );
         }
+      });
+    } else {
+      // No then - still need to track if schema when it matches
+      code.if(condVar, () => {
+        generateSchemaValidator(code, ifSchema, dataVar, pathExpr, ctx, 'dynamicScope', tracking);
       });
     }
 
@@ -1065,7 +1209,15 @@ export function generateCompositionChecks(
         if (elseSchema === false) {
           genError(code, pathExpr, 'else', 'Conditional validation failed');
         } else if (elseSchema !== true) {
-          generateSchemaValidator(code, elseSchema, dataVar, pathExpr, ctx);
+          generateSchemaValidator(
+            code,
+            elseSchema,
+            dataVar,
+            pathExpr,
+            ctx,
+            'dynamicScope',
+            tracking
+          );
         }
       });
     }
@@ -1098,7 +1250,8 @@ export function generateItemsChecks(
   schema: JsonSchemaBase,
   dataVar: string,
   pathExpr: string,
-  ctx: CompileContext
+  ctx: CompileContext,
+  tracking?: EvalTracking
 ): void {
   const hasPrefixItems = schema.prefixItems && schema.prefixItems.length > 0;
   const hasItems = schema.items !== undefined;
@@ -1115,6 +1268,10 @@ export function generateItemsChecks(
         code.if(`${dataVar}.length > ${i}`, () => {
           const itemAccess = `${dataVar}[${i}]`;
           generateSchemaValidator(code, itemSchema, itemAccess, itemPathExpr, ctx);
+          // Track evaluated item (with runtime check for $ref functions)
+          if (tracking?.itemsVar) {
+            code.line(`if (${tracking.itemsVar}) ${tracking.itemsVar}.add(${i});`);
+          }
         });
       }
     }
@@ -1135,15 +1292,29 @@ export function generateItemsChecks(
             genError(code, pathExpr, 'items', 'Array must be empty');
           });
         }
-      } else if (itemsSchema !== true) {
-        // Validate each item
-        const iVar = code.genVar('i');
-        code.for(`let ${iVar} = ${startIndex}`, `${iVar} < ${dataVar}.length`, `${iVar}++`, () => {
-          const itemAccess = `${dataVar}[${iVar}]`;
-          const itemPathExpr =
-            pathExpr === "''" ? `'[' + ${iVar} + ']'` : `${pathExpr} + '[' + ${iVar} + ']'`;
-          generateSchemaValidator(code, itemsSchema, itemAccess, itemPathExpr, ctx);
-        });
+      } else {
+        // items: true or items: <schema> - items schema means ALL remaining items are evaluated
+        if (tracking?.itemsVar) {
+          // Mark all items as evaluated when items schema is present (runtime check for $ref functions)
+          code.line(
+            `if (${tracking.itemsVar}) for (let k = ${startIndex}; k < ${dataVar}.length; k++) ${tracking.itemsVar}.add(k);`
+          );
+        }
+        // Only validate if not items: true
+        if (itemsSchema !== true) {
+          const iVar = code.genVar('i');
+          code.for(
+            `let ${iVar} = ${startIndex}`,
+            `${iVar} < ${dataVar}.length`,
+            `${iVar}++`,
+            () => {
+              const itemAccess = `${dataVar}[${iVar}]`;
+              const itemPathExpr =
+                pathExpr === "''" ? `'[' + ${iVar} + ']'` : `${pathExpr} + '[' + ${iVar} + ']'`;
+              generateSchemaValidator(code, itemsSchema, itemAccess, itemPathExpr, ctx);
+            }
+          );
+        }
       }
     }
   });
@@ -1186,11 +1357,17 @@ export function generateDynamicRefCheck(
   dataVar: string,
   pathExpr: string,
   ctx: CompileContext,
-  dynamicScopeVar: string = 'dynamicScope'
+  dynamicScopeVar: string = 'dynamicScope',
+  tracking?: EvalTracking
 ): void {
   if (!schema.$dynamicRef) return;
 
   const ref = schema.$dynamicRef;
+
+  // Build tracking arguments for the $dynamicRef call
+  const trackingArgs = tracking
+    ? `, ${tracking.itemsVar ?? 'undefined'}, ${tracking.propsVar ?? 'undefined'}, ${tracking.patternsVar ?? 'undefined'}, ${tracking.allPropsVar ?? 'undefined'}`
+    : ', undefined, undefined, undefined, undefined';
 
   // Check if this ref contains an anchor fragment (like #items or extended#meta)
   // The anchor must be a plain name (not a JSON pointer like #/defs/foo)
@@ -1217,9 +1394,12 @@ export function generateDynamicRefCheck(
 
     if (!hasDynamicAnchor) {
       // No matching $dynamicAnchor - behave like a regular $ref
-      code.if(`!${staticFuncName}(${dataVar}, errors, ${pathExpr}, ${dynamicScopeVar})`, () => {
-        code.line('return false;');
-      });
+      code.if(
+        `!${staticFuncName}(${dataVar}, errors, ${pathExpr}, ${dynamicScopeVar}${trackingArgs})`,
+        () => {
+          code.line('return false;');
+        }
+      );
     } else {
       // Has matching $dynamicAnchor - search dynamic scope at runtime
       // The dynamic scope is searched from the BEGINNING (outermost/first) to find the first match
@@ -1233,9 +1413,12 @@ export function generateDynamicRefCheck(
         code.line(`}`);
         // Use dynamic validator if found, otherwise use static fallback
         code.line(`const validator = dynamicValidator || ${staticFuncName};`);
-        code.if(`!validator(${dataVar}, errors, ${pathExpr}, ${dynamicScopeVar})`, () => {
-          code.line('return false;');
-        });
+        code.if(
+          `!validator(${dataVar}, errors, ${pathExpr}, ${dynamicScopeVar}${trackingArgs})`,
+          () => {
+            code.line('return false;');
+          }
+        );
       });
     }
   } else {
@@ -1249,9 +1432,12 @@ export function generateDynamicRefCheck(
     }
 
     const funcName = ctx.queueCompile(refSchema);
-    code.if(`!${funcName}(${dataVar}, errors, ${pathExpr}, ${dynamicScopeVar})`, () => {
-      code.line('return false;');
-    });
+    code.if(
+      `!${funcName}(${dataVar}, errors, ${pathExpr}, ${dynamicScopeVar}${trackingArgs})`,
+      () => {
+        code.line('return false;');
+      }
+    );
   }
 }
 
@@ -1573,7 +1759,8 @@ export function generateUnevaluatedPropertiesCheck(
   schema: JsonSchemaBase,
   dataVar: string,
   pathExpr: string,
-  ctx: CompileContext
+  ctx: CompileContext,
+  _tracking?: EvalTracking
 ): void {
   if (schema.unevaluatedProperties === undefined) return;
 
@@ -1799,6 +1986,16 @@ export function generateUnevaluatedPropertiesCheck(
 }
 
 /**
+ * Information about evaluated items in a schema
+ */
+interface EvaluatedItemsInfo {
+  prefixCount: number;
+  hasItems: boolean;
+  hasUnevaluatedItemsTrue: boolean;
+  containsSchemas: JsonSchema[];
+}
+
+/**
  * Collect the highest evaluated item index from a schema (recursively)
  * @param recurseComposition - if false, don't recurse into anyOf/oneOf/if-then-else
  */
@@ -1807,12 +2004,7 @@ function collectEvaluatedItems(
   ctx: CompileContext,
   visited: Set<JsonSchema> = new Set(),
   recurseComposition: boolean = true
-): {
-  prefixCount: number;
-  hasItems: boolean;
-  hasUnevaluatedItemsTrue: boolean;
-  containsSchemas: JsonSchema[];
-} {
+): EvaluatedItemsInfo {
   if (typeof schema !== 'object' || schema === null) {
     return { prefixCount: 0, hasItems: false, hasUnevaluatedItemsTrue: false, containsSchemas: [] };
   }
@@ -1946,310 +2138,131 @@ export function generateUnevaluatedItemsCheck(
   schema: JsonSchemaBase,
   dataVar: string,
   pathExpr: string,
-  ctx: CompileContext
+  ctx: CompileContext,
+  tracking?: EvalTracking
 ): void {
   if (schema.unevaluatedItems === undefined) return;
 
-  // Collect info about evaluated items from the schema tree (static, without anyOf/oneOf/if-then-else)
-  const {
-    prefixCount: staticPrefixCount,
-    hasItems,
-    hasUnevaluatedItemsTrue,
-    containsSchemas,
-  } = collectEvaluatedItems(schema, ctx, new Set(), false);
-
-  // If items is defined and not false anywhere, or unevaluatedItems: true is in allOf, all items are evaluated
-  if (hasItems || hasUnevaluatedItemsTrue) {
-    return; // Nothing to check
+  // tracking is always available when unevaluatedItems is present (created in generateSchemaValidator)
+  if (!tracking?.itemsVar) {
+    throw new Error(
+      'Internal error: tracking.itemsVar should be set when unevaluatedItems is present'
+    );
   }
 
-  // Check if we need runtime evaluation for anyOf/oneOf/if-then-else
+  // If unevaluatedItems: true, mark all items as evaluated (for parent schema's unevaluatedItems check)
+  if (schema.unevaluatedItems === true) {
+    code.if(`Array.isArray(${dataVar})`, () => {
+      code.line(
+        `if (${tracking.itemsVar}) for (let k = 0; k < ${dataVar}.length; k++) ${tracking.itemsVar}.add(k);`
+      );
+    });
+    return; // No validation needed for unevaluatedItems: true
+  }
+
+  // Check if we need runtime evaluation for anyOf/oneOf
+  // Note: if/then/else tracking is now handled inline in generateCompositionChecks
   const hasAnyOf = schema.anyOf && schema.anyOf.length > 0;
   const hasOneOf = schema.oneOf && schema.oneOf.length > 0;
-  const hasIfThenElse = schema.if !== undefined;
-  const hasContains = containsSchemas.length > 0;
-  const needsRuntimeEval = hasAnyOf || hasOneOf || hasIfThenElse || hasContains;
 
   // Only check if data is an array
   code.if(`Array.isArray(${dataVar})`, () => {
-    if (needsRuntimeEval) {
-      // Create a set to track which items are evaluated
-      const evaluatedSetVar = code.genVar('evaluatedItems');
-      code.line(`const ${evaluatedSetVar} = new Set();`);
-      code.line(`let maxEvaluatedIndex = ${staticPrefixCount - 1};`);
+    const evaluatedSetVar = tracking.itemsVar!;
 
-      // Mark static prefixItems as evaluated
-      if (staticPrefixCount > 0) {
-        const iVar = code.genVar('i');
-        code.for(
-          `let ${iVar} = 0`,
-          `${iVar} < Math.min(${staticPrefixCount}, ${dataVar}.length)`,
-          `${iVar}++`,
-          () => {
-            code.line(`${evaluatedSetVar}.add(${iVar});`);
-          }
-        );
-      }
-
-      // Handle contains - check each item against all contains schemas
-      for (const containsSchema of containsSchemas) {
-        const iVar = code.genVar('i');
-        code.for(`let ${iVar} = 0`, `${iVar} < ${dataVar}.length`, `${iVar}++`, () => {
-          const checkExpr = generateSubschemaCheck(containsSchema, `${dataVar}[${iVar}]`, ctx);
+    // Handle anyOf - check which branches match and add their evaluated items
+    if (hasAnyOf) {
+      for (const subSchema of schema.anyOf!) {
+        const subCollected = collectEvaluatedItems(subSchema, ctx, new Set(), true);
+        if (
+          subCollected.prefixCount > 0 ||
+          subCollected.hasItems ||
+          subCollected.containsSchemas.length > 0
+        ) {
+          const checkExpr = generateSubschemaCheck(subSchema, dataVar, ctx);
           code.if(checkExpr, () => {
-            code.line(`${evaluatedSetVar}.add(${iVar});`);
-          });
-        });
-      }
-
-      // Handle anyOf - check which branches match and get their prefixItems count
-      if (hasAnyOf) {
-        for (const subSchema of schema.anyOf!) {
-          const subCollected = collectEvaluatedItems(subSchema, ctx, new Set(), true);
-          if (
-            subCollected.prefixCount > 0 ||
-            subCollected.hasItems ||
-            subCollected.containsSchemas.length > 0
-          ) {
-            const checkExpr = generateSubschemaCheck(subSchema, dataVar, ctx);
-            code.if(checkExpr, () => {
-              if (subCollected.hasItems) {
-                // All items are evaluated
-                code.line(`for (let k = 0; k < ${dataVar}.length; k++) ${evaluatedSetVar}.add(k);`);
-              } else {
-                if (subCollected.prefixCount > 0) {
-                  code.line(
-                    `for (let k = 0; k < Math.min(${subCollected.prefixCount}, ${dataVar}.length); k++) ${evaluatedSetVar}.add(k);`
-                  );
-                }
-                // Handle nested contains
-                for (const nestedContains of subCollected.containsSchemas) {
-                  const kVar = code.genVar('k');
-                  code.for(`let ${kVar} = 0`, `${kVar} < ${dataVar}.length`, `${kVar}++`, () => {
-                    const nestedCheck = generateSubschemaCheck(
-                      nestedContains,
-                      `${dataVar}[${kVar}]`,
-                      ctx
-                    );
-                    code.if(nestedCheck, () => {
-                      code.line(`${evaluatedSetVar}.add(${kVar});`);
-                    });
-                  });
-                }
-              }
-            });
-          }
-        }
-      }
-
-      // Handle oneOf - similar to anyOf
-      if (hasOneOf) {
-        for (const subSchema of schema.oneOf!) {
-          const subCollected = collectEvaluatedItems(subSchema, ctx, new Set(), true);
-          if (
-            subCollected.prefixCount > 0 ||
-            subCollected.hasItems ||
-            subCollected.containsSchemas.length > 0
-          ) {
-            const checkExpr = generateSubschemaCheck(subSchema, dataVar, ctx);
-            code.if(checkExpr, () => {
-              if (subCollected.hasItems) {
-                code.line(`for (let k = 0; k < ${dataVar}.length; k++) ${evaluatedSetVar}.add(k);`);
-              } else {
-                if (subCollected.prefixCount > 0) {
-                  code.line(
-                    `for (let k = 0; k < Math.min(${subCollected.prefixCount}, ${dataVar}.length); k++) ${evaluatedSetVar}.add(k);`
-                  );
-                }
-                for (const nestedContains of subCollected.containsSchemas) {
-                  const kVar = code.genVar('k');
-                  code.for(`let ${kVar} = 0`, `${kVar} < ${dataVar}.length`, `${kVar}++`, () => {
-                    const nestedCheck = generateSubschemaCheck(
-                      nestedContains,
-                      `${dataVar}[${kVar}]`,
-                      ctx
-                    );
-                    code.if(nestedCheck, () => {
-                      code.line(`${evaluatedSetVar}.add(${kVar});`);
-                    });
-                  });
-                }
-              }
-            });
-          }
-        }
-      }
-
-      // Handle if/then/else - recursively handles nested if/then/else in then/else branches
-      if (hasIfThenElse) {
-        generateIfThenElseEvaluatedItems(code, schema, dataVar, evaluatedSetVar, ctx);
-      }
-
-      // Now validate unevaluated items
-      if (schema.unevaluatedItems === false) {
-        const jVar = code.genVar('j');
-        code.for(`let ${jVar} = 0`, `${jVar} < ${dataVar}.length`, `${jVar}++`, () => {
-          code.if(`!${evaluatedSetVar}.has(${jVar})`, () => {
-            const itemPathExpr =
-              pathExpr === "''" ? `'[' + ${jVar} + ']'` : `${pathExpr} + '[' + ${jVar} + ']'`;
-            code.line(
-              `if (errors) errors.push({ path: ${itemPathExpr}, message: 'Unevaluated item not allowed', keyword: 'unevaluatedItems' });`
-            );
-            code.line('return false;');
-          });
-        });
-      } else if (schema.unevaluatedItems !== true) {
-        const jVar = code.genVar('j');
-        code.for(`let ${jVar} = 0`, `${jVar} < ${dataVar}.length`, `${jVar}++`, () => {
-          code.if(`!${evaluatedSetVar}.has(${jVar})`, () => {
-            const itemPathExpr =
-              pathExpr === "''" ? `'[' + ${jVar} + ']'` : `${pathExpr} + '[' + ${jVar} + ']'`;
-            generateSchemaValidator(
-              code,
-              schema.unevaluatedItems as JsonSchema,
-              `${dataVar}[${jVar}]`,
-              itemPathExpr,
-              ctx
-            );
-          });
-        });
-      }
-    } else {
-      // No runtime evaluation needed, use simpler static evaluation
-      if (schema.unevaluatedItems === false) {
-        if (staticPrefixCount > 0) {
-          code.if(`${dataVar}.length > ${staticPrefixCount}`, () => {
-            const itemPathExpr =
-              pathExpr === "''"
-                ? `'[' + ${staticPrefixCount} + ']'`
-                : `${pathExpr} + '[' + ${staticPrefixCount} + ']'`;
-            code.line(
-              `if (errors) errors.push({ path: ${itemPathExpr}, message: 'Unevaluated item not allowed', keyword: 'unevaluatedItems' });`
-            );
-            code.line('return false;');
-          });
-        } else {
-          code.if(`${dataVar}.length > 0`, () => {
-            genError(code, pathExpr, 'unevaluatedItems', 'Array must be empty');
+            generateAddEvaluatedItems(code, subCollected, dataVar, evaluatedSetVar, ctx);
           });
         }
-      } else if (schema.unevaluatedItems !== true) {
-        // Validate unevaluated items against the schema
-        const iVar = code.genVar('i');
-        code.for(
-          `let ${iVar} = ${staticPrefixCount}`,
-          `${iVar} < ${dataVar}.length`,
-          `${iVar}++`,
-          () => {
-            const itemPathExpr =
-              pathExpr === "''" ? `'[' + ${iVar} + ']'` : `${pathExpr} + '[' + ${iVar} + ']'`;
-            generateSchemaValidator(
-              code,
-              schema.unevaluatedItems as JsonSchema,
-              `${dataVar}[${iVar}]`,
-              itemPathExpr,
-              ctx
-            );
-          }
-        );
       }
+    }
+
+    // Handle oneOf - similar to anyOf
+    if (hasOneOf) {
+      for (const subSchema of schema.oneOf!) {
+        const subCollected = collectEvaluatedItems(subSchema, ctx, new Set(), true);
+        if (
+          subCollected.prefixCount > 0 ||
+          subCollected.hasItems ||
+          subCollected.containsSchemas.length > 0
+        ) {
+          const checkExpr = generateSubschemaCheck(subSchema, dataVar, ctx);
+          code.if(checkExpr, () => {
+            generateAddEvaluatedItems(code, subCollected, dataVar, evaluatedSetVar, ctx);
+          });
+        }
+      }
+    }
+
+    // Note: if/then/else tracking is now handled inline in generateCompositionChecks
+
+    // Now validate unevaluated items
+    if (schema.unevaluatedItems === false) {
+      const jVar = code.genVar('j');
+      code.for(`let ${jVar} = 0`, `${jVar} < ${dataVar}.length`, `${jVar}++`, () => {
+        code.if(`!${evaluatedSetVar}.has(${jVar})`, () => {
+          const itemPathExpr =
+            pathExpr === "''" ? `'[' + ${jVar} + ']'` : `${pathExpr} + '[' + ${jVar} + ']'`;
+          code.line(
+            `if (errors) errors.push({ path: ${itemPathExpr}, message: 'Unevaluated item not allowed', keyword: 'unevaluatedItems' });`
+          );
+          code.line('return false;');
+        });
+      });
+    } else if (schema.unevaluatedItems !== true) {
+      const jVar = code.genVar('j');
+      code.for(`let ${jVar} = 0`, `${jVar} < ${dataVar}.length`, `${jVar}++`, () => {
+        code.if(`!${evaluatedSetVar}.has(${jVar})`, () => {
+          const itemPathExpr =
+            pathExpr === "''" ? `'[' + ${jVar} + ']'` : `${pathExpr} + '[' + ${jVar} + ']'`;
+          generateSchemaValidator(
+            code,
+            schema.unevaluatedItems as JsonSchema,
+            `${dataVar}[${jVar}]`,
+            itemPathExpr,
+            ctx
+          );
+        });
+      });
     }
   });
 }
 
 /**
- * Recursively generate code to track evaluated items for if/then/else
- * This handles nested if/then/else structures properly
+ * Generate code to add evaluated items from a collected info to the evaluated set
  */
-function generateIfThenElseEvaluatedItems(
+function generateAddEvaluatedItems(
   code: CodeBuilder,
-  schema: JsonSchemaBase,
+  collected: EvaluatedItemsInfo,
   dataVar: string,
   evaluatedSetVar: string,
   ctx: CompileContext
 ): void {
-  if (schema.if === undefined) return;
-
-  const ifSchema = schema.if;
-  const condVar = code.genVar('ifCond');
-  const checkExpr = generateSubschemaCheck(ifSchema, dataVar, ctx);
-  code.line(`const ${condVar} = ${checkExpr};`);
-
-  // When if matches, add items from if and then
-  code.if(condVar, () => {
-    // Add evaluated items from the if schema itself
-    const ifCollected = collectEvaluatedItems(ifSchema, ctx, new Set(), false);
-    if (ifCollected.prefixCount > 0) {
-      code.line(
-        `for (let k = 0; k < Math.min(${ifCollected.prefixCount}, ${dataVar}.length); k++) ${evaluatedSetVar}.add(k);`
-      );
-    }
-    // Add items matched by contains in the if schema
-    for (const nestedContains of ifCollected.containsSchemas) {
-      const kVar = code.genVar('k');
-      code.for(`let ${kVar} = 0`, `${kVar} < ${dataVar}.length`, `${kVar}++`, () => {
-        const nestedCheck = generateSubschemaCheck(nestedContains, `${dataVar}[${kVar}]`, ctx);
-        code.if(nestedCheck, () => {
-          code.line(`${evaluatedSetVar}.add(${kVar});`);
-        });
+  if (collected.hasItems) {
+    code.line(`for (let k = 0; k < ${dataVar}.length; k++) ${evaluatedSetVar}.add(k);`);
+    return;
+  }
+  if (collected.prefixCount > 0) {
+    code.line(
+      `for (let k = 0; k < Math.min(${collected.prefixCount}, ${dataVar}.length); k++) ${evaluatedSetVar}.add(k);`
+    );
+  }
+  for (const containsSchema of collected.containsSchemas) {
+    const kVar = code.genVar('k');
+    code.for(`let ${kVar} = 0`, `${kVar} < ${dataVar}.length`, `${kVar}++`, () => {
+      const checkExpr = generateSubschemaCheck(containsSchema, `${dataVar}[${kVar}]`, ctx);
+      code.if(checkExpr, () => {
+        code.line(`${evaluatedSetVar}.add(${kVar});`);
       });
-    }
-
-    // Handle the then branch
-    if (schema.then) {
-      const thenSchema = schema.then;
-      // First add simple items from then (not from nested if/then)
-      const thenCollected = collectEvaluatedItems(thenSchema, ctx, new Set(), false);
-      if (thenCollected.hasItems) {
-        code.line(`for (let k = 0; k < ${dataVar}.length; k++) ${evaluatedSetVar}.add(k);`);
-      } else if (thenCollected.prefixCount > 0) {
-        code.line(
-          `for (let k = 0; k < Math.min(${thenCollected.prefixCount}, ${dataVar}.length); k++) ${evaluatedSetVar}.add(k);`
-        );
-      }
-      for (const nestedContains of thenCollected.containsSchemas) {
-        const kVar = code.genVar('k');
-        code.for(`let ${kVar} = 0`, `${kVar} < ${dataVar}.length`, `${kVar}++`, () => {
-          const nestedCheck = generateSubschemaCheck(nestedContains, `${dataVar}[${kVar}]`, ctx);
-          code.if(nestedCheck, () => {
-            code.line(`${evaluatedSetVar}.add(${kVar});`);
-          });
-        });
-      }
-
-      // Recursively handle nested if/then/else in the then branch
-      if (typeof thenSchema === 'object' && thenSchema !== null && thenSchema.if !== undefined) {
-        generateIfThenElseEvaluatedItems(code, thenSchema, dataVar, evaluatedSetVar, ctx);
-      }
-    }
-  });
-
-  // When if doesn't match, add items from else
-  if (schema.else) {
-    code.else(() => {
-      const elseSchema = schema.else!;
-      const elseCollected = collectEvaluatedItems(elseSchema, ctx, new Set(), false);
-      if (elseCollected.hasItems) {
-        code.line(`for (let k = 0; k < ${dataVar}.length; k++) ${evaluatedSetVar}.add(k);`);
-      } else if (elseCollected.prefixCount > 0) {
-        code.line(
-          `for (let k = 0; k < Math.min(${elseCollected.prefixCount}, ${dataVar}.length); k++) ${evaluatedSetVar}.add(k);`
-        );
-      }
-      for (const nestedContains of elseCollected.containsSchemas) {
-        const kVar = code.genVar('k');
-        code.for(`let ${kVar} = 0`, `${kVar} < ${dataVar}.length`, `${kVar}++`, () => {
-          const nestedCheck = generateSubschemaCheck(nestedContains, `${dataVar}[${kVar}]`, ctx);
-          code.if(nestedCheck, () => {
-            code.line(`${evaluatedSetVar}.add(${kVar});`);
-          });
-        });
-      }
-
-      // Recursively handle nested if/then/else in the else branch
-      if (typeof elseSchema === 'object' && elseSchema !== null && elseSchema.if !== undefined) {
-        generateIfThenElseEvaluatedItems(code, elseSchema, dataVar, evaluatedSetVar, ctx);
-      }
     });
   }
 }
