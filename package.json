@@ -26,7 +26,8 @@
     "prepare": "husky",
     "bench": "tsx benchmarks/bench.ts",
     "bench:json": "tsx benchmarks/bench.ts --json",
-    "bench:ebdrup": "node benchmarks/run-ebdrup-benchmark.cjs"
+    "bench:ebdrup": "node benchmarks/run-ebdrup-benchmark.cjs",
+    "bench:ebdrup:quick": "node benchmarks/run-ebdrup-compliance.cjs"
   },
   "keywords": [
     "json-schema",
