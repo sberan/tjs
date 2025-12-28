@@ -9,6 +9,80 @@ import { CodeBuilder, escapeString, propAccess, stringify } from './codegen.js';
 import { CompileContext, VOCABULARIES, type JITOptions } from './context.js';
 
 /**
+ * Property names that exist on Object.prototype or Array.prototype.
+ * These require Object.hasOwn for accurate existence check.
+ * Other property names can use the faster `!== undefined` pattern.
+ * Generated at module load time from actual prototype chains.
+ */
+const PROTOTYPE_PROPS = new Set([
+  ...Object.getOwnPropertyNames(Object.prototype),
+  ...Object.getOwnPropertyNames(Array.prototype),
+]);
+
+/**
+ * Check if a property name is safe for fast existence check (!== undefined).
+ * Unsafe names are those that exist on Object.prototype or Array.prototype.
+ */
+function isSafePropertyName(name: string): boolean {
+  return !PROTOTYPE_PROPS.has(name);
+}
+
+/**
+ * Generate code to check if a property exists and execute a callback with the value.
+ * Uses fast path (!== undefined) for safe property names, Object.hasOwn for prototype names.
+ */
+function genPropertyCheck(
+  code: CodeBuilder,
+  dataVar: string,
+  propName: string,
+  callback: (valueVar: string) => void
+): void {
+  const propStr = escapeString(propName);
+  const propAccessed = propAccess(dataVar, propName);
+
+  if (isSafePropertyName(propName)) {
+    // Fast path: store value and check !== undefined
+    const propVar = code.genVar('prop');
+    code.line(`const ${propVar} = ${propAccessed};`);
+    code.if(`${propVar} !== undefined`, () => {
+      callback(propVar);
+    });
+  } else {
+    // Slow path: use Object.hasOwn for prototype property names
+    code.if(`Object.hasOwn(${dataVar}, '${propStr}')`, () => {
+      callback(propAccessed);
+    });
+  }
+}
+
+/**
+ * Generate code to check if a required property exists.
+ * Uses fast path ('in' operator) for safe names, Object.hasOwn for prototype names.
+ */
+function genRequiredCheck(
+  code: CodeBuilder,
+  dataVar: string,
+  propName: string,
+  pathExpr: string
+): void {
+  const propStr = escapeString(propName);
+  const propPathExpr = pathExpr === "''" ? `'${propStr}'` : `${pathExpr} + '.${propStr}'`;
+
+  // For prototype property names, use Object.hasOwn for accuracy.
+  // For other names, use the faster 'in' operator.
+  const checkExpr = isSafePropertyName(propName)
+    ? `!('${propStr}' in ${dataVar})`
+    : `!Object.hasOwn(${dataVar}, '${propStr}')`;
+
+  code.if(checkExpr, () => {
+    code.line(
+      `if (errors) errors.push({ path: ${propPathExpr}, message: 'Required property missing', keyword: 'required' });`
+    );
+    code.line('return false;');
+  });
+}
+
+/**
  * Validation error type for internal use
  */
 export interface JITError {
@@ -33,6 +107,7 @@ export function compile(schema: JsonSchema, options: JITOptions = {}): ValidateF
   // Add runtime functions
   ctx.addRuntimeFunction('deepEqual', createDeepEqual());
   ctx.addRuntimeFunction('formatValidators', createFormatValidators());
+  ctx.addRuntimeFunction('ucs2length', createUcs2Length());
 
   // Generate the main validation function
   const mainFuncName = ctx.genFuncName();
@@ -231,6 +306,30 @@ function createFormatValidators(): Record<string, (s: string) => boolean> {
   };
 }
 
+/**
+ * Create a Unicode code point length function for minLength/maxLength validation.
+ * This handles surrogate pairs (emojis, etc.) correctly.
+ * Based on https://mathiasbynens.be/notes/javascript-encoding
+ */
+function createUcs2Length(): (str: string) => number {
+  return function ucs2length(str: string): number {
+    const len = str.length;
+    let length = 0;
+    let pos = 0;
+    let value: number;
+    while (pos < len) {
+      length++;
+      value = str.charCodeAt(pos++);
+      if (value >= 0xd800 && value <= 0xdbff && pos < len) {
+        // high surrogate, and there is a next character
+        value = str.charCodeAt(pos);
+        if ((value & 0xfc00) === 0xdc00) pos++; // low surrogate
+      }
+    }
+    return length;
+  };
+}
+
 // =============================================================================
 // Keyword Code Generators
 // =============================================================================
@@ -376,12 +475,13 @@ export function generateStringChecks(
 
   // Only check if data is a string
   code.if(`typeof ${dataVar} === 'string'`, () => {
-    // Use code point length for proper Unicode handling
+    // Use ucs2length for proper Unicode code point counting (handles surrogate pairs)
     if (schema.minLength !== undefined || schema.maxLength !== undefined) {
-      code.line(`const len = [...${dataVar}].length;`);
+      const lenVar = code.genVar('len');
+      code.line(`const ${lenVar} = ucs2length(${dataVar});`);
 
       if (schema.minLength !== undefined) {
-        code.if(`len < ${schema.minLength}`, () => {
+        code.if(`${lenVar} < ${schema.minLength}`, () => {
           genError(
             code,
             pathExpr,
@@ -392,7 +492,7 @@ export function generateStringChecks(
       }
 
       if (schema.maxLength !== undefined) {
-        code.if(`len > ${schema.maxLength}`, () => {
+        code.if(`${lenVar} > ${schema.maxLength}`, () => {
           genError(
             code,
             pathExpr,
@@ -550,15 +650,7 @@ export function generateObjectChecks(
     () => {
       if (schema.required && schema.required.length > 0) {
         for (const prop of schema.required) {
-          const propStr = escapeString(prop);
-          // Use Object.hasOwn for accurate property check (handles __proto__, toString, etc.)
-          code.if(`!Object.hasOwn(${dataVar}, '${propStr}')`, () => {
-            const propPathExpr = pathExpr === "''" ? `'${propStr}'` : `${pathExpr} + '.${propStr}'`;
-            code.line(
-              `if (errors) errors.push({ path: ${propPathExpr}, message: 'Required property missing', keyword: 'required' });`
-            );
-            code.line('return false;');
-          });
+          genRequiredCheck(code, dataVar, prop, pathExpr);
         }
       }
 
@@ -615,14 +707,12 @@ export function generatePropertiesChecks(
       // Validate defined properties
       if (schema.properties) {
         for (const [propName, propSchema] of Object.entries(schema.properties)) {
-          const propAccessed = propAccess(dataVar, propName);
           const propPathExpr =
             pathExpr === "''"
               ? `'${escapeString(propName)}'`
               : `${pathExpr} + '.${escapeString(propName)}'`;
-          // Use Object.hasOwn for accurate property check (handles __proto__, toString, etc.)
-          code.if(`Object.hasOwn(${dataVar}, '${escapeString(propName)}')`, () => {
-            generateSchemaValidator(code, propSchema, propAccessed, propPathExpr, ctx);
+          genPropertyCheck(code, dataVar, propName, (valueVar) => {
+            generateSchemaValidator(code, propSchema, valueVar, propPathExpr, ctx);
           });
         }
       }
