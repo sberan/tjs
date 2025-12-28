@@ -1,12 +1,12 @@
 /**
- * JIT-compiled JSON Schema validator
+ * JSON Schema validator
  */
 
 import type { JsonSchema, JsonSchemaBase } from '../types.js';
-import { compile, type JITError } from './compiler.js';
-import type { JITOptions } from './context.js';
+import { compile, type CompileError } from './compiler.js';
+import type { CompileOptions } from './context.js';
 
-export type { JITOptions } from './context.js';
+export type { CompileOptions } from './context.js';
 export { compile } from './compiler.js';
 
 /**
@@ -72,7 +72,6 @@ function collectExternalRefs(
     }
   }
 
-  // TODO we really should find a better way to do this
   // Recurse into subschemas
   const subschemas: (JsonSchema | undefined)[] = [
     ...(schema.$defs ? Object.values(schema.$defs) : []),
@@ -194,14 +193,13 @@ export async function loadRemoteSchemas(
  * This is an async version of createValidator that fetches remote refs.
  *
  * @param schema - The JSON Schema to compile
- * @param options - JIT options plus remote loading options
+ * @param options - Compile options plus remote loading options
  * @returns Promise resolving to the validator
  */
 export async function createValidatorAsync<T>(
   schema: JsonSchema,
-  options: JITOptions & LoadRemotesOptions = {}
-  // TODO renami ValidatorJIT to just Validator
-): Promise<ValidatorJIT<T>> {
+  options: CompileOptions & LoadRemotesOptions = {}
+): Promise<Validator<T>> {
   // Load remote schemas
   const loadedRemotes = await loadRemoteSchemas(schema, options);
 
@@ -228,15 +226,14 @@ export interface ValidationError {
 export type ParseResult<T> = { ok: true; data: T } | { ok: false; errors: ValidationError[] };
 
 /**
- * JIT-compiled JSON Schema validator interface.
+ * JSON Schema validator interface.
  * The validator is callable directly for maximum performance.
  */
-export interface ValidatorJIT<T> {
+export interface Validator<T> {
   /** Call directly to validate (fastest path) */
   (data: unknown): data is T;
 
   /** Validate data against the schema */
-  // TODO should re remove this method and just use the callable directly?
   validate(data: unknown): data is T;
 
   /** Assert data is valid, throw if not */
@@ -250,14 +247,14 @@ export interface ValidatorJIT<T> {
 }
 
 /**
- * Create a JIT-compiled JSON Schema validator.
+ * Create a JSON Schema validator.
  * Returns a callable function with validate/assert/parse methods.
  */
-export function createValidator<T>(schema: JsonSchema, options: JITOptions = {}): ValidatorJIT<T> {
+export function createValidator<T>(schema: JsonSchema, options: CompileOptions = {}): Validator<T> {
   const validateFn = compile(schema, options);
 
   // Cast the compiled function directly - it's already callable
-  const validator = validateFn as unknown as ValidatorJIT<T>;
+  const validator = validateFn as unknown as Validator<T>;
 
   // Attach methods directly to the compiled function
   validator.validate = validateFn as (data: unknown) => data is T;
@@ -270,7 +267,7 @@ export function createValidator<T>(schema: JsonSchema, options: JITOptions = {})
   };
 
   validator.parse = (data: unknown): ParseResult<T> => {
-    const errors: JITError[] = [];
+    const errors: CompileError[] = [];
     if (validateFn(data, errors)) {
       return { ok: true, data: data as T };
     }
@@ -285,6 +282,3 @@ export function createValidator<T>(schema: JsonSchema, options: JITOptions = {})
 
   return validator;
 }
-
-// Keep the class for backwards compatibility
-export { createValidator as ValidatorJIT };

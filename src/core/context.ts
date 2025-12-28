@@ -1,13 +1,13 @@
 /**
- * Compilation context for JIT compiler
+ * Compilation context for schema compiler
  */
 
 import type { JsonSchema, JsonSchemaBase } from '../types.js';
 
 /**
- * Options for JIT compilation
+ * Options for schema compilation
  */
-export interface JITOptions {
+export interface CompileOptions {
   /** Whether format validation is an assertion (default: true) */
   formatAssertion?: boolean;
   /**
@@ -51,7 +51,9 @@ export type CompiledValidator = (data: unknown) => boolean;
  */
 export class CompileContext {
   /** Options for compilation */
-  readonly options: Required<Omit<JITOptions, 'remotes'>> & { remotes: Record<string, JsonSchema> };
+  readonly options: Required<Omit<CompileOptions, 'remotes'>> & {
+    remotes: Record<string, JsonSchema>;
+  };
 
   /** Counter for generating unique function names */
   #funcCounter = 0;
@@ -89,21 +91,15 @@ export class CompileContext {
   /** Set of enabled vocabulary URIs (null means all vocabularies are enabled) */
   readonly #enabledVocabularies: Set<string> | null;
 
-  constructor(rootSchema: JsonSchema, options: JITOptions = {}) {
+  constructor(rootSchema: JsonSchema, options: CompileOptions = {}) {
     this.#rootSchema = rootSchema;
 
-    // Detect schema dialect for default content assertion behavior
-    // In draft 2020-12 and 2019-09, content is annotation-only (no validation)
-    // In draft-07 and earlier, content can optionally validate
-    const schemaDialect =
-      typeof rootSchema === 'object' && rootSchema !== null ? rootSchema.$schema : undefined;
-    const isModernDraft =
-      schemaDialect && (schemaDialect.includes('2020-12') || schemaDialect.includes('2019-09'));
-    const defaultContentAssertion = !isModernDraft;
+    // Content keywords are annotation-only by default per modern JSON Schema specs
+    // Only enable content assertion if explicitly requested
 
     this.options = {
       formatAssertion: options.formatAssertion ?? true,
-      contentAssertion: options.contentAssertion ?? defaultContentAssertion,
+      contentAssertion: options.contentAssertion ?? false,
       remotes: options.remotes ?? {},
       legacyRef: options.legacyRef ?? true,
     };

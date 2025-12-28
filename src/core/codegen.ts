@@ -1,5 +1,5 @@
 /**
- * Code generation utilities for JIT compiler
+ * Code generation utilities for schema compiler
  */
 
 /**
