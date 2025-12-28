@@ -245,10 +245,10 @@ function generateSchemaValidator(
     generateStringChecks(code, schema, dataVar, pathExpr, ctx);
     generateFormatCheck(code, schema, dataVar, pathExpr, ctx);
     generateNumberChecks(code, schema, dataVar, pathExpr, ctx);
+    generateItemsChecks(code, schema, dataVar, pathExpr, ctx);
     generateArrayChecks(code, schema, dataVar, pathExpr, ctx);
     generateObjectChecks(code, schema, dataVar, pathExpr, ctx);
     generatePropertiesChecks(code, schema, dataVar, pathExpr, ctx);
-    generateItemsChecks(code, schema, dataVar, pathExpr, ctx);
     generateCompositionChecks(code, schema, dataVar, pathExpr, ctx);
     generateRefCheck(code, schema, dataVar, pathExpr, ctx, scopeVar);
     generateDynamicRefCheck(code, schema, dataVar, pathExpr, ctx, scopeVar);
