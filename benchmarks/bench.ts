@@ -3,7 +3,7 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { loadTestFiles } from '../tests/suite/loader.js';
 import type { TestFile } from '../tests/suite/types.js';
-import type { ValidatorAdapter, BenchmarkResult } from './types.js';
+import type { ValidatorAdapter, BenchmarkResult, Draft } from './types.js';
 import { ajvAdapter } from './adapters/ajv.js';
 import { jitAdapter } from './adapters/jit.js';
 
@@ -15,7 +15,7 @@ const SKIP_KEYWORDS = new Set([
 ]);
 
 // Load remote schemas for refRemote tests
-function loadRemoteSchemas(): Record<string, unknown> {
+function loadRemoteSchemas(draft: Draft): Record<string, unknown> {
   const remotes: Record<string, unknown> = {};
 
   const loadDir = (dir: string, baseUrl: string) => {
@@ -23,7 +23,7 @@ function loadRemoteSchemas(): Record<string, unknown> {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
-      // Skip other draft directories
+      // Skip other draft directories when loading root remotes
       if (
         entry.isDirectory() &&
         (entry.name.startsWith('draft') || entry.name === 'draft2019-09')
@@ -41,6 +41,10 @@ function loadRemoteSchemas(): Record<string, unknown> {
           if (typeof schema === 'object' && schema !== null && schema.$id) {
             remotes[schema.$id] = schema;
           }
+          // Also register by id for older drafts
+          if (typeof schema === 'object' && schema !== null && schema.id) {
+            remotes[schema.id] = schema;
+          }
         } catch {
           // Skip invalid JSON files
         }
@@ -51,8 +55,11 @@ function loadRemoteSchemas(): Record<string, unknown> {
   const remotesDir = path.join(__dirname, '../test-suite/remotes');
   loadDir(remotesDir, 'http://localhost:1234/');
 
-  const draft2020Dir = path.join(remotesDir, 'draft2020-12');
-  loadDir(draft2020Dir, 'http://localhost:1234/draft2020-12/');
+  // Load draft-specific remotes
+  const draftRemotesDir = path.join(remotesDir, draft);
+  if (fs.existsSync(draftRemotesDir)) {
+    loadDir(draftRemotesDir, `http://localhost:1234/${draft}/`);
+  }
 
   return remotes;
 }
@@ -73,7 +80,8 @@ interface CompileResult {
 function compileTests(
   files: TestFile[],
   adapter: ValidatorAdapter,
-  remotes: Record<string, unknown>
+  remotes: Record<string, unknown>,
+  draft: Draft
 ): CompileResult {
   const compiled: CompiledTest[] = [];
   let skippedByKeyword = 0;
@@ -90,7 +98,7 @@ function compileTests(
 
     for (const group of file.groups) {
       try {
-        const validate = adapter.compile(group.schema, remotes);
+        const validate = adapter.compile(group.schema, remotes, draft);
         compiled.push({
           keyword: file.name,
           validate,
@@ -110,13 +118,7 @@ function runBenchmark(
   compiled: CompiledTest[],
   iterations: number
 ): { totalValidations: number; durationMs: number; byKeyword: Record<string, number> } {
-  const keywordCounts: Record<string, number> = {};
   const keywordTimes: Record<string, number> = {};
-
-  // Count tests per keyword
-  for (const c of compiled) {
-    keywordCounts[c.keyword] = (keywordCounts[c.keyword] || 0) + c.tests.length;
-  }
 
   // Test each validator to ensure it doesn't throw/stack overflow
   const safeCompiled: CompiledTest[] = [];
@@ -181,47 +183,42 @@ function formatNumber(n: number): string {
   return n.toLocaleString('en-US');
 }
 
-function main() {
-  const args = process.argv.slice(2);
-  const jsonOutput = args.includes('--json');
-  const iterations = 100000;
+interface DraftResult {
+  draft: Draft;
+  testCount: number;
+  results: BenchmarkResult[];
+}
 
-  // Load test files and remote schemas
-  const files = loadTestFiles({ includeOptional: false });
-  const remotes = loadRemoteSchemas();
+function runDraftBenchmark(
+  draft: Draft,
+  adapters: ValidatorAdapter[],
+  iterations: number,
+  verbose: boolean
+): DraftResult {
+  const files = loadTestFiles({ draft, includeOptional: false });
+  const remotes = loadRemoteSchemas(draft);
   const totalTestCount = files.reduce(
     (sum, f) => sum + f.groups.reduce((gs, g) => gs + g.tests.length, 0),
     0
   );
 
-  const adapters: ValidatorAdapter[] = [ajvAdapter, jitAdapter];
   const results: BenchmarkResult[] = [];
-
-  if (!jsonOutput) {
-    console.log('json-schema-ts Benchmark (JSON Schema Test Suite draft2020-12)');
-    console.log('='.repeat(62));
-    console.log();
-    console.log(
-      `Total: ${formatNumber(totalTestCount)} test cases across ${files.length} keyword files`
-    );
-    console.log(`Iterations: ${iterations}`);
-    console.log();
-  }
 
   for (const adapter of adapters) {
     const { compiled, skippedByKeyword, skippedByError, errors } = compileTests(
       files,
       adapter,
-      remotes
+      remotes,
+      draft
     );
 
-    if (!jsonOutput && errors.length > 0) {
-      console.log(`\n${adapter.name} compilation errors:`);
-      for (const err of errors.slice(0, 5)) {
-        console.log(`  ${err}`);
+    if (verbose && errors.length > 0) {
+      console.log(`  ${adapter.name} compilation errors:`);
+      for (const err of errors.slice(0, 3)) {
+        console.log(`    ${err}`);
       }
-      if (errors.length > 5) {
-        console.log(`  ... and ${errors.length - 5} more`);
+      if (errors.length > 3) {
+        console.log(`    ... and ${errors.length - 3} more`);
       }
     }
 
@@ -236,129 +233,128 @@ function main() {
       skipped: skippedByKeyword + skippedByError,
       byKeyword,
     });
+  }
 
-    if (!jsonOutput) {
-      console.log(
-        `${adapter.name}: skipped ${skippedByKeyword} (keywords) + ${skippedByError} (errors) = ${skippedByKeyword + skippedByError} total`
-      );
+  return { draft, testCount: totalTestCount, results };
+}
+
+function main() {
+  const args = process.argv.slice(2);
+  const jsonOutput = args.includes('--json');
+  const verbose = args.includes('--verbose') || args.includes('-v');
+  const iterations = 100000;
+
+  // Parse which drafts to run
+  const drafts: Draft[] = [];
+  for (const arg of args) {
+    if (['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'].includes(arg)) {
+      drafts.push(arg as Draft);
     }
   }
 
-  // Sort by ops/sec descending
-  results.sort((a, b) => b.opsPerSec - a.opsPerSec);
-  const fastest = results[0]?.opsPerSec || 1;
+  // Default to all drafts if none specified
+  if (drafts.length === 0) {
+    drafts.push('draft4', 'draft6', 'draft7', 'draft2020-12');
+  }
+
+  const adapters: ValidatorAdapter[] = [jitAdapter, ajvAdapter];
+  const allResults: DraftResult[] = [];
+
+  if (!jsonOutput) {
+    console.log('json-schema-ts Benchmark');
+    console.log('='.repeat(70));
+    console.log();
+  }
+
+  for (const draft of drafts) {
+    if (!jsonOutput) {
+      console.log(`Running ${draft}...`);
+    }
+
+    const draftResult = runDraftBenchmark(draft, adapters, iterations, verbose);
+    allResults.push(draftResult);
+
+    if (!jsonOutput) {
+      const jit = draftResult.results.find((r) => r.validator === 'json-schema-ts-jit');
+      const ajv = draftResult.results.find((r) => r.validator === 'ajv');
+
+      if (jit && ajv) {
+        const ratio = jit.opsPerSec / ajv.opsPerSec;
+        const pct = ((ratio - 1) * 100).toFixed(1);
+        const comparison = ratio >= 1 ? `+${pct}%` : `${pct}%`;
+        console.log(
+          `  ${draftResult.testCount} tests | ` +
+            `jit: ${formatNumber(jit.opsPerSec)} ops/s (skip ${jit.skipped}) | ` +
+            `ajv: ${formatNumber(ajv.opsPerSec)} ops/s (skip ${ajv.skipped}) | ` +
+            `${comparison}`
+        );
+      }
+      console.log();
+    }
+  }
 
   if (jsonOutput) {
     const report = {
       timestamp: new Date().toISOString(),
-      suite: 'draft2020-12',
-      testCount: totalTestCount,
       iterations,
-      results,
+      drafts: allResults,
     };
     console.log(JSON.stringify(report, null, 2));
   } else {
-    // Console output
-    console.log('Validator              ops/sec       relative    skipped');
-    console.log('─'.repeat(58));
+    // Summary table
+    console.log('Summary');
+    console.log('─'.repeat(70));
+    console.log(
+      'Draft'.padEnd(15) +
+        'Tests'.padStart(8) +
+        'jit ops/s'.padStart(14) +
+        'ajv ops/s'.padStart(14) +
+        'jit skip'.padStart(10) +
+        'ajv skip'.padStart(10)
+    );
+    console.log('─'.repeat(70));
 
-    for (const r of results) {
-      const relative = ((r.opsPerSec / fastest) * 100).toFixed(1);
-      const name = r.validator.padEnd(20);
-      const ops = formatNumber(r.opsPerSec).padStart(12);
-      const rel = `${relative}%`.padStart(10);
-      const skip = r.skipped.toString().padStart(10);
-      console.log(`${name} ${ops} ${rel} ${skip}`);
+    for (const dr of allResults) {
+      const jit = dr.results.find((r) => r.validator === 'json-schema-ts-jit');
+      const ajv = dr.results.find((r) => r.validator === 'ajv');
+
+      console.log(
+        dr.draft.padEnd(15) +
+          dr.testCount.toString().padStart(8) +
+          (jit ? formatNumber(jit.opsPerSec) : '-').padStart(14) +
+          (ajv ? formatNumber(ajv.opsPerSec) : '-').padStart(14) +
+          (jit ? jit.skipped.toString() : '-').padStart(10) +
+          (ajv ? ajv.skipped.toString() : '-').padStart(10)
+      );
     }
 
-    // Per-keyword comparison between jit and AJV
-    const jitResult = results.find((r) => r.validator === 'json-schema-ts-jit');
-    const ajvResult = results.find((r) => r.validator === 'ajv');
+    // Overall comparison
+    console.log('─'.repeat(70));
 
-    if (jitResult && ajvResult) {
-      console.log();
-      console.log('Per-Keyword Comparison (jit vs AJV):');
-      console.log('─'.repeat(72));
-      console.log(
-        'Keyword'.padEnd(25) +
-          'jit'.padStart(14) +
-          'ajv'.padStart(14) +
-          'ratio'.padStart(10) +
-          'diff'.padStart(8)
-      );
-      console.log('─'.repeat(72));
+    let jitTotal = 0;
+    let ajvTotal = 0;
+    let jitSkipTotal = 0;
+    let ajvSkipTotal = 0;
 
-      // Get all keywords present in both
-      const allKeywords = new Set([
-        ...Object.keys(jitResult.byKeyword),
-        ...Object.keys(ajvResult.byKeyword),
-      ]);
-
-      // Calculate ratio (jit / ajv) for each keyword
-      const keywordComparison: { keyword: string; jit: number; ajv: number; ratio: number }[] = [];
-      for (const keyword of allKeywords) {
-        const jitOps = jitResult.byKeyword[keyword];
-        const ajvOps = ajvResult.byKeyword[keyword];
-        if (jitOps && ajvOps) {
-          keywordComparison.push({
-            keyword,
-            jit: jitOps,
-            ajv: ajvOps,
-            ratio: jitOps / ajvOps,
-          });
-        }
+    for (const dr of allResults) {
+      const jit = dr.results.find((r) => r.validator === 'json-schema-ts-jit');
+      const ajv = dr.results.find((r) => r.validator === 'ajv');
+      if (jit) {
+        jitTotal += jit.opsPerSec;
+        jitSkipTotal += jit.skipped;
       }
-
-      // Sort by ratio ascending (slowest relative to AJV first)
-      keywordComparison.sort((a, b) => a.ratio - b.ratio);
-
-      // Show all keywords sorted by ratio
-      for (const { keyword, jit, ajv, ratio } of keywordComparison) {
-        const kw = keyword.padEnd(25);
-        const jitStr = formatNumber(jit).padStart(14);
-        const ajvStr = formatNumber(ajv).padStart(14);
-        const ratioStr = `${ratio.toFixed(2)}x`.padStart(10);
-        const diffPercent = ((ratio - 1) * 100).toFixed(0);
-        const diffStr = (ratio >= 1 ? `+${diffPercent}%` : `${diffPercent}%`).padStart(8);
-        console.log(`${kw}${jitStr}${ajvStr}${ratioStr}${diffStr}`);
-      }
-
-      // Summary: keywords where jit is slower than AJV
-      const slowerThanAjv = keywordComparison.filter((k) => k.ratio < 1);
-      const fasterThanAjv = keywordComparison.filter((k) => k.ratio >= 1);
-
-      console.log();
-      console.log('─'.repeat(72));
-      console.log(
-        `Summary: ${fasterThanAjv.length} keywords faster, ${slowerThanAjv.length} keywords slower than AJV`
-      );
-
-      if (slowerThanAjv.length > 0) {
-        console.log();
-        console.log('⚠ Slowest relative to AJV (optimization targets):');
-        for (const { keyword, ratio } of slowerThanAjv.slice(0, 5)) {
-          const kw = keyword.padEnd(25);
-          const ratioStr = `${ratio.toFixed(2)}x`.padStart(8);
-          const diffPercent = ((1 - ratio) * 100).toFixed(0);
-          console.log(`  ${kw}${ratioStr}  (${diffPercent}% slower)`);
-        }
-      }
-
-      // Show fastest keywords (where we beat AJV the most)
-      const fastestRelative = keywordComparison
-        .filter((k) => k.ratio > 1)
-        .sort((a, b) => b.ratio - a.ratio);
-      if (fastestRelative.length > 0) {
-        console.log();
-        console.log('✓ Fastest relative to AJV:');
-        for (const { keyword, ratio } of fastestRelative.slice(0, 5)) {
-          const kw = keyword.padEnd(25);
-          const ratioStr = `${ratio.toFixed(2)}x`.padStart(8);
-          const diffPercent = ((ratio - 1) * 100).toFixed(0);
-          console.log(`  ${kw}${ratioStr}  (${diffPercent}% faster)`);
-        }
+      if (ajv) {
+        ajvTotal += ajv.opsPerSec;
+        ajvSkipTotal += ajv.skipped;
       }
     }
+
+    const overallRatio = jitTotal / ajvTotal;
+    const overallPct = ((overallRatio - 1) * 100).toFixed(1);
+    console.log(
+      `\nOverall: json-schema-ts is ${overallRatio >= 1 ? '+' : ''}${overallPct}% vs AJV`
+    );
+    console.log(`Total skipped: jit=${jitSkipTotal}, ajv=${ajvSkipTotal}`);
   }
 }
 

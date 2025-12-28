@@ -4,20 +4,25 @@ import { fileURLToPath } from 'url';
 import type { TestFile, TestGroup } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SUITE_PATH = path.join(__dirname, '../../test-suite/tests/draft2020-12');
+const SUITE_BASE = path.join(__dirname, '../../test-suite/tests');
+
+type Draft = 'draft4' | 'draft6' | 'draft7' | 'draft2019-09' | 'draft2020-12';
 
 export function loadTestFiles(options?: {
+  draft?: Draft;
   includeOptional?: boolean;
   filter?: (filename: string) => boolean;
 }): TestFile[] {
+  const draft = options?.draft ?? 'draft2020-12';
+  const suitePath = path.join(SUITE_BASE, draft);
   const files: TestFile[] = [];
 
   // Load required tests
-  files.push(...loadDirectory(SUITE_PATH, options?.filter));
+  files.push(...loadDirectory(suitePath, options?.filter));
 
   // Load optional tests if requested
   if (options?.includeOptional) {
-    const optionalDir = path.join(SUITE_PATH, 'optional');
+    const optionalDir = path.join(suitePath, 'optional');
     if (fs.existsSync(optionalDir)) {
       files.push(...loadDirectory(optionalDir, options?.filter));
     }
