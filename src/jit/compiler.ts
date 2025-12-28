@@ -388,6 +388,18 @@ function genError(code: CodeBuilder, pathExpr: string, keyword: string, message:
 }
 
 /**
+ * Check if schema has a specific type constraint that guarantees the type is already validated
+ */
+function hasTypeConstraint(schema: JsonSchemaBase, type: string): boolean {
+  if (!schema.type) return false;
+  if (Array.isArray(schema.type)) {
+    // Only if single type
+    return schema.type.length === 1 && schema.type[0] === type;
+  }
+  return schema.type === type;
+}
+
+/**
  * Generate type check code
  */
 export function generateTypeCheck(
@@ -681,8 +693,7 @@ export function generateArrayChecks(
 
   if (!hasArrayChecks) return;
 
-  // Only check if data is an array
-  code.if(`Array.isArray(${dataVar})`, () => {
+  const genChecks = () => {
     if (schema.minItems !== undefined) {
       code.if(`${dataVar}.length < ${schema.minItems}`, () => {
         genError(code, pathExpr, 'minItems', `Array must have at least ${schema.minItems} items`);
@@ -708,7 +719,15 @@ export function generateArrayChecks(
         });
       });
     }
-  });
+  };
+
+  // Skip type check if schema already has type: 'array'
+  if (hasTypeConstraint(schema, 'array')) {
+    genChecks();
+  } else {
+    // Only check if data is an array
+    code.if(`Array.isArray(${dataVar})`, genChecks);
+  }
 }
 
 /**
@@ -728,43 +747,50 @@ export function generateObjectChecks(
 
   if (!hasObjectChecks) return;
 
-  // Only check if data is an object
-  code.if(
-    `typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
-    () => {
-      if (schema.required && schema.required.length > 0) {
-        for (const prop of schema.required) {
-          genRequiredCheck(code, dataVar, prop, pathExpr);
-        }
-      }
-
-      if (schema.minProperties !== undefined || schema.maxProperties !== undefined) {
-        code.line(`const propCount = Object.keys(${dataVar}).length;`);
-
-        if (schema.minProperties !== undefined) {
-          code.if(`propCount < ${schema.minProperties}`, () => {
-            genError(
-              code,
-              pathExpr,
-              'minProperties',
-              `Object must have at least ${schema.minProperties} properties`
-            );
-          });
-        }
-
-        if (schema.maxProperties !== undefined) {
-          code.if(`propCount > ${schema.maxProperties}`, () => {
-            genError(
-              code,
-              pathExpr,
-              'maxProperties',
-              `Object must have at most ${schema.maxProperties} properties`
-            );
-          });
-        }
+  const genChecks = () => {
+    if (schema.required && schema.required.length > 0) {
+      for (const prop of schema.required) {
+        genRequiredCheck(code, dataVar, prop, pathExpr);
       }
     }
-  );
+
+    if (schema.minProperties !== undefined || schema.maxProperties !== undefined) {
+      code.line(`const propCount = Object.keys(${dataVar}).length;`);
+
+      if (schema.minProperties !== undefined) {
+        code.if(`propCount < ${schema.minProperties}`, () => {
+          genError(
+            code,
+            pathExpr,
+            'minProperties',
+            `Object must have at least ${schema.minProperties} properties`
+          );
+        });
+      }
+
+      if (schema.maxProperties !== undefined) {
+        code.if(`propCount > ${schema.maxProperties}`, () => {
+          genError(
+            code,
+            pathExpr,
+            'maxProperties',
+            `Object must have at most ${schema.maxProperties} properties`
+          );
+        });
+      }
+    }
+  };
+
+  // Skip type check if schema already has type: 'object'
+  if (hasTypeConstraint(schema, 'object')) {
+    genChecks();
+  } else {
+    // Only check if data is an object
+    code.if(
+      `typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
+      genChecks
+    );
+  }
 }
 
 /**
@@ -801,88 +827,74 @@ export function generatePropertiesChecks(
 
   if (!hasProps && !hasPatternProps && !hasAdditionalProps) return;
 
-  // Only check if data is an object
-  code.if(
-    `typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
-    () => {
-      // Validate defined properties (only non-trivial ones)
-      for (const [propName, propSchema] of nonTrivialProps) {
-        const propPathExpr =
-          pathExpr === "''"
-            ? `'${escapeString(propName)}'`
-            : `${pathExpr} + '.${escapeString(propName)}'`;
-        genPropertyCheck(code, dataVar, propName, (valueVar) => {
-          generateSchemaValidator(code, propSchema, valueVar, propPathExpr, ctx);
-        });
+  const genChecks = () => {
+    // Validate defined properties (only non-trivial ones)
+    for (const [propName, propSchema] of nonTrivialProps) {
+      const propPathExpr =
+        pathExpr === "''"
+          ? `'${escapeString(propName)}'`
+          : `${pathExpr} + '.${escapeString(propName)}'`;
+      genPropertyCheck(code, dataVar, propName, (valueVar) => {
+        generateSchemaValidator(code, propSchema, valueVar, propPathExpr, ctx);
+      });
+    }
+
+    // Handle patternProperties and additionalProperties in a single loop
+    if (hasPatternProps || hasAdditionalProps) {
+      const definedProps = schema.properties ? Object.keys(schema.properties) : [];
+      // For additionalProperties, we need ALL patternProperties patterns (even no-ops)
+      // because they affect which properties are considered "additional"
+      const allPatterns = schema.patternProperties ? Object.keys(schema.patternProperties) : [];
+
+      // Pre-compile pattern regexes for ALL patterns (needed for additionalProperties check)
+      const patternRegexNames: string[] = [];
+      for (const pattern of allPatterns) {
+        const regexName = ctx.genRuntimeName('patternRe');
+        ctx.addRuntimeFunction(regexName, new RegExp(pattern));
+        patternRegexNames.push(regexName);
       }
 
-      // Handle patternProperties and additionalProperties in a single loop
-      if (hasPatternProps || hasAdditionalProps) {
-        const definedProps = schema.properties ? Object.keys(schema.properties) : [];
-        // For additionalProperties, we need ALL patternProperties patterns (even no-ops)
-        // because they affect which properties are considered "additional"
-        const allPatterns = schema.patternProperties ? Object.keys(schema.patternProperties) : [];
+      code.forIn('key', dataVar, () => {
+        const keyPathExpr = pathExpr === "''" ? 'key' : `${pathExpr} + '.' + key`;
 
-        // Pre-compile pattern regexes for ALL patterns (needed for additionalProperties check)
-        const patternRegexNames: string[] = [];
-        for (const pattern of allPatterns) {
-          const regexName = ctx.genRuntimeName('patternRe');
-          ctx.addRuntimeFunction(regexName, new RegExp(pattern));
-          patternRegexNames.push(regexName);
+        // Generate patternProperties checks (only non-trivial ones)
+        for (let i = 0; i < nonTrivialPatternProps.length; i++) {
+          const [pattern, patternSchema] = nonTrivialPatternProps[i];
+          // Find the index in allPatterns to get the right regex
+          const regexIdx = allPatterns.indexOf(pattern);
+          const regexName = patternRegexNames[regexIdx];
+          code.if(`${regexName}.test(key)`, () => {
+            const propAccessed = `${dataVar}[key]`;
+            generateSchemaValidator(code, patternSchema, propAccessed, keyPathExpr, ctx);
+          });
         }
 
-        code.forIn('key', dataVar, () => {
-          const keyPathExpr = pathExpr === "''" ? 'key' : `${pathExpr} + '.' + key`;
+        // Generate additionalProperties check
+        if (hasAdditionalProps) {
+          const addPropsSchema = schema.additionalProperties!;
 
-          // Generate patternProperties checks (only non-trivial ones)
-          for (let i = 0; i < nonTrivialPatternProps.length; i++) {
-            const [pattern, patternSchema] = nonTrivialPatternProps[i];
-            // Find the index in allPatterns to get the right regex
-            const regexIdx = allPatterns.indexOf(pattern);
-            const regexName = patternRegexNames[regexIdx];
-            code.if(`${regexName}.test(key)`, () => {
-              const propAccessed = `${dataVar}[key]`;
-              generateSchemaValidator(code, patternSchema, propAccessed, keyPathExpr, ctx);
-            });
+          // Build condition: not a defined prop and not matching any pattern
+          // Use inline comparisons for small numbers of properties (faster than Set.has)
+          const conditions: string[] = [];
+
+          // For defined properties, use inline comparison for up to ~10 props
+          if (definedProps.length > 0 && definedProps.length <= 10) {
+            const propChecks = definedProps.map((p) => `key !== "${escapeString(p)}"`).join(' && ');
+            conditions.push(`(${propChecks})`);
+          } else if (definedProps.length > 10) {
+            // Use Set for larger number of properties
+            const propsSetName = ctx.genRuntimeName('propsSet');
+            ctx.addRuntimeFunction(propsSetName, new Set(definedProps));
+            conditions.push(`!${propsSetName}.has(key)`);
           }
 
-          // Generate additionalProperties check
-          if (hasAdditionalProps) {
-            const addPropsSchema = schema.additionalProperties!;
+          // Pattern checks using pre-compiled regexes
+          for (const regexName of patternRegexNames) {
+            conditions.push(`!${regexName}.test(key)`);
+          }
 
-            // Build condition: not a defined prop and not matching any pattern
-            // Use inline comparisons for small numbers of properties (faster than Set.has)
-            const conditions: string[] = [];
-
-            // For defined properties, use inline comparison for up to ~10 props
-            if (definedProps.length > 0 && definedProps.length <= 10) {
-              const propChecks = definedProps
-                .map((p) => `key !== "${escapeString(p)}"`)
-                .join(' && ');
-              conditions.push(`(${propChecks})`);
-            } else if (definedProps.length > 10) {
-              // Use Set for larger number of properties
-              const propsSetName = ctx.genRuntimeName('propsSet');
-              ctx.addRuntimeFunction(propsSetName, new Set(definedProps));
-              conditions.push(`!${propsSetName}.has(key)`);
-            }
-
-            // Pattern checks using pre-compiled regexes
-            for (const regexName of patternRegexNames) {
-              conditions.push(`!${regexName}.test(key)`);
-            }
-
-            if (conditions.length > 0) {
-              code.if(conditions.join(' && '), () => {
-                generateAdditionalPropsCheck(
-                  code,
-                  addPropsSchema,
-                  `${dataVar}[key]`,
-                  keyPathExpr,
-                  ctx
-                );
-              });
-            } else {
+          if (conditions.length > 0) {
+            code.if(conditions.join(' && '), () => {
               generateAdditionalPropsCheck(
                 code,
                 addPropsSchema,
@@ -890,12 +902,25 @@ export function generatePropertiesChecks(
                 keyPathExpr,
                 ctx
               );
-            }
+            });
+          } else {
+            generateAdditionalPropsCheck(code, addPropsSchema, `${dataVar}[key]`, keyPathExpr, ctx);
           }
-        });
-      }
+        }
+      });
     }
-  );
+  };
+
+  // Skip type check if schema already has type: 'object'
+  if (hasTypeConstraint(schema, 'object')) {
+    genChecks();
+  } else {
+    // Only check if data is an object
+    code.if(
+      `typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
+      genChecks
+    );
+  }
 }
 
 function generateAdditionalPropsCheck(
@@ -1408,8 +1433,7 @@ export function generateItemsChecks(
 
   if (!hasNonTrivialTuples && !hasAfterTupleSchema) return;
 
-  // Only check if data is an array
-  code.if(`Array.isArray(${dataVar})`, () => {
+  const genChecks = () => {
     // Handle tuple items (prefixItems in 2020-12, items array in draft-07)
     // Only validate non-trivial schemas
     for (const { schema: itemSchema, index: i } of nonTrivialTupleSchemas) {
@@ -1451,12 +1475,38 @@ export function generateItemsChecks(
         });
       }
     }
-  });
+  };
+
+  // Skip type check if schema already has type: 'array'
+  if (hasTypeConstraint(schema, 'array')) {
+    genChecks();
+  } else {
+    // Only check if data is an array
+    code.if(`Array.isArray(${dataVar})`, genChecks);
+  }
 }
 
 /**
  * Generate format check code
  */
+// Known format validators - used to skip existence check for known formats
+const KNOWN_FORMATS = new Set([
+  'email',
+  'uuid',
+  'date-time',
+  'uri',
+  'ipv4',
+  'ipv6',
+  'date',
+  'time',
+  'duration',
+  'hostname',
+  'uri-reference',
+  'json-pointer',
+  'relative-json-pointer',
+  'regex',
+]);
+
 export function generateFormatCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
@@ -1470,16 +1520,31 @@ export function generateFormatCheck(
   if (!ctx.options.formatAssertion) return;
 
   const format = schema.format;
+  const escapedFormat = escapeString(format);
 
-  // Only check if data is a string
-  code.if(`typeof ${dataVar} === 'string'`, () => {
-    code.if(
-      `formatValidators['${escapeString(format)}'] && !formatValidators['${escapeString(format)}'](${dataVar})`,
-      () => {
-        genError(code, pathExpr, 'format', `Invalid ${format} format`);
-      }
-    );
-  });
+  // Check if schema already has type: 'string' (no need to re-check type)
+  const hasStringType = schema.type === 'string';
+
+  // For known formats, skip the existence check
+  const isKnownFormat = KNOWN_FORMATS.has(format);
+
+  const formatCheck = isKnownFormat
+    ? `!formatValidators['${escapedFormat}'](${dataVar})`
+    : `formatValidators['${escapedFormat}'] && !formatValidators['${escapedFormat}'](${dataVar})`;
+
+  const genFormatCheck = () => {
+    code.if(formatCheck, () => {
+      genError(code, pathExpr, 'format', `Invalid ${format} format`);
+    });
+  };
+
+  if (hasStringType) {
+    // Type already checked, just do format check
+    genFormatCheck();
+  } else {
+    // Only check if data is a string
+    code.if(`typeof ${dataVar} === 'string'`, genFormatCheck);
+  }
 }
 
 /**
