@@ -144,3 +144,71 @@ const DirectCycle = schema({
   $ref: '#/$defs/Self',
 });
 DirectCycle.type; // $ExpectType unknown
+
+// =============================================================================
+// Root Reference ($ref: '#') - Recursive Types
+// =============================================================================
+
+// Root reference creates a recursive type
+const RootRef = schema({
+  type: 'object',
+  properties: {
+    name: { type: 'string' },
+    friend: { $ref: '#' },
+  },
+  required: ['name'],
+});
+RootRef.type.name; // $ExpectType string
+RootRef.type.friend?.name; // $ExpectType string | undefined
+RootRef.type.friend?.friend?.name; // $ExpectType string | undefined
+
+// Root reference in array (tree structure)
+const TreeNode = schema({
+  type: 'object',
+  properties: {
+    value: { type: 'number' },
+    children: {
+      type: 'array',
+      items: { $ref: '#' },
+    },
+  },
+  required: ['value'],
+});
+TreeNode.type.value; // $ExpectType number
+TreeNode.type.children?.[0]?.value; // $ExpectType number | undefined
+TreeNode.type.children?.[0]?.children?.[0]?.value; // $ExpectType number | undefined
+
+// =============================================================================
+// Draft-07 Style: definitions instead of $defs
+// =============================================================================
+
+// Draft-07 uses "definitions" instead of "$defs"
+const Draft07Ref = schema({
+  definitions: {
+    Item: {
+      type: 'object',
+      properties: { id: { type: 'string' } },
+      required: ['id'],
+    },
+  },
+  type: 'array',
+  items: { $ref: '#/definitions/Item' },
+});
+Draft07Ref.type; // $ExpectType { id: string }[]
+
+// Mixed $defs and definitions (both should work)
+const MixedDefs = schema({
+  $defs: {
+    Name: { type: 'string' },
+  },
+  definitions: {
+    Age: { type: 'integer' },
+  },
+  type: 'object',
+  properties: {
+    name: { $ref: '#/$defs/Name' },
+    age: { $ref: '#/definitions/Age' },
+  },
+  required: ['name', 'age'],
+});
+MixedDefs.type; // $ExpectType { name: string; age: number }

@@ -11,25 +11,38 @@ import type {
 type Simplify<T> = { -readonly [K in keyof T]: T[K] } & {};
 
 // Infer TypeScript type from a JSON Schema
+// Root is the root schema for resolving '#' refs
+// Defs are the combined $defs and definitions
 // Depth parameter prevents infinite recursion on circular $refs
-export type Infer<S, Defs = GetDefs<S>, Depth extends unknown[] = []> = Depth['length'] extends 15
+export type Infer<
+  S,
+  Defs = GetDefs<S>,
+  Depth extends unknown[] = [],
+  Root = S,
+> = Depth['length'] extends 15
   ? unknown // Recursion limit reached - prevent TypeScript "excessively deep" error
   : S extends boolean
     ? S extends true
       ? unknown
       : never
     : S extends JsonSchemaBase
-      ? InferSchema<S, Defs, Depth>
+      ? InferSchema<S, Defs, Depth, Root>
       : unknown;
 
-// Extract $defs from schema
-type GetDefs<S> = S extends { $defs: infer D } ? D : {};
+// Extract $defs and definitions from schema (supporting both draft-2020-12 and draft-07)
+type GetDefs<S> = S extends { $defs: infer D; definitions: infer D2 }
+  ? D & D2
+  : S extends { $defs: infer D }
+    ? D
+    : S extends { definitions: infer D }
+      ? D
+      : {};
 
 // Main inference for schema objects
-type InferSchema<S extends JsonSchemaBase, Defs, Depth extends unknown[]> =
+type InferSchema<S extends JsonSchemaBase, Defs, Depth extends unknown[], Root> =
   // Handle $ref first
   S extends { $ref: infer R extends string }
-    ? InferRef<R, Defs, Depth>
+    ? InferRef<R, Defs, Depth, Root>
     : // Handle const
       S extends { const: infer C }
       ? C
@@ -38,13 +51,13 @@ type InferSchema<S extends JsonSchemaBase, Defs, Depth extends unknown[]> =
         ? E
         : // Handle anyOf - if base has type, use it to constrain branches
           S extends { anyOf: readonly JsonSchema[] }
-          ? InferAnyOf<S, Defs, Depth>
+          ? InferAnyOf<S, Defs, Depth, Root>
           : // Handle oneOf (same as anyOf for types)
             S extends { oneOf: readonly JsonSchema[] }
-            ? InferOneOf<S, Defs, Depth>
+            ? InferOneOf<S, Defs, Depth, Root>
             : // Handle allOf - include base schema type in intersection
               S extends { allOf: readonly JsonSchema[] }
-              ? InferAllOfWithBase<S, Defs, Depth>
+              ? InferAllOfWithBase<S, Defs, Depth, Root>
               : // Handle not
                 S extends { not: infer N }
                 ? InferNot<N>
@@ -55,26 +68,30 @@ type InferSchema<S extends JsonSchemaBase, Defs, Depth extends unknown[]> =
                       else: infer E extends JsonSchema;
                     }
                   ?
-                      | InferConditionalBranch<S, T, Defs, Depth>
-                      | InferConditionalBranch<S, E, Defs, Depth>
+                      | InferConditionalBranch<S, T, Defs, Depth, Root>
+                      | InferConditionalBranch<S, E, Defs, Depth, Root>
                   : S extends { if: JsonSchema; then: infer T extends JsonSchema }
-                    ? InferConditionalBranch<S, T, Defs, Depth> | InferType<S, Defs, Depth>
+                    ?
+                        | InferConditionalBranch<S, T, Defs, Depth, Root>
+                        | InferType<S, Defs, Depth, Root>
                     : // Handle if/else (no then) - if matches → base type applies, else → E
                       S extends { if: JsonSchema; else: infer E extends JsonSchema }
-                      ? InferType<S, Defs, Depth> | InferConditionalBranch<S, E, Defs, Depth>
+                      ?
+                          | InferType<S, Defs, Depth, Root>
+                          | InferConditionalBranch<S, E, Defs, Depth, Root>
                       : // Handle type
-                        InferType<S, Defs, Depth>;
+                        InferType<S, Defs, Depth, Root>;
 
 // Infer from type field
-type InferType<S extends JsonSchemaBase, Defs, Depth extends unknown[]> = S extends {
+type InferType<S extends JsonSchemaBase, Defs, Depth extends unknown[], Root> = S extends {
   type: infer T;
 }
   ? T extends readonly (infer U extends JsonSchemaType)[]
-    ? InferTypeUnion<U, S, Defs, Depth>
+    ? InferTypeUnion<U, S, Defs, Depth, Root>
     : T extends 'object'
-      ? InferObject<S, Defs, Depth>
+      ? InferObject<S, Defs, Depth, Root>
       : T extends 'array'
-        ? InferArray<S, Defs, Depth>
+        ? InferArray<S, Defs, Depth, Root>
         : T extends keyof PrimitiveTypeMap
           ? PrimitiveTypeMap[T]
           : unknown
@@ -86,10 +103,11 @@ type InferTypeUnion<
   S extends JsonSchemaBase,
   Defs,
   Depth extends unknown[],
+  Root,
 > = U extends 'object'
-  ? InferObject<S, Defs, Depth>
+  ? InferObject<S, Defs, Depth, Root>
   : U extends 'array'
-    ? InferArray<S, Defs, Depth>
+    ? InferArray<S, Defs, Depth, Root>
     : MapType<U>;
 
 // Map JSON Schema types to TS types
@@ -112,31 +130,31 @@ type MapType<T extends JsonSchemaType> = T extends 'string'
               : never;
 
 // Infer object type
-type InferObject<S extends JsonSchemaBase, Defs, Depth extends unknown[]> = S extends {
+type InferObject<S extends JsonSchemaBase, Defs, Depth extends unknown[], Root> = S extends {
   properties: infer P extends Record<string, JsonSchema>;
 }
   ? S extends { required: readonly string[] }
     ? S extends { additionalProperties: infer AP }
       ? AP extends false
-        ? BuildObject<P, S['required'], Defs, Depth>
+        ? BuildObject<P, S['required'], Defs, Depth, Root>
         : AP extends JsonSchema
-          ? BuildObject<P, S['required'], Defs, Depth> & {
-              [K in string as K extends keyof P ? never : K]: Infer<AP, Defs, Depth>;
+          ? BuildObject<P, S['required'], Defs, Depth, Root> & {
+              [K in string as K extends keyof P ? never : K]: Infer<AP, Defs, Depth, Root>;
             }
-          : BuildObject<P, S['required'], Defs, Depth>
-      : BuildObject<P, S['required'], Defs, Depth>
+          : BuildObject<P, S['required'], Defs, Depth, Root>
+      : BuildObject<P, S['required'], Defs, Depth, Root>
     : S extends { additionalProperties: infer AP }
       ? AP extends false
-        ? BuildObject<P, [], Defs, Depth>
+        ? BuildObject<P, [], Defs, Depth, Root>
         : AP extends JsonSchema
-          ? BuildObject<P, [], Defs, Depth> & {
-              [K in string as K extends keyof P ? never : K]: Infer<AP, Defs, Depth>;
+          ? BuildObject<P, [], Defs, Depth, Root> & {
+              [K in string as K extends keyof P ? never : K]: Infer<AP, Defs, Depth, Root>;
             }
-          : BuildObject<P, [], Defs, Depth>
-      : BuildObject<P, [], Defs, Depth>
+          : BuildObject<P, [], Defs, Depth, Root>
+      : BuildObject<P, [], Defs, Depth, Root>
   : // No properties - check for required without properties
     S extends { required: readonly string[] }
-    ? BuildObject<{}, S['required'], Defs, Depth>
+    ? BuildObject<{}, S['required'], Defs, Depth, Root>
     : Record<string, unknown>;
 
 // Build object with required/optional handling
@@ -146,41 +164,48 @@ type BuildObject<
   R extends readonly string[],
   Defs,
   Depth extends unknown[],
+  Root,
 > = Simplify<
   // Required properties from P
   {
-    [K in keyof P as K extends R[number] ? K : never]: Infer<P[K], Defs, Depth>;
+    [K in keyof P as K extends R[number] ? K : never]: Infer<P[K], Defs, Depth, Root>;
   } & {
     // Optional properties from P
-    [K in keyof P as K extends R[number] ? never : K]?: Infer<P[K], Defs, Depth>;
+    [K in keyof P as K extends R[number] ? never : K]?: Infer<P[K], Defs, Depth, Root>;
   } & { [K in R[number] as K extends keyof P ? never : K]: unknown } // Required properties NOT in P get type `unknown`
 >;
 
 // Infer array type
 // Supports both draft-2020-12 (prefixItems + items) and draft-07 (items array + additionalItems)
 // Note: Both items: false and unevaluatedItems: false close a tuple
-type InferArray<S extends JsonSchemaBase, Defs, Depth extends unknown[]> =
+type InferArray<S extends JsonSchemaBase, Defs, Depth extends unknown[], Root> =
   // Draft-2020-12: prefixItems + items
   S extends { prefixItems: readonly JsonSchema[] }
     ? S extends { items: false }
-      ? InferTupleFromArray<S['prefixItems'], Defs, Depth>
+      ? InferTupleFromArray<S['prefixItems'], Defs, Depth, Root>
       : S extends { unevaluatedItems: false }
-        ? InferTupleFromArray<S['prefixItems'], Defs, Depth>
+        ? InferTupleFromArray<S['prefixItems'], Defs, Depth, Root>
         : S extends { items: infer I extends JsonSchema }
-          ? [...InferTupleFromArray<S['prefixItems'], Defs, Depth>, ...Infer<I, Defs, Depth>[]]
-          : [...InferTupleFromArray<S['prefixItems'], Defs, Depth>, ...unknown[]]
+          ? [
+              ...InferTupleFromArray<S['prefixItems'], Defs, Depth, Root>,
+              ...Infer<I, Defs, Depth, Root>[],
+            ]
+          : [...InferTupleFromArray<S['prefixItems'], Defs, Depth, Root>, ...unknown[]]
     : // Draft-07: items is an array (acts like prefixItems)
       S extends { items: readonly JsonSchema[] }
       ? S extends { additionalItems: false }
-        ? InferTupleFromArray<S['items'], Defs, Depth>
+        ? InferTupleFromArray<S['items'], Defs, Depth, Root>
         : S extends { additionalItems: infer AI extends JsonSchema }
-          ? [...InferTupleFromArray<S['items'], Defs, Depth>, ...Infer<AI, Defs, Depth>[]]
-          : [...InferTupleFromArray<S['items'], Defs, Depth>, ...unknown[]]
+          ? [
+              ...InferTupleFromArray<S['items'], Defs, Depth, Root>,
+              ...Infer<AI, Defs, Depth, Root>[],
+            ]
+          : [...InferTupleFromArray<S['items'], Defs, Depth, Root>, ...unknown[]]
       : // items is a single schema (applies to all items)
         S extends { items: false }
         ? []
         : S extends { items: infer I extends JsonSchema }
-          ? Infer<I, Defs, Depth>[]
+          ? Infer<I, Defs, Depth, Root>[]
           : unknown[];
 
 // Build tuple type from prefixItems array
@@ -188,8 +213,9 @@ type InferTupleFromArray<
   T extends readonly JsonSchema[],
   Defs,
   Depth extends unknown[],
+  Root,
 > = T extends readonly [infer Head extends JsonSchema, ...infer Tail extends readonly JsonSchema[]]
-  ? [Infer<Head, Defs, Depth>, ...InferTupleFromArray<Tail, Defs, Depth>]
+  ? [Infer<Head, Defs, Depth, Root>, ...InferTupleFromArray<Tail, Defs, Depth, Root>]
   : [];
 
 // Infer a conditional branch (then/else) by merging with base schema
@@ -199,6 +225,7 @@ type InferConditionalBranch<
   Branch extends JsonSchema,
   Defs,
   Depth extends unknown[],
+  Root,
 > = Branch extends { const: infer C }
   ? // Branch has const - use it directly
     C
@@ -207,7 +234,7 @@ type InferConditionalBranch<
       E
     : Branch extends { type: JsonSchemaType | JsonSchemaType[] }
       ? // Branch has explicit type - infer it directly
-        Infer<Branch, Defs, Depth>
+        Infer<Branch, Defs, Depth, Root>
       : // Branch is partial - merge with base schema
         Branch extends { properties: infer BP extends Record<string, JsonSchema> }
         ? Base extends {
@@ -216,17 +243,17 @@ type InferConditionalBranch<
           }
           ? // Merge base properties with branch properties, branch required takes precedence
             Branch extends { required: readonly string[] }
-            ? InferMergedObject<BaseP, BP, Branch['required'], Defs, Depth>
-            : InferMergedObject<BaseP, BP, [], Defs, Depth>
+            ? InferMergedObject<BaseP, BP, Branch['required'], Defs, Depth, Root>
+            : InferMergedObject<BaseP, BP, [], Defs, Depth, Root>
           : // Base is object type but no properties - just use branch properties
             Base extends { type: 'object' }
             ? Branch extends { required: readonly string[] }
-              ? BuildObject<BP, Branch['required'], Defs, Depth>
-              : BuildObject<BP, [], Defs, Depth>
+              ? BuildObject<BP, Branch['required'], Defs, Depth, Root>
+              : BuildObject<BP, [], Defs, Depth, Root>
             : // Base is not object - try to infer branch directly
-              Infer<Branch, Defs, Depth>
+              Infer<Branch, Defs, Depth, Root>
         : // Branch has no properties - use base type
-          InferType<Base, Defs, Depth>;
+          InferType<Base, Defs, Depth, Root>;
 
 // Merge base object properties with branch properties
 type InferMergedObject<
@@ -235,20 +262,23 @@ type InferMergedObject<
   R extends readonly string[],
   Defs,
   Depth extends unknown[],
+  Root,
 > = Simplify<
   // Required properties from merged set
   {
     [K in keyof (BaseP & BranchP) as K extends R[number] ? K : never]: Infer<
       (BaseP & BranchP)[K],
       Defs,
-      Depth
+      Depth,
+      Root
     >;
   } & {
     // Optional properties from merged set
     [K in keyof (BaseP & BranchP) as K extends R[number] ? never : K]?: Infer<
       (BaseP & BranchP)[K],
       Defs,
-      Depth
+      Depth,
+      Root
     >;
   } & { [K in R[number] as K extends keyof (BaseP & BranchP) ? never : K]: unknown } // Required properties NOT in merged set get type `unknown`
 >;
@@ -258,40 +288,41 @@ type InferAllOf<
   T extends readonly JsonSchema[],
   Defs,
   Depth extends unknown[],
+  Root,
 > = T extends readonly [infer Head extends JsonSchema]
-  ? Infer<Head, Defs, Depth>
+  ? Infer<Head, Defs, Depth, Root>
   : T extends readonly [infer Head extends JsonSchema, ...infer Tail extends readonly JsonSchema[]]
-    ? Infer<Head, Defs, Depth> & InferAllOf<Tail, Defs, Depth>
+    ? Infer<Head, Defs, Depth, Root> & InferAllOf<Tail, Defs, Depth, Root>
     : unknown;
 
 // Handle allOf with base schema - include base type in intersection
-type InferAllOfWithBase<S extends JsonSchemaBase, Defs, Depth extends unknown[]> = S extends {
+type InferAllOfWithBase<S extends JsonSchemaBase, Defs, Depth extends unknown[], Root> = S extends {
   allOf: readonly JsonSchema[];
 }
   ? S extends { type: JsonSchemaType | JsonSchemaType[] }
-    ? InferType<S, Defs, Depth> & InferAllOf<S['allOf'], Defs, Depth>
-    : InferAllOf<S['allOf'], Defs, Depth>
+    ? InferType<S, Defs, Depth, Root> & InferAllOf<S['allOf'], Defs, Depth, Root>
+    : InferAllOf<S['allOf'], Defs, Depth, Root>
   : unknown;
 
 // Handle anyOf - if base has type, constrain the result
-type InferAnyOf<S extends JsonSchemaBase, Defs, Depth extends unknown[]> = S extends {
+type InferAnyOf<S extends JsonSchemaBase, Defs, Depth extends unknown[], Root> = S extends {
   anyOf: readonly (infer U extends JsonSchema)[];
 }
   ? S extends { type: JsonSchemaType | JsonSchemaType[] }
     ? // Base has a type - the anyOf branches must also satisfy it
       // If branch has type, use it; otherwise inherit from base
-      InferAnyOfBranches<S['anyOf'], S, Defs, Depth>
+      InferAnyOfBranches<S['anyOf'], S, Defs, Depth, Root>
     : // No base type - just union the branches
-      Infer<U, Defs, Depth>
+      Infer<U, Defs, Depth, Root>
   : unknown;
 
 // Handle oneOf - same logic as anyOf for types
-type InferOneOf<S extends JsonSchemaBase, Defs, Depth extends unknown[]> = S extends {
+type InferOneOf<S extends JsonSchemaBase, Defs, Depth extends unknown[], Root> = S extends {
   oneOf: readonly (infer U extends JsonSchema)[];
 }
   ? S extends { type: JsonSchemaType | JsonSchemaType[] }
-    ? InferAnyOfBranches<S['oneOf'], S, Defs, Depth>
-    : Infer<U, Defs, Depth>
+    ? InferAnyOfBranches<S['oneOf'], S, Defs, Depth, Root>
+    : Infer<U, Defs, Depth, Root>
   : unknown;
 
 // Infer anyOf/oneOf branches, inheriting base type when branch has no type
@@ -300,10 +331,11 @@ type InferAnyOfBranches<
   Base extends JsonSchemaBase,
   Defs,
   Depth extends unknown[],
+  Root,
 > = Branches extends readonly (infer B extends JsonSchema)[]
   ? B extends { type: JsonSchemaType | JsonSchemaType[] }
     ? // Branch has its own type - use it directly
-      Infer<B, Defs, Depth>
+      Infer<B, Defs, Depth, Root>
     : B extends { const: infer C }
       ? // Branch has const - use it directly
         C
@@ -311,17 +343,27 @@ type InferAnyOfBranches<
         ? // Branch has enum - use it directly
           E
         : // Branch has no type/const/enum - inherit from base
-          InferType<Base, Defs, Depth>
+          InferType<Base, Defs, Depth, Root>
   : unknown;
 
 // Handle $ref resolution with depth tracking to prevent infinite recursion
-type InferRef<R extends string, Defs, Depth extends unknown[]> = R extends `#/$defs/${infer Name}`
-  ? Name extends keyof Defs
-    ? Defs[Name] extends JsonSchema
-      ? Infer<Defs[Name], Defs, [...Depth, unknown]> // Increment depth on $ref
+// '#' resolves to the root schema (passed through as Root parameter)
+// '#/$defs/Name' and '#/definitions/Name' resolve from the Defs map
+type InferRef<R extends string, Defs, Depth extends unknown[], Root> = R extends '#'
+  ? Infer<Root, Defs, [...Depth, unknown], Root> // Root reference - recurse with depth increment
+  : R extends `#/$defs/${infer Name}`
+    ? Name extends keyof Defs
+      ? Defs[Name] extends JsonSchema
+        ? Infer<Defs[Name], Defs, [...Depth, unknown], Root> // Increment depth on $ref
+        : unknown
       : unknown
-    : unknown
-  : unknown;
+    : R extends `#/definitions/${infer Name}`
+      ? Name extends keyof Defs
+        ? Defs[Name] extends JsonSchema
+          ? Infer<Defs[Name], Defs, [...Depth, unknown], Root>
+          : unknown
+        : unknown
+      : unknown;
 
 // Handle not (exclude from JsonValue)
 // Supports both single types and type arrays
