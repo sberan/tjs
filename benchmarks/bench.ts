@@ -134,7 +134,7 @@ function formatNumber(n: number): string {
 function main() {
   const args = process.argv.slice(2);
   const jsonOutput = args.includes('--json');
-  const iterations = 1000;
+  const iterations = 100000;
 
   // Load test files
   const files = loadTestFiles({ includeOptional: false });
