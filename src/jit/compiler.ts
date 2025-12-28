@@ -294,253 +294,50 @@ function createDeepEqual(): (a: unknown, b: unknown) => boolean {
   };
 }
 
+// Precompiled regex patterns for format validators
+const FORMAT_REGEX = {
+  email:
+    /^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i,
+  uuid: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+  time: /^(?:[0-2]\d:[0-5]\d:[0-5]\d|23:59:60)(?:\.\d+)?(?:z|[+-]\d\d:\d\d)$/i,
+  duration:
+    /^P(?!$)(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)W)?(?:(\d+)D)?(?:T(?=\d)(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$/,
+  hostname:
+    /^(?=.{1,253}\.?$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*\.?$/i,
+  ipv4: /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/,
+  ipv6: /^((([0-9a-f]{1,4}:){7}([0-9a-f]{1,4}|:))|(([0-9a-f]{1,4}:){6}(:[0-9a-f]{1,4}|((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})|:))|(([0-9a-f]{1,4}:){5}(((:[0-9a-f]{1,4}){1,2})|:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})|:))|(([0-9a-f]{1,4}:){4}(((:[0-9a-f]{1,4}){1,3})|((:[0-9a-f]{1,4})?:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9a-f]{1,4}:){3}(((:[0-9a-f]{1,4}){1,4})|((:[0-9a-f]{1,4}){0,2}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9a-f]{1,4}:){2}(((:[0-9a-f]{1,4}){1,5})|((:[0-9a-f]{1,4}){0,3}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(([0-9a-f]{1,4}:){1}(((:[0-9a-f]{1,4}){1,6})|((:[0-9a-f]{1,4}){0,4}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:))|(:(((:[0-9a-f]{1,4}){1,7})|((:[0-9a-f]{1,4}){0,5}:((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}))|:)))$/i,
+  date: /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$/,
+  dateTime:
+    /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])[tT](?:[01]\d|2[0-3]):[0-5]\d:(?:[0-5]\d|60)(?:\.\d+)?(?:z|[zZ]|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/i,
+  uriScheme: /^[a-z][a-z0-9+.-]*:/i,
+  controlChars: /[\s\x00-\x1f]/,
+  jsonPointer: /^(?:\/(?:[^~/]|~0|~1)*)*$/,
+  relJsonPointer: /^(?:0|[1-9]\d*)(?:#|(?:\/(?:[^~/]|~0|~1)*)*)$/,
+};
+
 /**
  * Create format validators for format keyword.
- * Optimized implementations using charCodeAt for hot paths.
+ * Uses precompiled regex patterns for performance.
  */
 function createFormatValidators(): Record<string, (s: string) => boolean> {
-  // Helper to get digit value (0-9) or -1 if not a digit
-  const digit = (s: string, i: number): number => {
-    const c = s.charCodeAt(i) - 48;
-    return c >= 0 && c <= 9 ? c : -1;
-  };
-
-  // Helper to check if char is hex digit
-  const isHex = (c: number): boolean =>
-    (c >= 48 && c <= 57) || (c >= 65 && c <= 70) || (c >= 97 && c <= 102);
-
-  // Optimized IPv4 validator
-  const isValidIPv4 = (s: string): boolean => {
-    const len = s.length;
-    if (len < 7 || len > 15) return false;
-
-    let octet = 0;
-    let digits = 0;
-    let octets = 0;
-
-    for (let i = 0; i <= len; i++) {
-      const c = i < len ? s.charCodeAt(i) : 46; // treat end as dot
-
-      if (c === 46) {
-        // .
-        if (digits === 0 || octet > 255) return false;
-        octets++;
-        octet = 0;
-        digits = 0;
-      } else if (c >= 48 && c <= 57) {
-        // 0-9
-        if (digits === 0 && c === 48 && i + 1 < len && s.charCodeAt(i + 1) !== 46) {
-          return false; // leading zero
-        }
-        octet = octet * 10 + (c - 48);
-        digits++;
-        if (digits > 3) return false;
-      } else {
-        return false;
-      }
-    }
-
-    return octets === 4;
-  };
-
-  // Optimized IPv6 validator
-  const isValidIPv6 = (s: string): boolean => {
-    const len = s.length;
-    if (len < 2 || len > 45) return false;
-
-    // Check for IPv4 suffix (IPv4-mapped IPv6)
-    let ipv4Start = -1;
-    for (let i = len - 1; i >= 0; i--) {
-      const c = s.charCodeAt(i);
-      if (c === 46) {
-        // Found dot - look for IPv4
-        for (let j = i - 1; j >= 0; j--) {
-          if (s.charCodeAt(j) === 58) {
-            ipv4Start = j + 1;
-            break;
-          }
-        }
-        break;
-      }
-      if (c === 58) break; // : means no IPv4
-    }
-
-    let checkStr = s;
-    if (ipv4Start !== -1) {
-      if (!isValidIPv4(s.slice(ipv4Start))) return false;
-      checkStr = s.slice(0, ipv4Start) + '0:0';
-    }
-
-    // Validate hex groups
-    const isHexGroup = (g: string): boolean => {
-      const gLen = g.length;
-      if (gLen === 0 || gLen > 4) return false;
-      for (let i = 0; i < gLen; i++) {
-        if (!isHex(g.charCodeAt(i))) return false;
-      }
-      return true;
-    };
-
-    const parts = checkStr.split('::');
-    if (parts.length > 2) return false;
-
-    if (parts.length === 2) {
-      const left = parts[0] ? parts[0].split(':') : [];
-      const right = parts[1] ? parts[1].split(':') : [];
-      if (left.length + right.length > 7) return false;
-      return (
-        left.every((g) => g === '' || isHexGroup(g)) &&
-        right.every((g) => g === '' || isHexGroup(g))
-      );
-    }
-
-    const groups = checkStr.split(':');
-    return groups.length === 8 && groups.every(isHexGroup);
-  };
-
-  // Optimized date validator (YYYY-MM-DD)
-  const isValidDate = (s: string): boolean => {
-    if (s.length !== 10) return false;
-    if (s.charCodeAt(4) !== 45 || s.charCodeAt(7) !== 45) return false; // -
-
-    // Year digits
-    if (digit(s, 0) < 0 || digit(s, 1) < 0 || digit(s, 2) < 0 || digit(s, 3) < 0) return false;
-
-    // Month 01-12
-    const m1 = digit(s, 5),
-      m2 = digit(s, 6);
-    if (m1 < 0 || m2 < 0) return false;
-    const m = m1 * 10 + m2;
-    if (m < 1 || m > 12) return false;
-
-    // Day 01-31
-    const d1 = digit(s, 8),
-      d2 = digit(s, 9);
-    if (d1 < 0 || d2 < 0) return false;
-    const d = d1 * 10 + d2;
-    return d >= 1 && d <= 31;
-  };
-
-  // Optimized date-time validator (RFC 3339)
-  const isValidDateTime = (s: string): boolean => {
-    const len = s.length;
-    if (len < 20) return false;
-
-    // Check separators: YYYY-MM-DDTHH:MM:SS
-    if (s.charCodeAt(4) !== 45 || s.charCodeAt(7) !== 45) return false; // -
-    if (s.charCodeAt(13) !== 58 || s.charCodeAt(16) !== 58) return false; // :
-    const t = s.charCodeAt(10);
-    if (t !== 84 && t !== 116) return false; // T or t
-
-    // Year digits
-    if (digit(s, 0) < 0 || digit(s, 1) < 0 || digit(s, 2) < 0 || digit(s, 3) < 0) return false;
-
-    // Month 01-12
-    const m1 = digit(s, 5),
-      m2 = digit(s, 6);
-    if (m1 < 0 || m2 < 0) return false;
-    const m = m1 * 10 + m2;
-    if (m < 1 || m > 12) return false;
-
-    // Day 01-31
-    const d1 = digit(s, 8),
-      d2 = digit(s, 9);
-    if (d1 < 0 || d2 < 0) return false;
-    const day = d1 * 10 + d2;
-    if (day < 1 || day > 31) return false;
-
-    // Hour 00-23
-    const h1 = digit(s, 11),
-      h2 = digit(s, 12);
-    if (h1 < 0 || h2 < 0 || h1 > 2 || (h1 === 2 && h2 > 3)) return false;
-
-    // Minute 00-59
-    const min1 = digit(s, 14),
-      min2 = digit(s, 15);
-    if (min1 < 0 || min2 < 0 || min1 > 5) return false;
-
-    // Second 00-60 (60 for leap second)
-    const s1 = digit(s, 17),
-      s2 = digit(s, 18);
-    if (s1 < 0 || s2 < 0 || s1 > 6 || (s1 === 6 && s2 > 0)) return false;
-
-    // Fractional seconds (optional)
-    let i = 19;
-    if (i < len && s.charCodeAt(i) === 46) {
-      // .
-      i++;
-      if (i >= len || digit(s, i) < 0) return false; // need at least one digit
-      i++;
-      while (i < len && digit(s, i) >= 0) i++;
-    }
-
-    if (i >= len) return false;
-
-    // Timezone
-    const tz = s.charCodeAt(i);
-    if (tz === 90 || tz === 122) return i === len - 1; // Z or z
-
-    if (tz !== 43 && tz !== 45) return false; // + or -
-
-    // +/-HH:MM
-    if (len - i !== 6 || s.charCodeAt(i + 3) !== 58) return false;
-    const tzh1 = digit(s, i + 1),
-      tzh2 = digit(s, i + 2);
-    const tzm1 = digit(s, i + 4),
-      tzm2 = digit(s, i + 5);
-    if (tzh1 < 0 || tzh2 < 0 || tzm1 < 0 || tzm2 < 0) return false;
-    if (tzh1 > 2 || (tzh1 === 2 && tzh2 > 3) || tzm1 > 5) return false;
-
-    return true;
-  };
-
   return {
-    // Email: RFC 5321/5322 simplified - no dots at start/end, no consecutive dots
-    email: (s) => {
-      const atIdx = s.lastIndexOf('@');
-      if (atIdx < 1 || atIdx === s.length - 1) return false;
-      const local = s.slice(0, atIdx);
-      const domain = s.slice(atIdx + 1);
-      // Local part: no leading/trailing dots, no consecutive dots
-      if (local.startsWith('.') || local.endsWith('.') || /\.\./.test(local)) return false;
-      // Basic validation - non-empty parts, domain has at least one dot
-      return /^[^\s@]+$/.test(local) && /^[^\s@]+\.[^\s@]+$/.test(domain);
-    },
-    uuid: (s) =>
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s),
-    'date-time': isValidDateTime,
-    // URI: RFC 3986 - scheme followed by ":" and scheme-specific part
-    uri: (s) => {
-      // Must start with scheme (letter followed by letters, digits, +, -, .)
-      if (!/^[a-z][a-z0-9+.-]*:/i.test(s)) return false;
-      // Must not contain spaces or control chars
-      if (/[\s\x00-\x1f]/.test(s)) return false;
-      return true;
-    },
-    ipv4: isValidIPv4,
-    ipv6: isValidIPv6,
-    date: isValidDate,
-    time: (s) => /^\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})?$/i.test(s),
-    duration: (s) =>
-      /^P(\d+Y)?(\d+M)?(\d+W)?(\d+D)?(T(\d+H)?(\d+M)?(\d+(\.\d+)?S)?)?$/.test(s) &&
-      s !== 'P' &&
-      s !== 'PT',
-    hostname: (s) =>
-      /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/i.test(s),
-    'uri-reference': (s) => {
-      // Empty string is valid (same-document reference)
-      if (s === '') return true;
-      // Must not contain spaces or certain control chars
-      if (/[\s\x00-\x1f]/.test(s)) return false;
-      // Fragment-only is valid
-      if (s.startsWith('#')) return true;
-      // If has scheme, validate as URI
-      if (/^[a-z][a-z0-9+.-]*:/i.test(s)) return true;
-      // Relative reference - basic validation
-      return true;
-    },
-    'json-pointer': (s) => s === '' || /^(\/([^~/]|~0|~1)*)*$/.test(s),
-    'relative-json-pointer': (s) => /^\d+(#|(\/([^~/]|~0|~1)*)*)?$/.test(s),
+    email: (s) => FORMAT_REGEX.email.test(s),
+    uuid: (s) => FORMAT_REGEX.uuid.test(s),
+    'date-time': (s) => FORMAT_REGEX.dateTime.test(s),
+    uri: (s) => FORMAT_REGEX.uriScheme.test(s) && !FORMAT_REGEX.controlChars.test(s),
+    ipv4: (s) => FORMAT_REGEX.ipv4.test(s),
+    ipv6: (s) => FORMAT_REGEX.ipv6.test(s),
+    date: (s) => FORMAT_REGEX.date.test(s),
+    time: (s) => FORMAT_REGEX.time.test(s),
+    duration: (s) => FORMAT_REGEX.duration.test(s),
+    hostname: (s) => FORMAT_REGEX.hostname.test(s),
+    'uri-reference': (s) =>
+      s === '' ||
+      s[0] === '#' ||
+      FORMAT_REGEX.uriScheme.test(s) ||
+      !FORMAT_REGEX.controlChars.test(s),
+    'json-pointer': (s) => s === '' || FORMAT_REGEX.jsonPointer.test(s),
+    'relative-json-pointer': (s) => FORMAT_REGEX.relJsonPointer.test(s),
     regex: (s) => {
       try {
         new RegExp(s);
