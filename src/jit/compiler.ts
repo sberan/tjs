@@ -1425,7 +1425,12 @@ export function generateCompositionChecks(
  * Returns a code expression that evaluates to true if the subschema matches
  */
 function generateSubschemaCheck(schema: JsonSchema, dataVar: string, ctx: CompileContext): string {
+  // Handle no-op schemas (true, {}) - always pass
   if (schema === true) return 'true';
+  if (typeof schema === 'object' && schema !== null && Object.keys(schema).length === 0) {
+    return 'true';
+  }
+  // Handle always-fail schema
   if (schema === false) return 'false';
 
   // Compile the subschema as a separate function to handle all keywords including composition
