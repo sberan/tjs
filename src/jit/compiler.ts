@@ -1452,12 +1452,12 @@ export function generateNumberChecks(
     }
 
     if (schema.multipleOf !== undefined) {
-      // Handle floating point precision issues and potential infinity overflow
       const multipleOf = schema.multipleOf;
       const divVar = code.genVar('div');
       code.line(`const ${divVar} = ${dataVar} / ${multipleOf};`);
-      // Check for non-integer result
-      // If division overflows to infinity, use modulo as fallback (optional overflow handling)
+      // Handle floating point precision - check if division result is close to an integer
+      // If division overflows to infinity, use modulo as fallback
+      // Use 1e-10 tolerance for floating-point comparison
       code.if(
         `Number.isFinite(${divVar}) ? Math.abs(${divVar} - Math.round(${divVar})) > 1e-10 : Math.abs(${dataVar} % ${multipleOf}) > 1e-10`,
         () => {
