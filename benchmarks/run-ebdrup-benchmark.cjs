@@ -16,12 +16,13 @@ const BENCHMARK_DIR = path.join(__dirname, '..', 'json-schema-benchmark');
 const VALIDATORS_FILE = path.join(BENCHMARK_DIR, 'validators.js');
 
 // Our validator adapter code to inject
+// Uses the refs object already built by the benchmark
 const OUR_VALIDATOR = `
     {
       name: "json-schema-ts",
       setup: function(schema) {
         const { compile } = require('../dist/jit/compiler.js');
-        return compile(schema);
+        return compile(schema, { remotes: refs });
       },
       test: function(instance, json, schema) {
         return instance(json);

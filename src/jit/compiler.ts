@@ -113,32 +113,45 @@ export function compile(schema: JsonSchema, options: JITOptions = {}): ValidateF
   const mainFuncName = ctx.genFuncName();
   ctx.registerCompiled(schema, mainFuncName);
 
-  // Collect dynamic anchors from the root resource to add to scope at startup
-  const rootResourceId =
-    typeof schema === 'object' && schema !== null && schema.$id ? schema.$id : '__root__';
-  const rootDynamicAnchors = ctx.getResourceDynamicAnchors(rootResourceId);
+  // In legacy mode (draft-07 and earlier), skip dynamic scope entirely for better performance
+  const useDynamicScope = !ctx.options.legacyRef;
+  const dynamicScopeVar = useDynamicScope ? 'dynamicScope' : '';
 
-  // Queue root resource's dynamic anchors for compilation FIRST
-  // This ensures they get compiled before we process the queue
+  // Collect dynamic anchors from the root resource to add to scope at startup
   const anchorFuncNames: Array<{ anchor: string; funcName: string }> = [];
-  for (const { anchor, schema: anchorSchema } of rootDynamicAnchors) {
-    const funcName = ctx.getCompiledName(anchorSchema) ?? ctx.queueCompile(anchorSchema);
-    anchorFuncNames.push({ anchor, funcName });
+  if (useDynamicScope) {
+    const rootResourceId =
+      typeof schema === 'object' && schema !== null && schema.$id ? schema.$id : '__root__';
+    const rootDynamicAnchors = ctx.getResourceDynamicAnchors(rootResourceId);
+
+    // Queue root resource's dynamic anchors for compilation FIRST
+    // This ensures they get compiled before we process the queue
+    for (const { anchor, schema: anchorSchema } of rootDynamicAnchors) {
+      const funcName = ctx.getCompiledName(anchorSchema) ?? ctx.queueCompile(anchorSchema);
+      anchorFuncNames.push({ anchor, funcName });
+    }
   }
 
   // Generate code for main schema
-  // Pass dynamicScope for $dynamicRef resolution
-  generateSchemaValidator(code, schema, 'data', "''", ctx, 'dynamicScope');
+  generateSchemaValidator(code, schema, 'data', "''", ctx, dynamicScopeVar);
 
   // Process any queued schemas (from $ref)
   let queued: { schema: JsonSchema; funcName: string } | undefined;
   while ((queued = ctx.nextToCompile())) {
     const q = queued; // Capture for closure
     code.blank();
-    code.block(`function ${q.funcName}(data, errors, path, dynamicScope)`, () => {
-      generateSchemaValidator(code, q.schema, 'data', 'path', ctx, 'dynamicScope');
-      code.line('return true;');
-    });
+    if (useDynamicScope) {
+      code.block(`function ${q.funcName}(data, errors, path, dynamicScope)`, () => {
+        generateSchemaValidator(code, q.schema, 'data', 'path', ctx, 'dynamicScope');
+        code.line('return true;');
+      });
+    } else {
+      // In legacy mode, skip dynamicScope parameter for faster function calls
+      code.block(`function ${q.funcName}(data, errors, path)`, () => {
+        generateSchemaValidator(code, q.schema, 'data', 'path', ctx, '');
+        code.line('return true;');
+      });
+    }
   }
 
   // Build the final function
@@ -146,10 +159,13 @@ export function compile(schema: JsonSchema, options: JITOptions = {}): ValidateF
   const runtimeNames = Array.from(runtimeFuncs.keys());
   const runtimeValues = Array.from(runtimeFuncs.values());
 
-  // Push root resource's dynamic anchors to scope at startup
-  let scopeInit = 'const dynamicScope = [];\n';
-  for (const { anchor, funcName } of anchorFuncNames) {
-    scopeInit += `dynamicScope.push({ anchor: ${stringify(anchor)}, validate: ${funcName} });\n`;
+  // Push root resource's dynamic anchors to scope at startup (only in modern mode)
+  let scopeInit = '';
+  if (useDynamicScope) {
+    scopeInit = 'const dynamicScope = [];\n';
+    for (const { anchor, funcName } of anchorFuncNames) {
+      scopeInit += `dynamicScope.push({ anchor: ${stringify(anchor)}, validate: ${funcName} });\n`;
+    }
   }
 
   const fullCode = `
@@ -180,8 +196,10 @@ function generateSchemaValidator(
   dataVar: string,
   pathExpr: string,
   ctx: CompileContext,
-  dynamicScopeVar: string = 'dynamicScope'
+  dynamicScopeVar?: string
 ): void {
+  // In legacy mode, never use dynamic scope
+  const scopeVar = ctx.options.legacyRef ? '' : (dynamicScopeVar ?? 'dynamicScope');
   // Boolean schemas
   if (schema === true) {
     // Always valid - no code needed
@@ -198,23 +216,27 @@ function generateSchemaValidator(
 
   // Check if this schema is a new schema resource (has $id)
   // If so, we need to push its dynamic anchors to scope
-  const schemaResourceId = schema.$id ? ctx.getBaseUri(schema) : undefined;
-  const resourceAnchors = schemaResourceId ? ctx.getResourceDynamicAnchors(schemaResourceId) : [];
+  // Skip this in legacy mode ($dynamicAnchor is a draft-2020-12 feature)
+  let resourceAnchors: Array<{ anchor: string; schema: JsonSchema }> = [];
+  if (scopeVar && schema.$id) {
+    const schemaResourceId = ctx.getBaseUri(schema);
+    resourceAnchors = schemaResourceId ? ctx.getResourceDynamicAnchors(schemaResourceId) : [];
 
-  if (resourceAnchors.length > 0) {
-    // Push dynamic anchors for this resource
-    for (const { anchor, schema: anchorSchema } of resourceAnchors) {
-      const anchorFuncName = ctx.getCompiledName(anchorSchema) ?? ctx.queueCompile(anchorSchema);
-      code.line(
-        `${dynamicScopeVar}.push({ anchor: ${stringify(anchor)}, validate: ${anchorFuncName} });`
-      );
+    if (resourceAnchors.length > 0) {
+      // Push dynamic anchors for this resource
+      for (const { anchor, schema: anchorSchema } of resourceAnchors) {
+        const anchorFuncName = ctx.getCompiledName(anchorSchema) ?? ctx.queueCompile(anchorSchema);
+        code.line(
+          `${scopeVar}.push({ anchor: ${stringify(anchor)}, validate: ${anchorFuncName} });`
+        );
+      }
     }
   }
 
   // In legacy mode (draft-07 and earlier), $ref overrides all sibling keywords
   // Only generate $ref check and skip everything else
   if (schema.$ref && ctx.options.legacyRef) {
-    generateRefCheck(code, schema, dataVar, pathExpr, ctx, dynamicScopeVar);
+    generateRefCheck(code, schema, dataVar, pathExpr, ctx, scopeVar);
   } else {
     // Generate JIT code for each keyword (draft-2020-12 behavior)
     generateTypeCheck(code, schema, dataVar, pathExpr, ctx);
@@ -228,8 +250,8 @@ function generateSchemaValidator(
     generatePropertiesChecks(code, schema, dataVar, pathExpr, ctx);
     generateItemsChecks(code, schema, dataVar, pathExpr, ctx);
     generateCompositionChecks(code, schema, dataVar, pathExpr, ctx);
-    generateRefCheck(code, schema, dataVar, pathExpr, ctx, dynamicScopeVar);
-    generateDynamicRefCheck(code, schema, dataVar, pathExpr, ctx, dynamicScopeVar);
+    generateRefCheck(code, schema, dataVar, pathExpr, ctx, scopeVar);
+    generateDynamicRefCheck(code, schema, dataVar, pathExpr, ctx, scopeVar);
     generateContainsCheck(code, schema, dataVar, pathExpr, ctx);
     generateDependentRequiredCheck(code, schema, dataVar, pathExpr, ctx);
     generatePropertyNamesCheck(code, schema, dataVar, pathExpr, ctx);
@@ -242,7 +264,7 @@ function generateSchemaValidator(
   // Pop dynamic anchors after validation (if we pushed any)
   if (resourceAnchors.length > 0) {
     for (let i = 0; i < resourceAnchors.length; i++) {
-      code.line(`${dynamicScopeVar}.pop();`);
+      code.line(`${scopeVar}.pop();`);
     }
   }
 }
@@ -1214,6 +1236,14 @@ export function generateRefCheck(
   // Get the function name (queue for compilation if needed)
   const funcName = ctx.getCompiledName(refSchema) ?? ctx.queueCompile(refSchema);
 
+  // In legacy mode, dynamicScopeVar is empty - simpler function call
+  if (!dynamicScopeVar) {
+    code.if(`!${funcName}(${dataVar}, errors, ${pathExpr})`, () => {
+      code.line('return false;');
+    });
+    return;
+  }
+
   // Check if the $ref is entering a new schema resource
   // This happens when the $ref has a URI part (not just a fragment)
   // E.g., "second#/$defs/stuff" enters the "second" resource
@@ -1356,18 +1386,17 @@ export function generateCompositionChecks(
  * Generate a call to validate against a subschema for anyOf/oneOf/not
  * Returns a code expression that evaluates to true if the subschema matches
  */
-function generateSubschemaCheck(
-  schema: JsonSchema,
-  dataVar: string,
-  ctx: CompileContext,
-  dynamicScopeVar: string = 'dynamicScope'
-): string {
+function generateSubschemaCheck(schema: JsonSchema, dataVar: string, ctx: CompileContext): string {
   if (schema === true) return 'true';
   if (schema === false) return 'false';
 
   // Compile the subschema as a separate function to handle all keywords including composition
   const funcName = ctx.queueCompile(schema);
-  return `${funcName}(${dataVar}, null, '', ${dynamicScopeVar})`;
+  // In legacy mode (draft-07 and earlier), don't pass dynamicScope for faster calls
+  if (ctx.options.legacyRef) {
+    return `${funcName}(${dataVar}, null, '')`;
+  }
+  return `${funcName}(${dataVar}, null, '', dynamicScope)`;
 }
 
 /**
