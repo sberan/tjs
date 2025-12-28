@@ -1,4 +1,47 @@
-import { schema } from 'json-schema-ts';
+import { schema, struct } from 'json-schema-ts';
+
+// =============================================================================
+// Struct Helper
+// =============================================================================
+
+// Basic struct with all required
+const Person = struct({
+  firstName: 'string',
+  lastName: 'string',
+  age: 'number',
+});
+Person.type; // $ExpectType { firstName: string; lastName: string; age: number; }
+
+// Struct with optional fields
+const PersonOptional = struct({
+  firstName: 'string',
+  lastName: 'string',
+  age: 'number',
+  middleName: 'string',
+}).optional('middleName', 'age');
+PersonOptional.type; // $ExpectType { firstName: string; lastName: string; age?: number; middleName?: string; }
+
+// Struct with full schema definitions
+const User = struct({
+  id: 'number',
+  email: { type: 'string', format: 'email' },
+  tags: { type: 'array', items: { type: 'string' } },
+}).optional('tags');
+User.type; // $ExpectType { id: number; email: string; tags?: string[]; }
+
+// Struct with nested objects
+const Company = struct({
+  name: 'string',
+  address: {
+    type: 'object',
+    properties: {
+      street: { type: 'string' },
+      city: { type: 'string' },
+    },
+    required: ['street', 'city'],
+  },
+});
+Company.type; // $ExpectType { name: string; address: { [x: string]: unknown; street: string; city: string; }; }
 
 // =============================================================================
 // Basic Object Types

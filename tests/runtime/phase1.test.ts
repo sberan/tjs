@@ -1,5 +1,61 @@
 import { describe, it, expect } from 'vitest';
-import { schema } from '../../src/index.js';
+import { schema, struct } from '../../src/index.js';
+
+describe('struct helper', () => {
+  it('validates struct with all required fields', () => {
+    const Person = struct({
+      firstName: 'string',
+      lastName: 'string',
+      age: 'number',
+    });
+
+    expect(Person.validate({ firstName: 'John', lastName: 'Doe', age: 30 })).toBe(true);
+    expect(Person.validate({ firstName: 'John', lastName: 'Doe' })).toBe(false); // missing age
+    expect(Person.validate({ firstName: 'John', age: 30 })).toBe(false); // missing lastName
+    expect(Person.validate({})).toBe(false);
+  });
+
+  it('validates struct with optional fields', () => {
+    const Person = struct({
+      firstName: 'string',
+      middleName: 'string',
+      lastName: 'string',
+      age: 'number',
+    }).optional('middleName', 'age');
+
+    expect(Person.validate({ firstName: 'John', lastName: 'Doe' })).toBe(true);
+    expect(Person.validate({ firstName: 'John', middleName: 'M', lastName: 'Doe' })).toBe(true);
+    expect(Person.validate({ firstName: 'John', lastName: 'Doe', age: 30 })).toBe(true);
+    expect(Person.validate({ firstName: 'John', middleName: 'M', lastName: 'Doe', age: 30 })).toBe(
+      true
+    );
+    expect(Person.validate({ firstName: 'John' })).toBe(false); // missing required lastName
+  });
+
+  it('validates struct with full schema definitions', () => {
+    const User = struct({
+      id: 'number',
+      tags: { type: 'array', items: { type: 'string' } },
+    });
+
+    expect(User.validate({ id: 1, tags: ['a', 'b'] })).toBe(true);
+    expect(User.validate({ id: 1, tags: [] })).toBe(true);
+    expect(User.validate({ id: 1, tags: [1, 2] })).toBe(false); // wrong item type
+    expect(User.validate({ id: 1 })).toBe(false); // missing tags
+  });
+
+  it('validates types correctly', () => {
+    const S = struct({
+      str: 'string',
+      num: 'number',
+      bool: 'boolean',
+    });
+
+    expect(S.validate({ str: 'hello', num: 42, bool: true })).toBe(true);
+    expect(S.validate({ str: 123, num: 42, bool: true })).toBe(false); // wrong str type
+    expect(S.validate({ str: 'hello', num: '42', bool: true })).toBe(false); // wrong num type
+  });
+});
 
 describe('shorthand type syntax', () => {
   it('validates string shorthand', () => {
