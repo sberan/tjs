@@ -43,3 +43,6 @@ export { createValidator as Validator } from './jit/index.js';
 
 // Export async utilities
 export { createValidatorAsync as ValidatorAsync, loadRemoteSchemas } from './jit/index.js';
+
+// Export bundled meta-schemas
+export { metaSchemas, draft04Schema, draft06Schema, draft07Schema } from './meta-schemas/index.js';

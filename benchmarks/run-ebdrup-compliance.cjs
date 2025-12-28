@@ -13,9 +13,34 @@ const BENCHMARK_DIR = path.join(__dirname, '..', 'json-schema-benchmark');
 const TEST_SUITE_DIR = path.join(BENCHMARK_DIR, 'JSON-Schema-Test-Suite', 'tests');
 const REMOTES_DIR = path.join(BENCHMARK_DIR, 'JSON-Schema-Test-Suite', 'remotes');
 
+// Load meta-schemas
+function loadMetaSchemas() {
+  const metaSchemas = {};
+  const metaDir = path.join(__dirname, '..', 'src', 'meta-schemas');
+
+  const files = [
+    { file: 'draft-07.json', urls: ['http://json-schema.org/draft-07/schema', 'http://json-schema.org/draft-07/schema#'] },
+    { file: 'draft-06.json', urls: ['http://json-schema.org/draft-06/schema', 'http://json-schema.org/draft-06/schema#'] },
+    { file: 'draft-04.json', urls: ['http://json-schema.org/draft-04/schema', 'http://json-schema.org/draft-04/schema#'] },
+  ];
+
+  for (const { file, urls } of files) {
+    try {
+      const schema = JSON.parse(fs.readFileSync(path.join(metaDir, file), 'utf8'));
+      for (const url of urls) {
+        metaSchemas[url] = schema;
+      }
+    } catch {
+      // Meta-schema not found
+    }
+  }
+
+  return metaSchemas;
+}
+
 // Load remote schemas from the test suite
 function loadRemoteSchemas() {
-  const remotes = {};
+  const remotes = loadMetaSchemas();
 
   function loadDir(dir, baseUrl) {
     if (!fs.existsSync(dir)) return;
