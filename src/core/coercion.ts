@@ -209,6 +209,15 @@ export function coerceValue(
     return { value, coerced: false };
   }
 
+  // Handle string shorthand (e.g., 'string' instead of { type: 'string' })
+  if (typeof schema === 'string') {
+    if (!isCoercionEnabled(options, schema)) {
+      return { value, coerced: false };
+    }
+    const result = coerceToType(value, schema);
+    return result;
+  }
+
   // Handle $ref - we can't resolve refs here, so skip coercion for refs
   if (schema.$ref) {
     return { value, coerced: false };
@@ -269,7 +278,7 @@ export function coerceValue(
   }
 
   // Handle enum coercion - try to match any enum value
-  if (schema.enum && !schema.enum.includes(currentValue)) {
+  if (schema.enum && !schema.enum.includes(currentValue as never)) {
     for (const enumVal of schema.enum) {
       const enumType = typeof enumVal;
       let result: CoerceResult | null = null;
@@ -299,13 +308,19 @@ export function coerceValue(
 
     if (itemsSchema || prefixItems) {
       let arrayChanged = false;
+      // Determine if items is a single schema (not an array for draft-04 tuple validation)
+      const singleItemsSchema: JsonSchema | undefined =
+        itemsSchema && typeof itemsSchema !== 'boolean' && !Array.isArray(itemsSchema)
+          ? (itemsSchema as JsonSchema)
+          : undefined;
+
       const newArray = currentValue.map((item, index) => {
         // Use prefixItems for tuple positions, then items for rest
         let itemSchema: JsonSchema | undefined;
         if (prefixItems && index < prefixItems.length) {
           itemSchema = prefixItems[index];
-        } else if (itemsSchema && typeof itemsSchema !== 'boolean') {
-          itemSchema = itemsSchema;
+        } else if (singleItemsSchema) {
+          itemSchema = singleItemsSchema;
         }
 
         if (itemSchema) {
