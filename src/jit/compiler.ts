@@ -1127,10 +1127,23 @@ export function generateDependenciesCheck(
 ): void {
   if (!schema.dependencies) return;
 
+  // Filter out no-op dependencies (empty arrays, true, {})
+  const nonTrivialDeps = Object.entries(schema.dependencies).filter(([, dep]) => {
+    if (Array.isArray(dep)) {
+      return dep.length > 0; // Skip empty arrays
+    }
+    // Skip no-op schemas (true, {})
+    if (dep === true) return false;
+    if (typeof dep === 'object' && dep !== null && Object.keys(dep).length === 0) return false;
+    return true;
+  });
+
+  if (nonTrivialDeps.length === 0) return;
+
   code.if(
     `typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
     () => {
-      for (const [prop, dep] of Object.entries(schema.dependencies!)) {
+      for (const [prop, dep] of nonTrivialDeps) {
         const propStr = escapeString(prop);
         code.if(`'${propStr}' in ${dataVar}`, () => {
           if (Array.isArray(dep)) {
@@ -1219,6 +1232,14 @@ export function generateRefCheck(
   if (!refSchema) {
     // Can't resolve - schema is invalid, always fail
     genError(code, pathExpr, '$ref', `Cannot resolve reference ${schema.$ref}`);
+    return;
+  }
+
+  // Optimize: if ref points to a no-op schema (true or {}), skip entirely
+  if (
+    refSchema === true ||
+    (typeof refSchema === 'object' && Object.keys(refSchema).length === 0)
+  ) {
     return;
   }
 
@@ -1347,6 +1368,11 @@ export function generateCompositionChecks(
     const ifSchema = schema.if;
     const thenSchema = schema.then;
     const elseSchema = schema.else;
+
+    // Skip if there's no then or else - the if condition has no effect
+    if (thenSchema === undefined && elseSchema === undefined) {
+      return;
+    }
 
     // Check if condition matches
     const condVar = code.genVar('ifCond');
