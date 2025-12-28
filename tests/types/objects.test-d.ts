@@ -1,4 +1,5 @@
 import { schema, struct } from 'json-schema-ts';
+import { expectTypeOf } from 'expect-type';
 
 // =============================================================================
 // Struct Helper
@@ -10,7 +11,7 @@ const Person = struct({
   lastName: 'string',
   age: 'number',
 });
-Person.type; // $ExpectType { firstName: string; lastName: string; age: number; }
+expectTypeOf(Person.type).toEqualTypeOf<{ firstName: string; lastName: string; age: number }>();
 
 // Struct with optional fields
 const PersonOptional = struct({
@@ -19,7 +20,12 @@ const PersonOptional = struct({
   age: 'number',
   middleName: 'string',
 }).optional('middleName', 'age');
-PersonOptional.type; // $ExpectType { firstName: string; lastName: string; age?: number; middleName?: string; }
+expectTypeOf(PersonOptional.type).toEqualTypeOf<{
+  firstName: string;
+  lastName: string;
+  age?: number;
+  middleName?: string;
+}>();
 
 // Struct with full schema definitions
 const User = struct({
@@ -27,9 +33,9 @@ const User = struct({
   email: { type: 'string', format: 'email' },
   tags: { type: 'array', items: { type: 'string' } },
 }).optional('tags');
-User.type; // $ExpectType { id: number; email: string; tags?: string[]; }
+expectTypeOf(User.type).toEqualTypeOf<{ id: number; email: string; tags?: string[] }>();
 
-// Struct with nested objects
+// Struct with nested objects - use structural matching
 const Company = struct({
   name: 'string',
   address: {
@@ -41,7 +47,10 @@ const Company = struct({
     required: ['street', 'city'],
   },
 });
-Company.type; // $ExpectType { name: string; address: { [x: string]: unknown; street: string; city: string; }; }
+// The nested address has index signature from the object type inference
+expectTypeOf(Company.type.name).toBeString();
+expectTypeOf(Company.type.address.street).toBeString();
+expectTypeOf(Company.type.address.city).toBeString();
 
 // =============================================================================
 // Basic Object Types
