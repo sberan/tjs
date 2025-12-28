@@ -436,23 +436,45 @@ export function generateEnumCheck(
 ): void {
   if (!schema.enum) return;
 
-  // Check if all values are primitives (can use Set for O(1) lookup)
-  const allPrimitive = schema.enum.every((v) => v === null || typeof v !== 'object');
+  // Separate primitives from complex values (objects/arrays)
+  const primitives: unknown[] = [];
+  const complexValues: unknown[] = [];
 
-  if (allPrimitive) {
-    // Use a pre-compiled Set for O(1) lookup instead of array.includes() O(n)
+  for (const v of schema.enum) {
+    if (v === null || typeof v !== 'object') {
+      primitives.push(v);
+    } else {
+      complexValues.push(v);
+    }
+  }
+
+  if (complexValues.length === 0) {
+    // All primitives - use Set for O(1) lookup
     const setName = ctx.genRuntimeName('enumSet');
-    ctx.addRuntimeFunction(setName, new Set(schema.enum));
+    ctx.addRuntimeFunction(setName, new Set(primitives));
     code.if(`!${setName}.has(${dataVar})`, () => {
       genError(code, pathExpr, 'enum', `Value must be one of the allowed values`);
     });
-  } else {
-    // Need deepEqual for object values - use pre-compiled array
+  } else if (primitives.length === 0) {
+    // All complex - use deepEqual for all
     const arrName = ctx.genRuntimeName('enumArr');
-    ctx.addRuntimeFunction(arrName, schema.enum);
+    ctx.addRuntimeFunction(arrName, complexValues);
     code.if(`!${arrName}.some(v => deepEqual(${dataVar}, v))`, () => {
       genError(code, pathExpr, 'enum', `Value must be one of the allowed values`);
     });
+  } else {
+    // Mixed: check primitives with Set, complex with deepEqual
+    // Only call deepEqual if data is an object (since primitives are already covered by Set)
+    const setName = ctx.genRuntimeName('enumSet');
+    ctx.addRuntimeFunction(setName, new Set(primitives));
+    const arrName = ctx.genRuntimeName('enumArr');
+    ctx.addRuntimeFunction(arrName, complexValues);
+    code.if(
+      `!${setName}.has(${dataVar}) && (typeof ${dataVar} !== 'object' || ${dataVar} === null || !${arrName}.some(v => deepEqual(${dataVar}, v)))`,
+      () => {
+        genError(code, pathExpr, 'enum', `Value must be one of the allowed values`);
+      }
+    );
   }
 }
 
@@ -1625,10 +1647,12 @@ function generateBranchEvaluatedProperties(
 
   // Add static props and patterns
   if (staticProps.props.length > 0) {
-    code.line(`${stringify(staticProps.props)}.forEach(p => evaluatedProps.add(p));`);
+    for (const p of staticProps.props) {
+      code.line(`evaluatedProps["${escapeString(p)}"] = true;`);
+    }
   }
   if (staticProps.patterns.length > 0) {
-    code.line(`evaluatedPatterns.push(...${stringify(staticProps.patterns)});`);
+    code.line(`dynamicPatterns.push(...${stringify(staticProps.patterns)});`);
   }
   if (staticProps.hasAdditional || staticProps.hasUnevaluatedTrue) {
     code.line('allPropsEvaluated = true;');
@@ -1734,9 +1758,23 @@ export function generateUnevaluatedPropertiesCheck(
     `typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
     () => {
       if (needsRuntimeEval) {
-        // Create runtime arrays/sets for evaluated properties
-        code.line(`const evaluatedProps = new Set(${stringify(staticProps)});`);
-        code.line(`const evaluatedPatterns = ${stringify(staticPatterns)}.slice();`);
+        // Create runtime object for evaluated properties (faster than Set for property lookup)
+        const propsObjInit =
+          staticProps.length > 0
+            ? `{${staticProps.map((p) => `"${escapeString(p)}": true`).join(', ')}}`
+            : '{}';
+        code.line(`const evaluatedProps = ${propsObjInit};`);
+
+        // Pre-compile static patterns as runtime regex functions
+        const patternVars: string[] = [];
+        for (const pattern of staticPatterns) {
+          const patternVar = ctx.genRuntimeName('evalPattern');
+          ctx.addRuntimeFunction(patternVar, new RegExp(pattern));
+          patternVars.push(patternVar);
+        }
+
+        // Track dynamic patterns added at runtime
+        code.line(`const dynamicPatterns = [];`);
         code.line(`let allPropsEvaluated = false;`);
 
         // Handle if/then/else
@@ -1749,11 +1787,11 @@ export function generateUnevaluatedPropertiesCheck(
           // When if matches, collect properties from the if schema itself
           code.if(condVar, () => {
             const ifProps = collectLocalEvaluatedProperties(ifSchema, ctx);
-            if (ifProps.props.length > 0) {
-              code.line(`${stringify(ifProps.props)}.forEach(p => evaluatedProps.add(p));`);
+            for (const p of ifProps.props) {
+              code.line(`evaluatedProps["${escapeString(p)}"] = true;`);
             }
             if (ifProps.patterns.length > 0) {
-              code.line(`evaluatedPatterns.push(...${stringify(ifProps.patterns)});`);
+              code.line(`dynamicPatterns.push(...${stringify(ifProps.patterns)});`);
             }
             if (ifProps.hasAdditional || ifProps.hasUnevaluatedTrue) {
               code.line('allPropsEvaluated = true;');
@@ -1762,11 +1800,11 @@ export function generateUnevaluatedPropertiesCheck(
             // Also add then properties if then exists
             if (schema.then) {
               const thenProps = collectLocalEvaluatedProperties(schema.then, ctx);
-              if (thenProps.props.length > 0) {
-                code.line(`${stringify(thenProps.props)}.forEach(p => evaluatedProps.add(p));`);
+              for (const p of thenProps.props) {
+                code.line(`evaluatedProps["${escapeString(p)}"] = true;`);
               }
               if (thenProps.patterns.length > 0) {
-                code.line(`evaluatedPatterns.push(...${stringify(thenProps.patterns)});`);
+                code.line(`dynamicPatterns.push(...${stringify(thenProps.patterns)});`);
               }
               if (thenProps.hasAdditional || thenProps.hasUnevaluatedTrue) {
                 code.line('allPropsEvaluated = true;');
@@ -1778,11 +1816,11 @@ export function generateUnevaluatedPropertiesCheck(
           if (schema.else) {
             code.else(() => {
               const elseProps = collectLocalEvaluatedProperties(schema.else!, ctx);
-              if (elseProps.props.length > 0) {
-                code.line(`${stringify(elseProps.props)}.forEach(p => evaluatedProps.add(p));`);
+              for (const p of elseProps.props) {
+                code.line(`evaluatedProps["${escapeString(p)}"] = true;`);
               }
               if (elseProps.patterns.length > 0) {
-                code.line(`evaluatedPatterns.push(...${stringify(elseProps.patterns)});`);
+                code.line(`dynamicPatterns.push(...${stringify(elseProps.patterns)});`);
               }
               if (elseProps.hasAdditional || elseProps.hasUnevaluatedTrue) {
                 code.line('allPropsEvaluated = true;');
@@ -1822,11 +1860,11 @@ export function generateUnevaluatedPropertiesCheck(
               depProps.hasUnevaluatedTrue
             ) {
               code.if(`Object.hasOwn(${dataVar}, '${escapeString(triggerProp)}')`, () => {
-                if (depProps.props.length > 0) {
-                  code.line(`${stringify(depProps.props)}.forEach(p => evaluatedProps.add(p));`);
+                for (const p of depProps.props) {
+                  code.line(`evaluatedProps["${escapeString(p)}"] = true;`);
                 }
                 if (depProps.patterns.length > 0) {
-                  code.line(`evaluatedPatterns.push(...${stringify(depProps.patterns)});`);
+                  code.line(`dynamicPatterns.push(...${stringify(depProps.patterns)});`);
                 }
                 if (depProps.hasAdditional || depProps.hasUnevaluatedTrue) {
                   code.line('allPropsEvaluated = true;');
@@ -1852,45 +1890,72 @@ export function generateUnevaluatedPropertiesCheck(
           }
         }
 
-        // Now check unevaluated properties using the runtime-built sets
+        // Now check unevaluated properties using the runtime-built object
         code.if('!allPropsEvaluated', () => {
           code.forIn('key', dataVar, () => {
-            code.if(
-              '!evaluatedProps.has(key) && !evaluatedPatterns.some(p => new RegExp(p).test(key))',
-              () => {
-                const keyPathExpr = pathExpr === "''" ? 'key' : `${pathExpr} + '.' + key`;
-                if (schema.unevaluatedProperties === false) {
-                  code.line(
-                    `if (errors) errors.push({ path: ${keyPathExpr}, message: 'Unevaluated property not allowed', keyword: 'unevaluatedProperties' });`
-                  );
-                  code.line('return false;');
-                } else if (
-                  schema.unevaluatedProperties !== true &&
-                  schema.unevaluatedProperties !== undefined
-                ) {
-                  generateSchemaValidator(
-                    code,
-                    schema.unevaluatedProperties,
-                    `${dataVar}[key]`,
-                    keyPathExpr,
-                    ctx
-                  );
-                }
+            // Build the condition: check object property, pre-compiled patterns, then dynamic patterns
+            const conditions: string[] = ['!evaluatedProps[key]'];
+
+            // Add pre-compiled static pattern checks
+            for (const patternVar of patternVars) {
+              conditions.push(`!${patternVar}.test(key)`);
+            }
+
+            // Add dynamic patterns check only if there might be dynamic patterns
+            conditions.push('!dynamicPatterns.some(p => new RegExp(p).test(key))');
+
+            code.if(conditions.join(' && '), () => {
+              const keyPathExpr = pathExpr === "''" ? 'key' : `${pathExpr} + '.' + key`;
+              if (schema.unevaluatedProperties === false) {
+                code.line(
+                  `if (errors) errors.push({ path: ${keyPathExpr}, message: 'Unevaluated property not allowed', keyword: 'unevaluatedProperties' });`
+                );
+                code.line('return false;');
+              } else if (
+                schema.unevaluatedProperties !== true &&
+                schema.unevaluatedProperties !== undefined
+              ) {
+                generateSchemaValidator(
+                  code,
+                  schema.unevaluatedProperties,
+                  `${dataVar}[key]`,
+                  keyPathExpr,
+                  ctx
+                );
               }
-            );
+            });
           });
         });
       } else {
         // No runtime evaluation needed, use static evaluation
+        // Pre-compile static patterns as runtime regex for better performance
+        const staticPatternVars: string[] = [];
+        for (const pattern of staticPatterns) {
+          const patternVar = ctx.genRuntimeName('evalPattern');
+          ctx.addRuntimeFunction(patternVar, new RegExp(pattern));
+          staticPatternVars.push(patternVar);
+        }
+
+        // Use object lookup for static properties (faster than includes)
+        let staticPropsVar: string | null = null;
+        if (staticProps.length > 0) {
+          staticPropsVar = ctx.genRuntimeName('evalProps');
+          const propsObj: Record<string, true> = {};
+          for (const p of staticProps) {
+            propsObj[p] = true;
+          }
+          ctx.addRuntimeFunction(staticPropsVar, propsObj);
+        }
+
         code.forIn('key', dataVar, () => {
           const conditions: string[] = [];
 
-          if (staticProps.length > 0) {
-            conditions.push(`!${stringify(staticProps)}.includes(key)`);
+          if (staticPropsVar) {
+            conditions.push(`!${staticPropsVar}[key]`);
           }
 
-          for (const pattern of staticPatterns) {
-            conditions.push(`!/${escapeString(pattern)}/.test(key)`);
+          for (const patternVar of staticPatternVars) {
+            conditions.push(`!${patternVar}.test(key)`);
           }
 
           const condition = conditions.length > 0 ? conditions.join(' && ') : 'true';
@@ -2093,36 +2158,69 @@ export function generateUnevaluatedItemsCheck(
   const hasContains = containsSchemas.length > 0;
   const needsRuntimeEval = hasAnyOf || hasOneOf || hasIfThenElse || hasContains;
 
+  // Check if any subschema has contains (requires Set tracking)
+  const anySubschemaHasContains = (): boolean => {
+    const checkSchema = (s: JsonSchemaBase): boolean => {
+      if (s.contains !== undefined) return true;
+      if (s.anyOf) {
+        for (const sub of s.anyOf) {
+          if (typeof sub === 'object' && sub !== null && checkSchema(sub)) return true;
+        }
+      }
+      if (s.oneOf) {
+        for (const sub of s.oneOf) {
+          if (typeof sub === 'object' && sub !== null && checkSchema(sub)) return true;
+        }
+      }
+      if (s.allOf) {
+        for (const sub of s.allOf) {
+          if (typeof sub === 'object' && sub !== null && checkSchema(sub)) return true;
+        }
+      }
+      if (s.if !== undefined) {
+        // Check the if schema itself
+        if (typeof s.if === 'object' && s.if !== null && checkSchema(s.if)) return true;
+        if (s.then && typeof s.then === 'object' && checkSchema(s.then)) return true;
+        if (s.else && typeof s.else === 'object' && checkSchema(s.else)) return true;
+      }
+      return false;
+    };
+    return hasContains || checkSchema(schema);
+  };
+
+  // Use Set only when contains is present (can evaluate arbitrary items)
+  // Otherwise use a simple maxEvaluatedIndex number (faster)
+  const needsSet = anySubschemaHasContains();
+
   // Only check if data is an array
   code.if(`Array.isArray(${dataVar})`, () => {
     if (needsRuntimeEval) {
-      // Create a set to track which items are evaluated
-      const evaluatedSetVar = code.genVar('evaluatedItems');
-      code.line(`const ${evaluatedSetVar} = new Set();`);
-      code.line(`let maxEvaluatedIndex = ${staticPrefixCount - 1};`);
+      // Track evaluated items - use number when possible, Set when contains is present
+      const maxIndexVar = code.genVar('maxIdx');
+      const evaluatedSetVar = needsSet ? code.genVar('evaluatedItems') : null;
 
-      // Mark static prefixItems as evaluated
-      if (staticPrefixCount > 0) {
-        const iVar = code.genVar('i');
-        code.for(
-          `let ${iVar} = 0`,
-          `${iVar} < Math.min(${staticPrefixCount}, ${dataVar}.length)`,
-          `${iVar}++`,
-          () => {
-            code.line(`${evaluatedSetVar}.add(${iVar});`);
-          }
-        );
+      code.line(`let ${maxIndexVar} = ${staticPrefixCount - 1};`);
+      if (evaluatedSetVar) {
+        code.line(`const ${evaluatedSetVar} = new Set();`);
+        // Mark static prefixItems as evaluated
+        if (staticPrefixCount > 0) {
+          code.line(
+            `for (let k = 0; k < Math.min(${staticPrefixCount}, ${dataVar}.length); k++) ${evaluatedSetVar}.add(k);`
+          );
+        }
       }
 
-      // Handle contains - check each item against all contains schemas
-      for (const containsSchema of containsSchemas) {
-        const iVar = code.genVar('i');
-        code.for(`let ${iVar} = 0`, `${iVar} < ${dataVar}.length`, `${iVar}++`, () => {
-          const checkExpr = generateSubschemaCheck(containsSchema, `${dataVar}[${iVar}]`, ctx);
-          code.if(checkExpr, () => {
-            code.line(`${evaluatedSetVar}.add(${iVar});`);
+      // Handle contains - check each item against all contains schemas (requires Set)
+      if (evaluatedSetVar) {
+        for (const containsSchema of containsSchemas) {
+          const iVar = code.genVar('i');
+          code.for(`let ${iVar} = 0`, `${iVar} < ${dataVar}.length`, `${iVar}++`, () => {
+            const checkExpr = generateSubschemaCheck(containsSchema, `${dataVar}[${iVar}]`, ctx);
+            code.if(checkExpr, () => {
+              code.line(`${evaluatedSetVar}.add(${iVar});`);
+            });
           });
-        });
+        }
       }
 
       // Handle anyOf - check which branches match and get their prefixItems count
@@ -2137,27 +2235,40 @@ export function generateUnevaluatedItemsCheck(
             const checkExpr = generateSubschemaCheck(subSchema, dataVar, ctx);
             code.if(checkExpr, () => {
               if (subCollected.hasItems) {
-                // All items are evaluated
-                code.line(`for (let k = 0; k < ${dataVar}.length; k++) ${evaluatedSetVar}.add(k);`);
-              } else {
-                if (subCollected.prefixCount > 0) {
+                // All items are evaluated - set max to array length
+                code.line(`${maxIndexVar} = ${dataVar}.length - 1;`);
+                if (evaluatedSetVar) {
                   code.line(
-                    `for (let k = 0; k < Math.min(${subCollected.prefixCount}, ${dataVar}.length); k++) ${evaluatedSetVar}.add(k);`
+                    `for (let k = 0; k < ${dataVar}.length; k++) ${evaluatedSetVar}.add(k);`
                   );
                 }
-                // Handle nested contains
-                for (const nestedContains of subCollected.containsSchemas) {
-                  const kVar = code.genVar('k');
-                  code.for(`let ${kVar} = 0`, `${kVar} < ${dataVar}.length`, `${kVar}++`, () => {
-                    const nestedCheck = generateSubschemaCheck(
-                      nestedContains,
-                      `${dataVar}[${kVar}]`,
-                      ctx
+              } else {
+                if (subCollected.prefixCount > 0) {
+                  // Update max index
+                  code.line(
+                    `${maxIndexVar} = Math.max(${maxIndexVar}, ${subCollected.prefixCount - 1});`
+                  );
+                  if (evaluatedSetVar) {
+                    code.line(
+                      `for (let k = 0; k < Math.min(${subCollected.prefixCount}, ${dataVar}.length); k++) ${evaluatedSetVar}.add(k);`
                     );
-                    code.if(nestedCheck, () => {
-                      code.line(`${evaluatedSetVar}.add(${kVar});`);
+                  }
+                }
+                // Handle nested contains
+                if (evaluatedSetVar) {
+                  for (const nestedContains of subCollected.containsSchemas) {
+                    const kVar = code.genVar('k');
+                    code.for(`let ${kVar} = 0`, `${kVar} < ${dataVar}.length`, `${kVar}++`, () => {
+                      const nestedCheck = generateSubschemaCheck(
+                        nestedContains,
+                        `${dataVar}[${kVar}]`,
+                        ctx
+                      );
+                      code.if(nestedCheck, () => {
+                        code.line(`${evaluatedSetVar}.add(${kVar});`);
+                      });
                     });
-                  });
+                  }
                 }
               }
             });
@@ -2177,25 +2288,37 @@ export function generateUnevaluatedItemsCheck(
             const checkExpr = generateSubschemaCheck(subSchema, dataVar, ctx);
             code.if(checkExpr, () => {
               if (subCollected.hasItems) {
-                code.line(`for (let k = 0; k < ${dataVar}.length; k++) ${evaluatedSetVar}.add(k);`);
+                code.line(`${maxIndexVar} = ${dataVar}.length - 1;`);
+                if (evaluatedSetVar) {
+                  code.line(
+                    `for (let k = 0; k < ${dataVar}.length; k++) ${evaluatedSetVar}.add(k);`
+                  );
+                }
               } else {
                 if (subCollected.prefixCount > 0) {
                   code.line(
-                    `for (let k = 0; k < Math.min(${subCollected.prefixCount}, ${dataVar}.length); k++) ${evaluatedSetVar}.add(k);`
+                    `${maxIndexVar} = Math.max(${maxIndexVar}, ${subCollected.prefixCount - 1});`
                   );
-                }
-                for (const nestedContains of subCollected.containsSchemas) {
-                  const kVar = code.genVar('k');
-                  code.for(`let ${kVar} = 0`, `${kVar} < ${dataVar}.length`, `${kVar}++`, () => {
-                    const nestedCheck = generateSubschemaCheck(
-                      nestedContains,
-                      `${dataVar}[${kVar}]`,
-                      ctx
+                  if (evaluatedSetVar) {
+                    code.line(
+                      `for (let k = 0; k < Math.min(${subCollected.prefixCount}, ${dataVar}.length); k++) ${evaluatedSetVar}.add(k);`
                     );
-                    code.if(nestedCheck, () => {
-                      code.line(`${evaluatedSetVar}.add(${kVar});`);
+                  }
+                }
+                if (evaluatedSetVar) {
+                  for (const nestedContains of subCollected.containsSchemas) {
+                    const kVar = code.genVar('k');
+                    code.for(`let ${kVar} = 0`, `${kVar} < ${dataVar}.length`, `${kVar}++`, () => {
+                      const nestedCheck = generateSubschemaCheck(
+                        nestedContains,
+                        `${dataVar}[${kVar}]`,
+                        ctx
+                      );
+                      code.if(nestedCheck, () => {
+                        code.line(`${evaluatedSetVar}.add(${kVar});`);
+                      });
                     });
-                  });
+                  }
                 }
               }
             });
@@ -2205,37 +2328,77 @@ export function generateUnevaluatedItemsCheck(
 
       // Handle if/then/else - recursively handles nested if/then/else in then/else branches
       if (hasIfThenElse) {
-        generateIfThenElseEvaluatedItems(code, schema, dataVar, evaluatedSetVar, ctx);
+        if (evaluatedSetVar) {
+          generateIfThenElseEvaluatedItems(code, schema, dataVar, evaluatedSetVar, ctx);
+        } else {
+          generateIfThenElseEvaluatedItemsNumeric(code, schema, dataVar, maxIndexVar, ctx);
+        }
       }
 
       // Now validate unevaluated items
       if (schema.unevaluatedItems === false) {
-        const jVar = code.genVar('j');
-        code.for(`let ${jVar} = 0`, `${jVar} < ${dataVar}.length`, `${jVar}++`, () => {
-          code.if(`!${evaluatedSetVar}.has(${jVar})`, () => {
+        if (evaluatedSetVar) {
+          // Use Set-based check
+          const jVar = code.genVar('j');
+          code.for(`let ${jVar} = 0`, `${jVar} < ${dataVar}.length`, `${jVar}++`, () => {
+            code.if(`!${evaluatedSetVar}.has(${jVar})`, () => {
+              const itemPathExpr =
+                pathExpr === "''" ? `'[' + ${jVar} + ']'` : `${pathExpr} + '[' + ${jVar} + ']'`;
+              code.line(
+                `if (errors) errors.push({ path: ${itemPathExpr}, message: 'Unevaluated item not allowed', keyword: 'unevaluatedItems' });`
+              );
+              code.line('return false;');
+            });
+          });
+        } else {
+          // Use simple length check (much faster)
+          code.if(`${dataVar}.length > ${maxIndexVar} + 1`, () => {
             const itemPathExpr =
-              pathExpr === "''" ? `'[' + ${jVar} + ']'` : `${pathExpr} + '[' + ${jVar} + ']'`;
+              pathExpr === "''"
+                ? `'[' + (${maxIndexVar} + 1) + ']'`
+                : `${pathExpr} + '[' + (${maxIndexVar} + 1) + ']'`;
             code.line(
               `if (errors) errors.push({ path: ${itemPathExpr}, message: 'Unevaluated item not allowed', keyword: 'unevaluatedItems' });`
             );
             code.line('return false;');
           });
-        });
+        }
       } else if (schema.unevaluatedItems !== true) {
-        const jVar = code.genVar('j');
-        code.for(`let ${jVar} = 0`, `${jVar} < ${dataVar}.length`, `${jVar}++`, () => {
-          code.if(`!${evaluatedSetVar}.has(${jVar})`, () => {
-            const itemPathExpr =
-              pathExpr === "''" ? `'[' + ${jVar} + ']'` : `${pathExpr} + '[' + ${jVar} + ']'`;
-            generateSchemaValidator(
-              code,
-              schema.unevaluatedItems as JsonSchema,
-              `${dataVar}[${jVar}]`,
-              itemPathExpr,
-              ctx
-            );
+        if (evaluatedSetVar) {
+          const jVar = code.genVar('j');
+          code.for(`let ${jVar} = 0`, `${jVar} < ${dataVar}.length`, `${jVar}++`, () => {
+            code.if(`!${evaluatedSetVar}.has(${jVar})`, () => {
+              const itemPathExpr =
+                pathExpr === "''" ? `'[' + ${jVar} + ']'` : `${pathExpr} + '[' + ${jVar} + ']'`;
+              generateSchemaValidator(
+                code,
+                schema.unevaluatedItems as JsonSchema,
+                `${dataVar}[${jVar}]`,
+                itemPathExpr,
+                ctx
+              );
+            });
           });
-        });
+        } else {
+          // Validate items beyond maxIndex against the schema
+          const jVar = code.genVar('j');
+          code.for(
+            `let ${jVar} = ${maxIndexVar} + 1`,
+            `${jVar} < ${dataVar}.length`,
+            `${jVar}++`,
+            () => {
+              const itemPathExpr =
+                pathExpr === "''" ? `'[' + ${jVar} + ']'` : `${pathExpr} + '[' + ${jVar} + ']'`;
+              generateSchemaValidator(
+                code,
+                schema.unevaluatedItems as JsonSchema,
+                `${dataVar}[${jVar}]`,
+                itemPathExpr,
+                ctx
+              );
+            }
+          );
+        }
       }
     } else {
       // No runtime evaluation needed, use simpler static evaluation
@@ -2372,6 +2535,70 @@ function generateIfThenElseEvaluatedItems(
       // Recursively handle nested if/then/else in the else branch
       if (typeof elseSchema === 'object' && elseSchema !== null && elseSchema.if !== undefined) {
         generateIfThenElseEvaluatedItems(code, elseSchema, dataVar, evaluatedSetVar, ctx);
+      }
+    });
+  }
+}
+
+/**
+ * Numeric version of if/then/else evaluated items tracking.
+ * Uses a simple maxIndex counter instead of Set (faster when no contains).
+ */
+function generateIfThenElseEvaluatedItemsNumeric(
+  code: CodeBuilder,
+  schema: JsonSchemaBase,
+  dataVar: string,
+  maxIndexVar: string,
+  ctx: CompileContext
+): void {
+  if (schema.if === undefined) return;
+
+  const ifSchema = schema.if;
+  const condVar = code.genVar('ifCond');
+  const checkExpr = generateSubschemaCheck(ifSchema, dataVar, ctx);
+  code.line(`const ${condVar} = ${checkExpr};`);
+
+  // When if matches, update maxIndex from if and then
+  code.if(condVar, () => {
+    const ifCollected = collectEvaluatedItems(ifSchema, ctx, new Set(), false);
+    if (ifCollected.prefixCount > 0) {
+      code.line(`${maxIndexVar} = Math.max(${maxIndexVar}, ${ifCollected.prefixCount - 1});`);
+    }
+    if (ifCollected.hasItems) {
+      code.line(`${maxIndexVar} = ${dataVar}.length - 1;`);
+    }
+
+    // Handle the then branch
+    if (schema.then) {
+      const thenSchema = schema.then;
+      const thenCollected = collectEvaluatedItems(thenSchema, ctx, new Set(), false);
+      if (thenCollected.hasItems) {
+        code.line(`${maxIndexVar} = ${dataVar}.length - 1;`);
+      } else if (thenCollected.prefixCount > 0) {
+        code.line(`${maxIndexVar} = Math.max(${maxIndexVar}, ${thenCollected.prefixCount - 1});`);
+      }
+
+      // Recursively handle nested if/then/else in the then branch
+      if (typeof thenSchema === 'object' && thenSchema !== null && thenSchema.if !== undefined) {
+        generateIfThenElseEvaluatedItemsNumeric(code, thenSchema, dataVar, maxIndexVar, ctx);
+      }
+    }
+  });
+
+  // When if doesn't match, update maxIndex from else
+  if (schema.else) {
+    code.else(() => {
+      const elseSchema = schema.else!;
+      const elseCollected = collectEvaluatedItems(elseSchema, ctx, new Set(), false);
+      if (elseCollected.hasItems) {
+        code.line(`${maxIndexVar} = ${dataVar}.length - 1;`);
+      } else if (elseCollected.prefixCount > 0) {
+        code.line(`${maxIndexVar} = Math.max(${maxIndexVar}, ${elseCollected.prefixCount - 1});`);
+      }
+
+      // Recursively handle nested if/then/else in the else branch
+      if (typeof elseSchema === 'object' && elseSchema !== null && elseSchema.if !== undefined) {
+        generateIfThenElseEvaluatedItemsNumeric(code, elseSchema, dataVar, maxIndexVar, ctx);
       }
     });
   }

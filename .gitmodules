@@ -1,3 +1,6 @@
 [submodule "test-suite"]
 	path = test-suite
 	url = https://github.com/json-schema-org/JSON-Schema-Test-Suite.git
+[submodule "json-schema-benchmark"]
+	path = json-schema-benchmark
+	url = https://github.com/ebdrup/json-schema-benchmark.git
