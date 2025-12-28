@@ -11,7 +11,7 @@
     "resolveJsonModule": true,
     "baseUrl": "../..",
     "paths": {
-      "json-schema-ts": ["./src/index.ts"]
+      "tjs": ["./src/index.ts"]
     }
   },
   "include": ["./**/*.test-d.ts"]

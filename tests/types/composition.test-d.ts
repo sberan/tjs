@@ -1,5 +1,5 @@
 import type { JsonArray, JsonObject, JsonValue } from 'type-fest';
-import { schema } from 'json-schema-ts';
+import { schema } from 'tjs';
 
 // =============================================================================
 // anyOf - Union Types

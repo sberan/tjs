@@ -1,4 +1,4 @@
-import { schema } from 'json-schema-ts';
+import { schema } from 'tjs';
 
 // =============================================================================
 // if/then/else - Conditional Schema Application
