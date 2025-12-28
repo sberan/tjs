@@ -1,15 +1,61 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
 import { loadTestFiles } from '../tests/suite/loader.js';
-import type { TestFile, TestGroup } from '../tests/suite/types.js';
+import type { TestFile } from '../tests/suite/types.js';
 import type { ValidatorAdapter, BenchmarkResult } from './types.js';
 import { ajvAdapter } from './adapters/ajv.js';
 import { jitAdapter } from './adapters/jit.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 // Keywords to skip (not implemented or have known issues)
 const SKIP_KEYWORDS = new Set([
-  'refRemote', // Remote $ref requires file I/O to load schemas (tested in compliance suite)
   'unknownKeyword', // Meta-schema validation not implemented
-  'infinite-loop-detection', // Causes stack overflow in some validators
 ]);
+
+// Load remote schemas for refRemote tests
+function loadRemoteSchemas(): Record<string, unknown> {
+  const remotes: Record<string, unknown> = {};
+
+  const loadDir = (dir: string, baseUrl: string) => {
+    if (!fs.existsSync(dir)) return;
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      // Skip other draft directories
+      if (
+        entry.isDirectory() &&
+        (entry.name.startsWith('draft') || entry.name === 'draft2019-09')
+      ) {
+        continue;
+      }
+      if (entry.isDirectory()) {
+        loadDir(fullPath, `${baseUrl}${entry.name}/`);
+      } else if (entry.name.endsWith('.json')) {
+        try {
+          const content = fs.readFileSync(fullPath, 'utf-8');
+          const schema = JSON.parse(content);
+          const urlPath = `${baseUrl}${entry.name}`;
+          remotes[urlPath] = schema;
+          if (typeof schema === 'object' && schema !== null && schema.$id) {
+            remotes[schema.$id] = schema;
+          }
+        } catch {
+          // Skip invalid JSON files
+        }
+      }
+    }
+  };
+
+  const remotesDir = path.join(__dirname, '../test-suite/remotes');
+  loadDir(remotesDir, 'http://localhost:1234/');
+
+  const draft2020Dir = path.join(remotesDir, 'draft2020-12');
+  loadDir(draft2020Dir, 'http://localhost:1234/draft2020-12/');
+
+  return remotes;
+}
 
 interface CompiledTest {
   keyword: string;
@@ -24,7 +70,11 @@ interface CompileResult {
   errors: string[];
 }
 
-function compileTests(files: TestFile[], adapter: ValidatorAdapter): CompileResult {
+function compileTests(
+  files: TestFile[],
+  adapter: ValidatorAdapter,
+  remotes: Record<string, unknown>
+): CompileResult {
   const compiled: CompiledTest[] = [];
   let skippedByKeyword = 0;
   let skippedByError = 0;
@@ -40,7 +90,7 @@ function compileTests(files: TestFile[], adapter: ValidatorAdapter): CompileResu
 
     for (const group of file.groups) {
       try {
-        const validate = adapter.compile(group.schema);
+        const validate = adapter.compile(group.schema, remotes);
         compiled.push({
           keyword: file.name,
           validate,
@@ -136,8 +186,9 @@ function main() {
   const jsonOutput = args.includes('--json');
   const iterations = 100000;
 
-  // Load test files
+  // Load test files and remote schemas
   const files = loadTestFiles({ includeOptional: false });
+  const remotes = loadRemoteSchemas();
   const totalTestCount = files.reduce(
     (sum, f) => sum + f.groups.reduce((gs, g) => gs + g.tests.length, 0),
     0
@@ -158,7 +209,11 @@ function main() {
   }
 
   for (const adapter of adapters) {
-    const { compiled, skippedByKeyword, skippedByError, errors } = compileTests(files, adapter);
+    const { compiled, skippedByKeyword, skippedByError, errors } = compileTests(
+      files,
+      adapter,
+      remotes
+    );
 
     if (!jsonOutput && errors.length > 0) {
       console.log(`\n${adapter.name} compilation errors:`);
