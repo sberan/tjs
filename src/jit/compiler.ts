@@ -211,27 +211,33 @@ function generateSchemaValidator(
     }
   }
 
-  // Generate JIT code for each keyword
-  generateTypeCheck(code, schema, dataVar, pathExpr, ctx);
-  generateConstCheck(code, schema, dataVar, pathExpr, ctx);
-  generateEnumCheck(code, schema, dataVar, pathExpr, ctx);
-  generateStringChecks(code, schema, dataVar, pathExpr, ctx);
-  generateFormatCheck(code, schema, dataVar, pathExpr, ctx);
-  generateNumberChecks(code, schema, dataVar, pathExpr, ctx);
-  generateArrayChecks(code, schema, dataVar, pathExpr, ctx);
-  generateObjectChecks(code, schema, dataVar, pathExpr, ctx);
-  generatePropertiesChecks(code, schema, dataVar, pathExpr, ctx);
-  generateItemsChecks(code, schema, dataVar, pathExpr, ctx);
-  generateCompositionChecks(code, schema, dataVar, pathExpr, ctx);
-  generateRefCheck(code, schema, dataVar, pathExpr, ctx, dynamicScopeVar);
-  generateDynamicRefCheck(code, schema, dataVar, pathExpr, ctx, dynamicScopeVar);
-  generateContainsCheck(code, schema, dataVar, pathExpr, ctx);
-  generateDependentRequiredCheck(code, schema, dataVar, pathExpr, ctx);
-  generatePropertyNamesCheck(code, schema, dataVar, pathExpr, ctx);
-  generateDependentSchemasCheck(code, schema, dataVar, pathExpr, ctx);
-  generateDependenciesCheck(code, schema, dataVar, pathExpr, ctx);
-  generateUnevaluatedPropertiesCheck(code, schema, dataVar, pathExpr, ctx);
-  generateUnevaluatedItemsCheck(code, schema, dataVar, pathExpr, ctx);
+  // In legacy mode (draft-07 and earlier), $ref overrides all sibling keywords
+  // Only generate $ref check and skip everything else
+  if (schema.$ref && ctx.options.legacyRef) {
+    generateRefCheck(code, schema, dataVar, pathExpr, ctx, dynamicScopeVar);
+  } else {
+    // Generate JIT code for each keyword (draft-2020-12 behavior)
+    generateTypeCheck(code, schema, dataVar, pathExpr, ctx);
+    generateConstCheck(code, schema, dataVar, pathExpr, ctx);
+    generateEnumCheck(code, schema, dataVar, pathExpr, ctx);
+    generateStringChecks(code, schema, dataVar, pathExpr, ctx);
+    generateFormatCheck(code, schema, dataVar, pathExpr, ctx);
+    generateNumberChecks(code, schema, dataVar, pathExpr, ctx);
+    generateArrayChecks(code, schema, dataVar, pathExpr, ctx);
+    generateObjectChecks(code, schema, dataVar, pathExpr, ctx);
+    generatePropertiesChecks(code, schema, dataVar, pathExpr, ctx);
+    generateItemsChecks(code, schema, dataVar, pathExpr, ctx);
+    generateCompositionChecks(code, schema, dataVar, pathExpr, ctx);
+    generateRefCheck(code, schema, dataVar, pathExpr, ctx, dynamicScopeVar);
+    generateDynamicRefCheck(code, schema, dataVar, pathExpr, ctx, dynamicScopeVar);
+    generateContainsCheck(code, schema, dataVar, pathExpr, ctx);
+    generateDependentRequiredCheck(code, schema, dataVar, pathExpr, ctx);
+    generatePropertyNamesCheck(code, schema, dataVar, pathExpr, ctx);
+    generateDependentSchemasCheck(code, schema, dataVar, pathExpr, ctx);
+    generateDependenciesCheck(code, schema, dataVar, pathExpr, ctx);
+    generateUnevaluatedPropertiesCheck(code, schema, dataVar, pathExpr, ctx);
+    generateUnevaluatedItemsCheck(code, schema, dataVar, pathExpr, ctx);
+  }
 
   // Pop dynamic anchors after validation (if we pushed any)
   if (resourceAnchors.length > 0) {
@@ -627,25 +633,43 @@ export function generateNumberChecks(
 
   // Only check if data is a number
   code.if(`typeof ${dataVar} === 'number'`, () => {
+    // Handle minimum with optional exclusiveMinimum (draft4 boolean form)
     if (schema.minimum !== undefined) {
-      code.if(`${dataVar} < ${schema.minimum}`, () => {
-        genError(code, pathExpr, 'minimum', `Value must be >= ${schema.minimum}`);
-      });
+      // In draft4, exclusiveMinimum is a boolean that modifies minimum
+      if (schema.exclusiveMinimum === true) {
+        code.if(`${dataVar} <= ${schema.minimum}`, () => {
+          genError(code, pathExpr, 'minimum', `Value must be > ${schema.minimum}`);
+        });
+      } else {
+        code.if(`${dataVar} < ${schema.minimum}`, () => {
+          genError(code, pathExpr, 'minimum', `Value must be >= ${schema.minimum}`);
+        });
+      }
     }
 
+    // Handle maximum with optional exclusiveMaximum (draft4 boolean form)
     if (schema.maximum !== undefined) {
-      code.if(`${dataVar} > ${schema.maximum}`, () => {
-        genError(code, pathExpr, 'maximum', `Value must be <= ${schema.maximum}`);
-      });
+      // In draft4, exclusiveMaximum is a boolean that modifies maximum
+      if (schema.exclusiveMaximum === true) {
+        code.if(`${dataVar} >= ${schema.maximum}`, () => {
+          genError(code, pathExpr, 'maximum', `Value must be < ${schema.maximum}`);
+        });
+      } else {
+        code.if(`${dataVar} > ${schema.maximum}`, () => {
+          genError(code, pathExpr, 'maximum', `Value must be <= ${schema.maximum}`);
+        });
+      }
     }
 
-    if (schema.exclusiveMinimum !== undefined) {
+    // Handle exclusiveMinimum as number (draft 2020-12 form)
+    if (typeof schema.exclusiveMinimum === 'number') {
       code.if(`${dataVar} <= ${schema.exclusiveMinimum}`, () => {
         genError(code, pathExpr, 'exclusiveMinimum', `Value must be > ${schema.exclusiveMinimum}`);
       });
     }
 
-    if (schema.exclusiveMaximum !== undefined) {
+    // Handle exclusiveMaximum as number (draft 2020-12 form)
+    if (typeof schema.exclusiveMaximum === 'number') {
       code.if(`${dataVar} >= ${schema.exclusiveMaximum}`, () => {
         genError(code, pathExpr, 'exclusiveMaximum', `Value must be < ${schema.exclusiveMaximum}`);
       });

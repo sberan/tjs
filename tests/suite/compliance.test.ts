@@ -121,6 +121,7 @@ function findExternalRefs(
   }
 
   // Recurse into subschemas
+  // TODO this is insane - find a better way to do this
   const subschemas = [
     ...(schema.$defs ? Object.values(schema.$defs) : []),
     ...(schema.properties ? Object.values(schema.properties) : []),
@@ -187,6 +188,7 @@ describe('JSON Schema Test Suite Compliance', () => {
               validator = Validator(group.schema as JsonSchema, {
                 formatAssertion: false,
                 remotes,
+                legacyRef: false, // draft-2020-12: $ref no longer overrides sibling keywords
               });
             } catch (err) {
               schemaError = `Schema construction failed: ${err}`;

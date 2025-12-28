@@ -13,6 +13,7 @@ export type JsonSchemaType =
 // Base schema interface
 export interface JsonSchemaBase {
   $defs?: Record<string, JsonSchema>;
+  definitions?: Record<string, JsonSchema>; // draft-07 equivalent of $defs
   $ref?: string;
   type?: JsonSchemaType | JsonSchemaType[];
   const?: JsonValue;
@@ -38,8 +39,8 @@ export interface JsonSchemaBase {
   format?: string;
   minimum?: number;
   maximum?: number;
-  exclusiveMinimum?: number;
-  exclusiveMaximum?: number;
+  exclusiveMinimum?: number | boolean; // number in 2020-12, boolean in draft4
+  exclusiveMaximum?: number | boolean; // number in 2020-12, boolean in draft4
   multipleOf?: number;
   minLength?: number;
   maxLength?: number;
@@ -75,6 +76,7 @@ export interface JsonSchemaBase {
   writeOnly?: boolean;
   $comment?: string;
   $id?: string;
+  id?: string; // draft-04 equivalent of $id
   $schema?: string;
   $vocabulary?: Record<string, boolean>;
 }
