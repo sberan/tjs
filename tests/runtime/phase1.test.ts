@@ -169,15 +169,16 @@ describe('format validators', () => {
     const TimeSchema = schema({ type: 'string', format: 'time' });
 
     it('accepts valid times', () => {
-      expect(TimeSchema.validate('14:30:00')).toBe(true);
       expect(TimeSchema.validate('14:30:00Z')).toBe(true);
-      expect(TimeSchema.validate('14:30:00.123')).toBe(true);
+      expect(TimeSchema.validate('14:30:00.123Z')).toBe(true);
       expect(TimeSchema.validate('14:30:00+05:30')).toBe(true);
+      expect(TimeSchema.validate('14:30:00-08:00')).toBe(true);
     });
 
     it('rejects invalid times', () => {
+      expect(TimeSchema.validate('14:30:00')).toBe(false); // missing timezone (RFC 3339 requires it)
       expect(TimeSchema.validate('14:30')).toBe(false); // missing seconds
-      expect(TimeSchema.validate('2:30:00')).toBe(false); // not zero-padded
+      expect(TimeSchema.validate('2:30:00Z')).toBe(false); // not zero-padded
     });
   });
 
