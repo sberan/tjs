@@ -12,6 +12,12 @@ export interface JITOptions {
   formatAssertion?: boolean;
   /** Remote schemas for $ref resolution */
   remotes?: Record<string, JsonSchema>;
+  /**
+   * Legacy $ref behavior (draft-07 and earlier): $ref overrides all sibling keywords.
+   * When true, sibling keywords like maxItems are ignored when $ref is present.
+   * Default: true (for backwards compatibility with older drafts)
+   */
+  legacyRef?: boolean;
 }
 
 /**
@@ -81,6 +87,7 @@ export class CompileContext {
     this.options = {
       formatAssertion: options.formatAssertion ?? true,
       remotes: options.remotes ?? {},
+      legacyRef: options.legacyRef ?? true,
     };
 
     // Register remote schemas
@@ -150,11 +157,24 @@ export class CompileContext {
 
     let currentBaseUri = baseUri;
     let currentResourceId = resourceId;
-    if (schema.$id) {
-      currentBaseUri = this.#resolveUri(schema.$id, baseUri);
-      this.#schemasById.set(currentBaseUri, schema);
-      // This is a new schema resource
-      currentResourceId = currentBaseUri;
+
+    // Handle $id (draft-06+) and id (draft-04)
+    const schemaId = schema.$id ?? schema.id;
+    if (schemaId) {
+      // In draft-07 and earlier, $id/id can be a plain fragment like "#foo" which acts as an anchor
+      if (schemaId.startsWith('#')) {
+        // Plain fragment id - treat as anchor (legacy draft behavior)
+        const anchorName = schemaId.slice(1);
+        const anchorUri = currentBaseUri ? `${currentBaseUri}${schemaId}` : schemaId;
+        this.#anchors.set(anchorUri, schema);
+        this.#anchors.set(anchorName, schema);
+        this.#anchors.set(schemaId, schema);
+      } else {
+        currentBaseUri = this.#resolveUri(schemaId, baseUri);
+        this.#schemasById.set(currentBaseUri, schema);
+        // This is a new schema resource
+        currentResourceId = currentBaseUri;
+      }
     }
     this.#schemaToBaseUri.set(schema, currentBaseUri);
 
@@ -187,8 +207,10 @@ export class CompileContext {
     }
 
     // Recurse into subschemas
+    // Note: 'definitions' is the draft-07 equivalent of '$defs'
     const subschemas = [
       ...(schema.$defs ? Object.values(schema.$defs) : []),
+      ...(schema.definitions ? Object.values(schema.definitions) : []),
       ...(schema.properties ? Object.values(schema.properties) : []),
       ...(schema.prefixItems ?? []),
       ...(schema.anyOf ?? []),
