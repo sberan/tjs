@@ -25,7 +25,8 @@
     "format:check": "prettier --check .",
     "prepare": "husky",
     "bench": "tsx benchmarks/bench.ts",
-    "bench:json": "tsx benchmarks/bench.ts --json"
+    "bench:json": "tsx benchmarks/bench.ts --json",
+    "bench:ebdrup": "node benchmarks/run-ebdrup-benchmark.cjs"
   },
   "keywords": [
     "json-schema",
