@@ -1,12 +1,12 @@
 /**
- * JIT Compiler for JSON Schema validation
+ * JSON Schema Compiler
  *
  * Generates optimized JavaScript validation functions from schemas.
  */
 
 import type { JsonSchema, JsonSchemaBase } from '../types.js';
 import { CodeBuilder, escapeString, propAccess, stringify } from './codegen.js';
-import { CompileContext, VOCABULARIES, type JITOptions } from './context.js';
+import { CompileContext, VOCABULARIES, type CompileOptions } from './context.js';
 
 /**
  * Property names that exist on Object.prototype or Array.prototype.
@@ -83,9 +83,9 @@ function genRequiredCheck(
 }
 
 /**
- * Validation error type for internal use
+ * Compile error type for internal use
  */
-export interface JITError {
+export interface CompileError {
   path: string;
   message: string;
   keyword: string;
@@ -95,12 +95,12 @@ export interface JITError {
  * Compiled validation function type
  * When errors array is provided, errors are collected instead of early return
  */
-export type ValidateFn = (data: unknown, errors?: JITError[]) => boolean;
+export type ValidateFn = (data: unknown, errors?: CompileError[]) => boolean;
 
 /**
  * Compile a JSON Schema into a validation function
  */
-export function compile(schema: JsonSchema, options: JITOptions = {}): ValidateFn {
+export function compile(schema: JsonSchema, options: CompileOptions = {}): ValidateFn {
   const ctx = new CompileContext(schema, options);
   const code = new CodeBuilder();
 
@@ -238,7 +238,7 @@ function generateSchemaValidator(
   if (schema.$ref && ctx.options.legacyRef) {
     generateRefCheck(code, schema, dataVar, pathExpr, ctx, scopeVar);
   } else {
-    // Generate JIT code for each keyword (draft-2020-12 behavior)
+    // Generate code for each keyword (draft-2020-12 behavior)
     generateTypeCheck(code, schema, dataVar, pathExpr, ctx);
     generateConstCheck(code, schema, dataVar, pathExpr, ctx);
     generateEnumCheck(code, schema, dataVar, pathExpr, ctx);
@@ -808,16 +808,22 @@ function validateIdnaLabel(label: string): boolean {
   return true;
 }
 
+// Fast hostname regex for simple cases (no IDN, no -- at positions 3-4)
+const SIMPLE_HOSTNAME_REGEX =
+  /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/i;
+
 function validateHostname(s: string): boolean {
+  // Fast path: simple hostnames without potential Punycode or -- issues
+  if (SIMPLE_HOSTNAME_REGEX.test(s) && s.indexOf('--') < 0) return true;
+  // Slow path: detailed validation
   if (s.length === 0 || s.length > 253) return false;
-  // Trailing dot not allowed per test suite
-  if (s.endsWith('.')) return false;
+  if (s.charCodeAt(s.length - 1) === 46) return false; // Trailing dot
   const labels = s.split('.');
   for (const label of labels) {
     if (label.length === 0 || label.length > 63) return false;
     if (!FORMAT_REGEX.hostnameLabel.test(label)) return false;
     // Check for -- in positions 3-4
-    if (label.length >= 4 && label[2] === '-' && label[3] === '-') {
+    if (label.length >= 4 && label.charCodeAt(2) === 45 && label.charCodeAt(3) === 45) {
       // Only xn-- (Punycode) labels are allowed to have -- in positions 3-4
       const lowerLabel = label.toLowerCase();
       if (!lowerLabel.startsWith('xn--')) return false;
@@ -882,13 +888,16 @@ function validateEmailIpLiteral(domain: string): boolean {
 }
 
 function validateEmail(s: string): boolean {
-  // Check for quoted local part
-  if (FORMAT_REGEX.emailQuoted.test(s)) {
+  // Fast path: most emails match the simple pattern
+  if (FORMAT_REGEX.emailSimple.test(s)) return true;
+  // Slow path: check for quoted local part or IP literal domain
+  if (s.charCodeAt(0) === 34) {
+    // Quoted local part starts with "
+    if (!FORMAT_REGEX.emailQuoted.test(s)) return false;
     const atIndex = s.lastIndexOf('@');
     if (atIndex < 0) return false;
     const domain = s.slice(atIndex + 1);
-    // Check for IP literal
-    if (domain.startsWith('[') && domain.endsWith(']')) {
+    if (domain.charCodeAt(0) === 91 && domain.charCodeAt(domain.length - 1) === 93) {
       return validateEmailIpLiteral(domain);
     }
     return validateHostname(domain);
@@ -897,11 +906,11 @@ function validateEmail(s: string): boolean {
   const atIndex = s.lastIndexOf('@');
   if (atIndex >= 0) {
     const domain = s.slice(atIndex + 1);
-    if (domain.startsWith('[') && domain.endsWith(']')) {
+    if (domain.charCodeAt(0) === 91 && domain.charCodeAt(domain.length - 1) === 93) {
       return validateEmailIpLiteral(domain);
     }
   }
-  return FORMAT_REGEX.emailSimple.test(s);
+  return false;
 }
 
 function validateIPv6(s: string): boolean {
@@ -929,17 +938,23 @@ function validateIPv6(s: string): boolean {
   return false;
 }
 
+// Fast URI regex for simple cases (from ajv-formats)
+const SIMPLE_URI_REGEX = /^(?:[a-z][a-z0-9+\-.]*:)(?:\/?\/)?[^\s]*$/i;
+// eslint-disable-next-line no-control-regex
+const NON_ASCII_REGEX = /[^\x00-\x7f]/;
+
 function validateUri(s: string): boolean {
+  // Quick rejection for bad chars
   if (FORMAT_REGEX.uriBadChars.test(s)) return false;
-  if (!FORMAT_REGEX.uriScheme.test(s)) return false;
+  // Fast path: simple URI regex for most common cases
+  if (!SIMPLE_URI_REGEX.test(s)) return false;
   // RFC 3986: URIs must only contain ASCII characters
-  // eslint-disable-next-line no-control-regex
-  if (/[^\x00-\x7f]/.test(s)) return false;
+  if (NON_ASCII_REGEX.test(s)) return false;
   // Check for invalid userinfo ([ is not allowed in userinfo per RFC 3986)
   const schemeEnd = s.indexOf(':');
   const authorityStart = s.indexOf('//');
   if (authorityStart === schemeEnd + 1) {
-    // Has authority
+    // Has authority - check for [ in userinfo
     const authorityEnd = s.indexOf('/', authorityStart + 2);
     const queryStart = s.indexOf('?', authorityStart + 2);
     const fragStart = s.indexOf('#', authorityStart + 2);
@@ -950,11 +965,18 @@ function validateUri(s: string): boolean {
     const authority = s.slice(authorityStart + 2, end);
     const atIndex = authority.indexOf('@');
     if (atIndex >= 0) {
-      const userinfo = authority.slice(0, atIndex);
       // [ and ] are not allowed in userinfo
-      if (/[[\]]/.test(userinfo)) return false;
+      const openBracket = authority.indexOf('[');
+      const closeBracket = authority.indexOf(']');
+      if (
+        (openBracket >= 0 && openBracket < atIndex) ||
+        (closeBracket >= 0 && closeBracket < atIndex)
+      ) {
+        return false;
+      }
     }
   }
+  // Use URL constructor for final validation (handles edge cases)
   try {
     new URL(s);
     return true;
@@ -1456,22 +1478,30 @@ export function generateNumberChecks(
 
     if (schema.multipleOf !== undefined) {
       const multipleOf = schema.multipleOf;
-      const divVar = code.genVar('div');
-      code.line(`const ${divVar} = ${dataVar} / ${multipleOf};`);
-      // Handle floating point precision - check if division result is close to an integer
-      // If division overflows to infinity, use modulo as fallback
-      // Use 1e-10 tolerance for floating-point comparison
-      code.if(
-        `Number.isFinite(${divVar}) ? Math.abs(${divVar} - Math.round(${divVar})) > 1e-10 : Math.abs(${dataVar} % ${multipleOf}) > 1e-10`,
-        () => {
+      // Use Number.isInteger for accuracy (handles large numbers and Infinity correctly)
+      // For integer multipleOf values, can use simpler modulo check
+      if (Number.isInteger(multipleOf) && multipleOf >= 1) {
+        // Fast path for integer multipleOf: simple modulo
+        code.if(`${dataVar} % ${multipleOf} !== 0`, () => {
           genError(
             code,
             pathExpr,
             'multipleOf',
             `Value must be a multiple of ${schema.multipleOf}`
           );
-        }
-      );
+        });
+      } else {
+        const divVar = code.genVar('div');
+        code.line(`const ${divVar} = ${dataVar} / ${multipleOf};`);
+        code.if(`!Number.isInteger(${divVar})`, () => {
+          genError(
+            code,
+            pathExpr,
+            'multipleOf',
+            `Value must be a multiple of ${schema.multipleOf}`
+          );
+        });
+      }
     }
   };
 

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { loadTestFiles } from './loader.js';
 import { formatReport } from './runner.js';
-import { Validator, type ValidatorJIT } from '../../src/index.js';
+import { Validator, type Validator as ValidatorType } from '../../src/index.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -189,7 +189,7 @@ function testDraft(draft: Draft) {
       describe(keyword, () => {
         for (const group of file.groups) {
           describe(group.description, () => {
-            let validator: ValidatorJIT<unknown> | null = null;
+            let validator: ValidatorType<unknown> | null = null;
             let schemaError: string | null = null;
 
             beforeAll(() => {
