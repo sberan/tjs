@@ -1,6 +1,12 @@
+export type Draft = 'draft4' | 'draft6' | 'draft7' | 'draft2019-09' | 'draft2020-12';
+
 export interface ValidatorAdapter {
   name: string;
-  compile(schema: unknown, remotes?: Record<string, unknown>): (data: unknown) => boolean;
+  compile(
+    schema: unknown,
+    remotes?: Record<string, unknown>,
+    draft?: Draft
+  ): (data: unknown) => boolean;
 }
 
 export interface BenchmarkResult {

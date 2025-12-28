@@ -1,25 +1,39 @@
+import Ajv from 'ajv';
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
-import type { ValidatorAdapter } from '../types.js';
+import type { ValidatorAdapter, Draft } from '../types.js';
 
-// Create a single AJV instance to reuse (avoids recompiling meta-schema)
-// Suppress unknown format warnings with logger: false
-const ajv = new Ajv2020({ allErrors: false, strict: false, logger: false });
-addFormats(ajv);
+// Create AJV instances for each draft (reuse to avoid recompiling meta-schemas)
+const ajvInstances: Record<string, Ajv> = {};
+const addedRemotes: Record<string, Set<string>> = {};
 
-// Track which remotes have been added
-const addedRemotes = new Set<string>();
+function getAjv(draft: Draft): Ajv {
+  if (!ajvInstances[draft]) {
+    // Use Ajv2020 for modern drafts, regular Ajv for older drafts
+    if (draft === 'draft2020-12') {
+      ajvInstances[draft] = new Ajv2020({ allErrors: false, strict: false, logger: false });
+    } else {
+      ajvInstances[draft] = new Ajv({ allErrors: false, strict: false, logger: false });
+    }
+    addFormats(ajvInstances[draft]);
+    addedRemotes[draft] = new Set();
+  }
+  return ajvInstances[draft];
+}
 
 export const ajvAdapter: ValidatorAdapter = {
   name: 'ajv',
-  compile(schema: unknown, remotes?: Record<string, unknown>) {
+  compile(schema: unknown, remotes?: Record<string, unknown>, draft: Draft = 'draft2020-12') {
+    const ajv = getAjv(draft);
+    const added = addedRemotes[draft];
+
     // Add remotes that haven't been added yet
     if (remotes) {
       for (const [uri, remoteSchema] of Object.entries(remotes)) {
-        if (!addedRemotes.has(uri)) {
+        if (!added.has(uri)) {
           try {
             ajv.addSchema(remoteSchema as object, uri);
-            addedRemotes.add(uri);
+            added.add(uri);
           } catch {
             // Schema might already be added or invalid
           }
