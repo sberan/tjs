@@ -375,7 +375,12 @@ export class CompileContext {
       if (baseSchema) {
         if (fragment === '#') return baseSchema;
         if (fragment.startsWith('#/')) {
-          return this.#resolveJsonPointer(baseSchema, fragment.slice(1));
+          const resolved = this.#resolveJsonPointer(baseSchema, fragment.slice(1));
+          // Set base URI for subschemas resolved via JSON pointer so internal $refs work
+          if (resolved && typeof resolved === 'object' && !this.#schemaToBaseUri.has(resolved)) {
+            this.#schemaToBaseUri.set(resolved, resolvedUri);
+          }
+          return resolved;
         }
         // Anchor reference
         const anchorName = fragment.slice(1);

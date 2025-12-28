@@ -11,13 +11,49 @@ const path = require('path');
 
 const BENCHMARK_DIR = path.join(__dirname, '..', 'json-schema-benchmark');
 const TEST_SUITE_DIR = path.join(BENCHMARK_DIR, 'JSON-Schema-Test-Suite', 'tests');
+const REMOTES_DIR = path.join(BENCHMARK_DIR, 'JSON-Schema-Test-Suite', 'remotes');
+
+// Load remote schemas from the test suite
+function loadRemoteSchemas() {
+  const remotes = {};
+
+  function loadDir(dir, baseUrl) {
+    if (!fs.existsSync(dir)) return;
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        loadDir(fullPath, `${baseUrl}${entry.name}/`);
+      } else if (entry.name.endsWith('.json')) {
+        try {
+          const content = fs.readFileSync(fullPath, 'utf8');
+          const schema = JSON.parse(content);
+          const urlPath = `${baseUrl}${entry.name}`;
+          remotes[urlPath] = schema;
+          // Also register by $id if present
+          if (schema.$id) {
+            remotes[schema.$id] = schema;
+          }
+          if (schema.id) {
+            remotes[schema.id] = schema;
+          }
+        } catch {
+          // Skip invalid JSON files
+        }
+      }
+    }
+  }
+
+  loadDir(REMOTES_DIR, 'http://localhost:1234/');
+  return remotes;
+}
 
 // Load our validator
-function loadValidator() {
+function loadValidator(remotes) {
   const { compile } = require('../dist/jit/compiler.js');
   return {
     name: 'json-schema-ts',
-    compile: (schema) => compile(schema),
+    compile: (schema) => compile(schema, { remotes }),
     validate: (validator, data) => validator(data),
   };
 }
@@ -106,7 +142,9 @@ function main() {
 
   console.log('=== ebdrup compliance test (quick) ===\n');
 
-  const validator = loadValidator();
+  // Load remote schemas
+  const remotes = loadRemoteSchemas();
+  const validator = loadValidator(remotes);
   let totalPassed = 0;
   let totalFailed = 0;
 
