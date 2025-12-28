@@ -10,54 +10,37 @@
  *   });
  */
 
-import type { JsonSchema, JsonSchemaBase } from './types.js';
+import type { JsonSchema, JsonSchemaBase, JsonSchemaType } from './types.js';
 import type { Infer } from './infer.js';
 import { createValidator, type Validator } from './core/index.js';
 import type { CompileOptions } from './core/context.js';
 
-// Primitive type shorthands (excluding 'object' and 'array' which require schema)
-type StructShorthand = 'string' | 'number' | 'integer' | 'boolean' | 'null';
-
 // Schema with optional marker for struct
 type StructSchema = JsonSchemaBase & { optional?: boolean };
 
-// Property definition can be shorthand or full schema with optional marker
-type StructPropertyDef = StructShorthand | StructSchema;
+// Property definition can be shorthand type string or full schema with optional marker
+type StructPropertyDef = JsonSchemaType | StructSchema;
 
 // Check if a property definition is marked as optional
 type IsOptional<T> = T extends { optional: true } ? true : false;
-
-// Map shorthand types to TS types
-type MapShorthand<T extends StructShorthand> = T extends 'string'
-  ? string
-  : T extends 'number'
-    ? number
-    : T extends 'integer'
-      ? number
-      : T extends 'boolean'
-        ? boolean
-        : T extends 'null'
-          ? null
-          : never;
 
 // Build a synthetic root schema from the struct properties for $ref resolution
 type BuildStructSchema<Props extends Record<string, StructPropertyDef>> = {
   type: 'object';
   properties: {
-    [K in keyof Props]: Props[K] extends StructShorthand
+    [K in keyof Props]: Props[K] extends JsonSchemaType
       ? { type: Props[K] }
       : Omit<Props[K], 'optional'>;
   };
   required: Array<RequiredKeys<Props>>;
 };
 
-// Infer the type from a property definition, using Root for $ref resolution
-type InferPropertyType<T extends StructPropertyDef, Root> = T extends StructShorthand
-  ? MapShorthand<T>
+// Infer the type from a property definition, using Infer from infer.ts
+// Pass Root through so Infer can resolve $ref naturally
+type InferPropertyType<T extends StructPropertyDef, Root> = T extends JsonSchemaType
+  ? Infer<T>
   : T extends StructSchema
-    ? T extends { $ref: '#' }
-      ? Infer<Root> // Self-reference resolves to the full struct type
-      : Infer<Omit<T, 'optional'>, {}, [], Root>
+    ? Infer<Omit<T, 'optional'>, {}, [], Root>
     : unknown;
 
 // Extract keys where the property is optional
