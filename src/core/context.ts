@@ -5,6 +5,20 @@
 import type { JsonSchema, JsonSchemaBase } from '../types.js';
 
 /**
+ * Coercion options - can be boolean or object with per-type settings
+ */
+export type CoercionOptions =
+  | boolean
+  | {
+      string?: boolean;
+      number?: boolean;
+      integer?: boolean;
+      boolean?: boolean;
+      null?: boolean;
+      array?: boolean;
+    };
+
+/**
  * Options for schema compilation
  */
 export interface CompileOptions {
@@ -25,6 +39,12 @@ export interface CompileOptions {
    * Default: true (for backwards compatibility with older drafts)
    */
   legacyRef?: boolean;
+  /**
+   * Enable type coercion. When enabled, values are coerced to match schema types.
+   * Can be boolean (all types) or object with per-type settings.
+   * Default: false
+   */
+  coerce?: CoercionOptions;
 }
 
 /**

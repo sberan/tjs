@@ -5,8 +5,9 @@
 import type { JsonSchema, JsonSchemaBase } from '../types.js';
 import { compile, type CompileError } from './compiler.js';
 import type { CompileOptions } from './context.js';
+import { coerceValue } from './coercion.js';
 
-export type { CompileOptions } from './context.js';
+export type { CompileOptions, CoercionOptions } from './context.js';
 export { compile } from './compiler.js';
 
 /**
@@ -252,24 +253,41 @@ export interface Validator<T> {
  */
 export function createValidator<T>(schema: JsonSchema, options: CompileOptions = {}): Validator<T> {
   const validateFn = compile(schema, options);
+  const coerceOptions = options.coerce;
 
-  // Cast the compiled function directly - it's already callable
-  const validator = validateFn as unknown as Validator<T>;
-
-  // Attach methods directly to the compiled function
-  validator.validate = validateFn as (data: unknown) => data is T;
-
-  validator.assert = (data: unknown): T => {
-    if (!validateFn(data)) {
-      throw new Error('Validation failed');
+  // Helper to coerce if enabled
+  const maybeCoerce = (data: unknown): unknown => {
+    if (coerceOptions) {
+      return coerceValue(data, schema, coerceOptions).value;
     }
-    return data as T;
+    return data;
   };
 
-  validator.parse = (data: unknown): ParseResult<T> => {
+  // Create the base validation function that handles coercion for validate()
+  const validatorFn = ((data: unknown): data is T => {
+    const coercedData = maybeCoerce(data);
+    return validateFn(coercedData);
+  }) as Validator<T>;
+
+  // Attach methods directly to the validator function
+  validatorFn.validate = (data: unknown): data is T => {
+    const coercedData = maybeCoerce(data);
+    return validateFn(coercedData);
+  };
+
+  validatorFn.assert = (data: unknown): T => {
+    const coercedData = maybeCoerce(data);
+    if (!validateFn(coercedData)) {
+      throw new Error('Validation failed');
+    }
+    return coercedData as T;
+  };
+
+  validatorFn.parse = (data: unknown): ParseResult<T> => {
+    const coercedData = maybeCoerce(data);
     const errors: CompileError[] = [];
-    if (validateFn(data, errors)) {
-      return { ok: true, data: data as T };
+    if (validateFn(coercedData, errors)) {
+      return { ok: true, data: coercedData as T };
     }
     return {
       ok: false,
@@ -280,5 +298,5 @@ export function createValidator<T>(schema: JsonSchema, options: CompileOptions =
     };
   };
 
-  return validator;
+  return validatorFn;
 }
