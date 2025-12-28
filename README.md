@@ -265,7 +265,7 @@ interface ValidatorOptions {
 
 | Feature | tjs | ajv | zod | joi |
 |---------|-----|-----|-----|-----|
-| JSON Schema compliance | ✅ 100% | ⚠️ 94.6% | ❌ N/A | ❌ N/A |
+| JSON Schema compliance | ✅ 100% | ⚠️ 94.6% | ⚠️ Experimental | ❌ N/A |
 | TypeScript inference | ✅ First-class | ⚠️ Via json-schema-to-ts | ✅ Native | ❌ None |
 | Runtime dependencies | ✅ 0 | ❌ 4+ | ✅ 0 | ❌ 5+ |
 | Performance | ✅ Fastest | ⚠️ Fast | ❌ Slower | ❌ Slower |

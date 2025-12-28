@@ -1,4 +1,8 @@
-import type { JsonValue, JsonObject, JsonArray } from 'type-fest';
+// JSON value types (replaces type-fest dependency)
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonArray = JsonValue[];
+export type JsonObject = { [key: string]: JsonValue };
+export type JsonValue = JsonPrimitive | JsonObject | JsonArray;
 
 // Primitive type names
 export type JsonSchemaType =
@@ -93,6 +97,3 @@ export type PrimitiveTypeMap = {
   boolean: boolean;
   null: null;
 };
-
-// Re-export for convenience
-export type { JsonValue, JsonObject, JsonArray };
