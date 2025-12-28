@@ -965,6 +965,11 @@ export function generateContainsCheck(
     return;
   }
 
+  // If minContains is 0 and no maxContains, contains is always satisfied
+  if (minContains === 0 && maxContains === undefined) {
+    return;
+  }
+
   // Queue the contains schema for compilation (reuses all existing generators)
   const containsFuncName = ctx.queueCompile(containsSchema);
 
@@ -1023,10 +1028,14 @@ export function generateDependentRequiredCheck(
 ): void {
   if (!schema.dependentRequired) return;
 
+  // Filter out empty arrays (no requirements)
+  const deps = Object.entries(schema.dependentRequired).filter(([, reqs]) => reqs.length > 0);
+  if (deps.length === 0) return;
+
   code.if(
     `typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
     () => {
-      for (const [prop, requiredProps] of Object.entries(schema.dependentRequired!)) {
+      for (const [prop, requiredProps] of deps) {
         const propStr = escapeString(prop);
         code.if(`'${propStr}' in ${dataVar}`, () => {
           for (const reqProp of requiredProps) {
