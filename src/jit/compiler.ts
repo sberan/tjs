@@ -3054,9 +3054,12 @@ export function generateUnevaluatedPropertiesCheck(
               conditions.push(`!${patternVar}.test(key)`);
             }
 
-            // Add dynamic patterns check only if there might be dynamic patterns
+            // Add dynamic patterns check only if there are dynamic patterns
             // Use 'u' flag for Unicode support
-            conditions.push('!dynamicPatterns.some(p => new RegExp(p, "u").test(key))');
+            // Short-circuit: skip if dynamicPatterns is empty (common case)
+            conditions.push(
+              '(dynamicPatterns.length === 0 || !dynamicPatterns.some(p => new RegExp(p, "u").test(key)))'
+            );
 
             code.if(conditions.join(' && '), () => {
               const keyPathExpr = pathExpr === "''" ? 'key' : `${pathExpr} + '.' + key`;
