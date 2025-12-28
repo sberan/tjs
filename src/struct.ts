@@ -5,67 +5,80 @@
  *   const Person = struct({
  *     firstName: 'string',
  *     lastName: 'string',
- *     age: 'number',
- *     email: { type: 'string', format: 'email' }
- *   }).optional('age', 'email');
+ *     age: { type: 'number', optional: true },
+ *     email: { type: 'string', format: 'email', optional: true }
+ *   });
  */
 
-import type { JsonSchema, JsonSchemaType, JsonSchemaBase } from './types.js';
+import type { JsonSchema, JsonSchemaBase } from './types.js';
 import type { Infer } from './infer.js';
 import { createValidator, type Validator } from './core/index.js';
 import type { CompileOptions } from './core/context.js';
 
-// Property definition can be shorthand or full schema
-type PropertyDef = JsonSchemaType | JsonSchemaBase;
+// Primitive type shorthands (excluding 'object' and 'array' which require schema)
+type StructShorthand = 'string' | 'number' | 'integer' | 'boolean' | 'null';
 
-// Map property definitions to their inferred types
-type InferPropertyDef<T extends PropertyDef> = T extends JsonSchemaType
-  ? T extends 'string'
-    ? string
-    : T extends 'number'
+// Schema with optional marker for struct
+type StructSchema = JsonSchemaBase & { optional?: boolean };
+
+// Property definition can be shorthand or full schema with optional marker
+type StructPropertyDef = StructShorthand | StructSchema;
+
+// Check if a property definition is marked as optional
+type IsOptional<T> = T extends { optional: true } ? true : false;
+
+// Map shorthand types to TS types
+type MapShorthand<T extends StructShorthand> = T extends 'string'
+  ? string
+  : T extends 'number'
+    ? number
+    : T extends 'integer'
       ? number
-      : T extends 'integer'
-        ? number
-        : T extends 'boolean'
-          ? boolean
-          : T extends 'null'
-            ? null
-            : T extends 'object'
-              ? Record<string, unknown>
-              : T extends 'array'
-                ? unknown[]
-                : unknown
-  : T extends JsonSchemaBase
-    ? Infer<T>
+      : T extends 'boolean'
+        ? boolean
+        : T extends 'null'
+          ? null
+          : never;
+
+// Build a synthetic root schema from the struct properties for $ref resolution
+type BuildStructSchema<Props extends Record<string, StructPropertyDef>> = {
+  type: 'object';
+  properties: {
+    [K in keyof Props]: Props[K] extends StructShorthand
+      ? { type: Props[K] }
+      : Omit<Props[K], 'optional'>;
+  };
+  required: Array<RequiredKeys<Props>>;
+};
+
+// Infer the type from a property definition, using Root for $ref resolution
+type InferPropertyType<T extends StructPropertyDef, Root> = T extends StructShorthand
+  ? MapShorthand<T>
+  : T extends StructSchema
+    ? T extends { $ref: '#' }
+      ? Infer<Root> // Self-reference resolves to the full struct type
+      : Infer<Omit<T, 'optional'>, {}, [], Root>
     : unknown;
 
-// Infer object type from property definitions with required/optional handling
-type InferStruct<
-  Props extends Record<string, PropertyDef>,
-  OptionalKeys extends keyof Props = never,
-> = {
-  [K in Exclude<keyof Props, OptionalKeys>]: InferPropertyDef<Props[K]>;
+// Extract keys where the property is optional
+type OptionalKeys<Props extends Record<string, StructPropertyDef>> = {
+  [K in keyof Props]: IsOptional<Props[K]> extends true ? K : never;
+}[keyof Props];
+
+// Extract keys where the property is required
+type RequiredKeys<Props extends Record<string, StructPropertyDef>> = {
+  [K in keyof Props]: IsOptional<Props[K]> extends true ? never : K;
+}[keyof Props];
+
+// Infer the full struct type
+type InferStructType<Props extends Record<string, StructPropertyDef>> = {
+  [K in RequiredKeys<Props>]: InferPropertyType<Props[K], BuildStructSchema<Props>>;
 } & {
-  [K in OptionalKeys]?: InferPropertyDef<Props[K]>;
+  [K in OptionalKeys<Props>]?: InferPropertyType<Props[K], BuildStructSchema<Props>>;
 };
 
 // Simplify the intersection
 type Simplify<T> = { [K in keyof T]: T[K] } & {};
-
-/**
- * Struct builder interface - allows chaining .optional() calls
- */
-export interface StructBuilder<
-  Props extends Record<string, PropertyDef>,
-  OptionalKeys extends keyof Props = never,
-> extends Validator<Simplify<InferStruct<Props, OptionalKeys>>> {
-  /**
-   * Mark specific properties as optional
-   */
-  optional<K extends Exclude<keyof Props, OptionalKeys>>(
-    ...keys: K[]
-  ): StructBuilder<Props, OptionalKeys | K>;
-}
 
 /**
  * Create a struct schema with ergonomic syntax
@@ -74,8 +87,8 @@ export interface StructBuilder<
  * const Person = struct({
  *   firstName: 'string',
  *   lastName: 'string',
- *   age: 'number',
- * }).optional('age');
+ *   age: { type: 'number', optional: true },
+ * });
  *
  * // Equivalent to:
  * schema({
@@ -88,32 +101,28 @@ export interface StructBuilder<
  *   required: ['firstName', 'lastName'],
  * });
  */
-export function struct<Props extends Record<string, PropertyDef>>(
+export function struct<const Props extends Record<string, StructPropertyDef>>(
   properties: Props,
   options?: CompileOptions
-): StructBuilder<Props, never> {
-  return createStructBuilder(properties, [], options);
-}
-
-function createStructBuilder<
-  Props extends Record<string, PropertyDef>,
-  OptionalKeys extends keyof Props,
->(
-  properties: Props,
-  optionalKeys: (keyof Props)[],
-  options?: CompileOptions
-): StructBuilder<Props, OptionalKeys> {
+): Validator<Simplify<InferStructType<Props>>> {
   // Convert property definitions to JSON Schema properties
   const schemaProperties: Record<string, JsonSchema> = {};
-  for (const [key, def] of Object.entries(properties)) {
-    // Shorthand types become { type: '...' }, full schemas pass through
-    schemaProperties[key] = typeof def === 'string' ? { type: def } : def;
-  }
+  const required: string[] = [];
 
-  // All keys not in optionalKeys are required
-  const allKeys = Object.keys(properties);
-  const optionalSet = new Set(optionalKeys as string[]);
-  const required = allKeys.filter((k) => !optionalSet.has(k));
+  for (const [key, def] of Object.entries(properties)) {
+    if (typeof def === 'string') {
+      // Shorthand type - always required
+      schemaProperties[key] = { type: def };
+      required.push(key);
+    } else {
+      // Full schema - check for optional marker
+      const { optional, ...schemaWithoutOptional } = def;
+      schemaProperties[key] = schemaWithoutOptional;
+      if (!optional) {
+        required.push(key);
+      }
+    }
+  }
 
   // Build the schema
   const schema: JsonSchemaBase = {
@@ -122,18 +131,8 @@ function createStructBuilder<
     ...(required.length > 0 ? { required } : {}),
   };
 
-  // Create the validator
-  const validator = createValidator<Simplify<InferStruct<Props, OptionalKeys>>>(schema, options);
-
-  // Add the optional() method
-  const builder = validator as StructBuilder<Props, OptionalKeys>;
-  builder.optional = <K extends Exclude<keyof Props, OptionalKeys>>(...keys: K[]) => {
-    return createStructBuilder<Props, OptionalKeys | K>(
-      properties,
-      [...optionalKeys, ...keys],
-      options
-    );
-  };
-
-  return builder;
+  return createValidator<Simplify<InferStructType<Props>>>(schema, options);
 }
+
+// Re-export the property def type for external use
+export type { StructPropertyDef, StructSchema };
