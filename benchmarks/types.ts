@@ -1,6 +1,6 @@
 export interface ValidatorAdapter {
   name: string;
-  compile(schema: unknown): (data: unknown) => boolean;
+  compile(schema: unknown, remotes?: Record<string, unknown>): (data: unknown) => boolean;
 }
 
 export interface BenchmarkResult {
