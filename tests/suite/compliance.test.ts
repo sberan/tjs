@@ -1,12 +1,19 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { loadTestFiles } from './loader.js';
-import { runTestSuite, formatReport } from './runner.js';
+import { formatReport } from './runner.js';
+import { Validator, type ValidatorJIT } from '../../src/index.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import type { JsonSchema } from '../../src/types.js';
+import type { TestResult, ComplianceReport } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Keywords that are not yet implemented or have known issues
+const UNIMPLEMENTED_KEYWORDS = [
+  'unknownKeyword', // Meta-schema validation not implemented
+];
 
 // Load remote schemas for the test suite
 function loadRemoteSchemas(): Record<string, JsonSchema> {
@@ -151,24 +158,149 @@ describe('JSON Schema Test Suite Compliance', () => {
   const files = loadTestFiles({ includeOptional: false });
   const remotes = loadRemoteSchemas();
 
+  // Track results for report generation
+  const allResults: TestResult[] = [];
+
   // Pre-fetch any missing remote schemas (e.g., metaschema dependencies)
   beforeAll(async () => {
     // Explicitly fetch the draft 2020-12 metaschema which some tests reference
     await fetchRemoteSchemas(['https://json-schema.org/draft/2020-12/schema'], remotes);
   }, 30000); // 30 second timeout for network requests
 
-  it('runs all required tests and generates report', () => {
-    const failures: string[] = [];
+  // Generate individual test cases for each file/group/test
+  for (const file of files) {
+    const keyword = file.name;
+    const isUnimplemented = UNIMPLEMENTED_KEYWORDS.includes(keyword);
 
-    const report = runTestSuite(files, {
-      skipUnimplemented: true,
-      remotes,
-      onResult: (result) => {
-        if (!result.passed) {
-          failures.push(`FAIL: ${result.file}/${result.group}/${result.test}`);
-        }
-      },
+    describe(keyword, () => {
+      for (const group of file.groups) {
+        describe(group.description, () => {
+          // Create validator once per group (shared across tests in the group)
+          let validator: ValidatorJIT<unknown> | null = null;
+          let schemaError: string | null = null;
+
+          // Try to create the validator before running tests
+          beforeAll(() => {
+            if (isUnimplemented) return;
+
+            try {
+              validator = Validator(group.schema as JsonSchema, {
+                formatAssertion: false,
+                remotes,
+              });
+            } catch (err) {
+              schemaError = `Schema construction failed: ${err}`;
+            }
+          });
+
+          for (const test of group.tests) {
+            const testFn = isUnimplemented ? it.skip : it;
+
+            testFn(test.description, () => {
+              const result: TestResult = {
+                file: file.name,
+                group: group.description,
+                test: test.description,
+                expected: test.valid,
+                actual: false,
+                passed: false,
+              };
+
+              // Handle schema construction failure
+              if (schemaError) {
+                result.error = schemaError;
+                allResults.push(result);
+                expect.fail(schemaError);
+                return;
+              }
+
+              if (!validator) {
+                result.error = 'Validator not initialized';
+                allResults.push(result);
+                expect.fail('Validator not initialized');
+                return;
+              }
+
+              let actual: boolean;
+              try {
+                actual = validator.validate(test.data);
+              } catch (err) {
+                result.error = `Validation threw: ${err}`;
+                allResults.push(result);
+                expect.fail(`Validation threw: ${err}`);
+                return;
+              }
+
+              result.actual = actual;
+              result.passed = actual === test.valid;
+
+              if (!result.passed) {
+                allResults.push(result);
+              }
+
+              expect(
+                actual,
+                `Expected ${test.valid ? 'valid' : 'invalid'}, got ${actual ? 'valid' : 'invalid'}`
+              ).toBe(test.valid);
+            });
+          }
+        });
+      }
     });
+  }
+
+  // Generate report after all tests complete
+  it.concurrent('generates compliance report', async () => {
+    // Wait a tick to ensure all other tests have run
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Count results from Vitest's perspective
+    let total = 0;
+    let passed = 0;
+    let failed = 0;
+    let skipped = 0;
+    const byKeyword: Record<string, { passed: number; failed: number; skipped: number }> = {};
+
+    for (const file of files) {
+      const keyword = file.name;
+      if (!byKeyword[keyword]) {
+        byKeyword[keyword] = { passed: 0, failed: 0, skipped: 0 };
+      }
+
+      const isUnimplemented = UNIMPLEMENTED_KEYWORDS.includes(keyword);
+
+      for (const group of file.groups) {
+        for (const test of group.tests) {
+          total++;
+          if (isUnimplemented) {
+            skipped++;
+            byKeyword[keyword].skipped++;
+          } else {
+            // Check if this test failed
+            const failure = allResults.find(
+              (r) =>
+                r.file === file.name && r.group === group.description && r.test === test.description
+            );
+            if (failure) {
+              failed++;
+              byKeyword[keyword].failed++;
+            } else {
+              passed++;
+              byKeyword[keyword].passed++;
+            }
+          }
+        }
+      }
+    }
+
+    const report: ComplianceReport = {
+      total,
+      passed,
+      failed,
+      skipped,
+      byKeyword,
+      failures: allResults,
+    };
 
     // Write report to file
     const reportPath = path.join(__dirname, '../../COMPLIANCE.md');
@@ -178,22 +310,5 @@ describe('JSON Schema Test Suite Compliance', () => {
     console.log(
       `\nCompliance: ${report.passed}/${report.total} (${((report.passed / report.total) * 100).toFixed(1)}%)`
     );
-    console.log(`Skipped: ${report.skipped}`);
-    console.log(`Failed: ${report.failed}`);
-
-    // Log all failures for debugging
-    if (failures.length > 0) {
-      console.log('\nFailures:');
-      for (const f of failures) {
-        console.log(`  ${f}`);
-      }
-    }
-
-    // Verify we ran tests
-    expect(report.total).toBeGreaterThan(0);
-
-    // Assert high compliance rate (adjust as implementation improves)
-    const passRate = report.passed / (report.total - report.skipped);
-    expect(passRate).toBeGreaterThan(0.8); // Expect at least 80% pass rate
   });
 });
