@@ -1474,6 +1474,26 @@ export function generateNumberChecks(
 }
 
 /**
+ * Get the types of items from the schema's items/prefixItems definition
+ * Returns empty array if types are unknown or could include objects/arrays
+ */
+function getItemTypes(schema: JsonSchemaBase): string[] {
+  // Check items schema for type constraints
+  const itemsSchema = schema.items;
+  if (typeof itemsSchema === 'object' && itemsSchema !== null && !Array.isArray(itemsSchema)) {
+    const itemType = (itemsSchema as JsonSchemaBase).type;
+    if (typeof itemType === 'string') {
+      return [itemType];
+    }
+    if (Array.isArray(itemType)) {
+      return itemType as string[];
+    }
+  }
+  // prefixItems or array items - too complex to analyze
+  return [];
+}
+
+/**
  * Generate array validation checks (minItems, maxItems, uniqueItems)
  */
 export function generateArrayChecks(
@@ -1502,17 +1522,44 @@ export function generateArrayChecks(
     }
 
     if (schema.uniqueItems === true) {
-      // O(n²) comparison using deepEqual - same approach as AJV's fallback
-      // This handles all types correctly including object key ordering
+      // Check if items are known to be primitives at compile time
+      const itemTypes = getItemTypes(schema);
+      const canOptimize =
+        itemTypes.length > 0 && !itemTypes.some((t) => t === 'object' || t === 'array');
+
       const iVar = code.genVar('i');
       const jVar = code.genVar('j');
-      code.block(`outer: for (let ${iVar} = ${dataVar}.length; ${iVar}--;)`, () => {
-        code.block(`for (let ${jVar} = ${iVar}; ${jVar}--;)`, () => {
-          code.if(`deepEqual(${dataVar}[${iVar}], ${dataVar}[${jVar}])`, () => {
+
+      if (canOptimize) {
+        // Fast path: items are primitives, use object hash for O(n) lookup
+        const itemVar = code.genVar('item');
+        const indicesVar = code.genVar('indices');
+        const hasMultipleTypes = itemTypes.length > 1;
+
+        code.line(`const ${indicesVar} = {};`);
+        code.block(`for (let ${iVar} = ${dataVar}.length; ${iVar}--;)`, () => {
+          code.line(`let ${itemVar} = ${dataVar}[${iVar}];`);
+          // If multiple types possible, prefix strings to avoid collision with numbers
+          if (hasMultipleTypes) {
+            code.if(`typeof ${itemVar} === 'string'`, () => {
+              code.line(`${itemVar} = '_' + ${itemVar};`);
+            });
+          }
+          code.if(`typeof ${indicesVar}[${itemVar}] === 'number'`, () => {
             genError(code, pathExpr, 'uniqueItems', `Array items must be unique`);
           });
+          code.line(`${indicesVar}[${itemVar}] = ${iVar};`);
         });
-      });
+      } else {
+        // Slow path: O(n²) comparison using deepEqual
+        code.block(`outer: for (let ${iVar} = ${dataVar}.length; ${iVar}--;)`, () => {
+          code.block(`for (let ${jVar} = ${iVar}; ${jVar}--;)`, () => {
+            code.if(`deepEqual(${dataVar}[${iVar}], ${dataVar}[${jVar}])`, () => {
+              genError(code, pathExpr, 'uniqueItems', `Array items must be unique`);
+            });
+          });
+        });
+      }
     }
   };
 
