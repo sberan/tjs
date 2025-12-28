@@ -1328,18 +1328,17 @@ export function generateContentChecks(
   schema: JsonSchemaBase,
   dataVar: string,
   pathExpr: string,
-  _ctx: CompileContext
+  ctx: CompileContext
 ): void {
   const hasContentChecks =
     schema.contentMediaType !== undefined || schema.contentEncoding !== undefined;
 
   if (!hasContentChecks) return;
 
-  // In draft 2020-12, content keywords are annotation-only (no validation)
-  // They only validate in draft-07 and earlier
-  const schemaDialect = schema.$schema;
-  if (schemaDialect && (schemaDialect.includes('2020-12') || schemaDialect.includes('2019-09'))) {
-    return; // Content is annotation-only in these drafts
+  // Content assertion is controlled by the contentAssertion option
+  // which is auto-detected from the schema dialect during context creation
+  if (!ctx.options.contentAssertion) {
+    return;
   }
 
   // Only check if data is a string
