@@ -4,11 +4,13 @@
 
 | Draft | Passed | Total | Rate |
 |-------|--------|-------|------|
-| draft2020-12 | 1988 | 1990 | 99.9% |
-| draft7 | 1530 | 1534 | 99.7% |
+| draft2020-12 | 1990 | 1990 | 100.0% |
+| draft7 | 1534 | 1534 | 100.0% |
 | draft6 | 1170 | 1170 | 100.0% |
 | draft4 | 881 | 882 | 99.9% |
-| **Total** | **5569** | **5576** | **99.9%** |
+| **Total** | **5575** | **5576** | **100.0%** |
+
+*Note: The single draft4 failure is due to a JavaScript limitation where `1.0` and `1` are indistinguishable.*
 
 ## draft2020-12 Required Tests
 
