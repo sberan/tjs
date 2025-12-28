@@ -464,7 +464,7 @@ export function generateStringChecks(
   schema: JsonSchemaBase,
   dataVar: string,
   pathExpr: string,
-  _ctx: CompileContext
+  ctx: CompileContext
 ): void {
   const hasStringChecks =
     schema.minLength !== undefined ||
@@ -504,9 +504,10 @@ export function generateStringChecks(
     }
 
     if (schema.pattern !== undefined) {
-      // Escape the pattern for use in RegExp
-      const escapedPattern = escapeString(schema.pattern);
-      code.if(`!/${escapedPattern}/.test(${dataVar})`, () => {
+      // Pre-compile regex as a runtime function for consistent performance
+      const regexName = ctx.genRuntimeName('pattern');
+      ctx.addRuntimeFunction(regexName, new RegExp(schema.pattern));
+      code.if(`!${regexName}.test(${dataVar})`, () => {
         genError(code, pathExpr, 'pattern', `String must match pattern ${schema.pattern}`);
       });
     }
