@@ -1227,7 +1227,25 @@ export function generateRefCheck(
   if (!schema.$ref) return;
 
   // Resolve the reference
-  const refSchema = ctx.resolveRef(schema.$ref, schema);
+  let refSchema = ctx.resolveRef(schema.$ref, schema);
+
+  // Optimization: follow chains of $ref-only schemas to avoid function call overhead
+  // Only safe when there are no $dynamicAnchor definitions in the entire schema tree
+  if (!ctx.hasAnyDynamicAnchors() && refSchema) {
+    let depth = 0;
+    const maxDepth = 100; // Prevent infinite loops
+    while (
+      typeof refSchema === 'object' &&
+      refSchema.$ref &&
+      Object.keys(refSchema).length === 1 && // Only $ref, nothing else
+      depth < maxDepth
+    ) {
+      const nextSchema = ctx.resolveRef(refSchema.$ref, refSchema);
+      if (!nextSchema) break;
+      refSchema = nextSchema;
+      depth++;
+    }
+  }
 
   if (!refSchema) {
     // Can't resolve - schema is invalid, always fail
