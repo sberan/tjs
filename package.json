@@ -27,6 +27,7 @@
     "bench": "tsx benchmarks/bench.ts",
     "bench:json": "tsx benchmarks/bench.ts --json",
     "bench:ebdrup": "node benchmarks/run-ebdrup-benchmark.cjs",
+    "bench:vs-ajv": "node json-schema-benchmark/run-vs-ajv.js",
     "bench:ebdrup:quick": "node benchmarks/run-ebdrup-compliance.cjs"
   },
   "keywords": [

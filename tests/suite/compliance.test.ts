@@ -14,7 +14,7 @@ type Draft = 'draft4' | 'draft6' | 'draft7' | 'draft2019-09' | 'draft2020-12';
 
 // Keywords that are not yet implemented or have known issues
 const UNIMPLEMENTED_KEYWORDS = [
-  'unknownKeyword', // Meta-schema validation not implemented
+  'unknownKeyword', // TODO: Meta-schema validation not implemented
 ];
 
 // Load remote schemas for the test suite
@@ -171,9 +171,14 @@ function testDraft(draft: Draft) {
 
     // Pre-fetch any missing remote schemas (e.g., metaschema dependencies)
     beforeAll(async () => {
-      if (draft === 'draft2020-12') {
-        await fetchRemoteSchemas(['https://json-schema.org/draft/2020-12/schema'], remotes);
-      }
+      const metaSchemaUrls: Record<Draft, string[]> = {
+        draft4: ['http://json-schema.org/draft-04/schema#'],
+        draft6: ['http://json-schema.org/draft-06/schema#'],
+        draft7: ['http://json-schema.org/draft-07/schema#'],
+        'draft2019-09': ['https://json-schema.org/draft/2019-09/schema'],
+        'draft2020-12': ['https://json-schema.org/draft/2020-12/schema'],
+      };
+      await fetchRemoteSchemas(metaSchemaUrls[draft] || [], remotes);
     }, 30000);
 
     // Generate individual test cases for each file/group/test

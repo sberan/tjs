@@ -25,3 +25,21 @@ const NotStringNumber = schema({
 
 type NotStringNumberType = typeof NotStringNumber.type;
 //   ^? hover to see - should be boolean | null | JsonArray | JsonObject
+
+const Person = schema({
+  type: 'object',
+  properties: {
+    name: { type: 'string' },
+    friend: { $ref: '#' },
+  },
+  required: ['name'],
+});
+
+type PersonType = typeof Person.type;
+//   ^? hover to see - should be { name: string; friend?: PersonType }
+
+// Test the recursive type
+declare const p: PersonType;
+p.name; // string
+p.friend?.name; // string (recursive!)
+p.friend?.friend?.name; // string (deeply recursive!)
