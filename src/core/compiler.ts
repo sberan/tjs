@@ -214,6 +214,13 @@ function generateSchemaValidator(
     return;
   }
 
+  // String shorthand types (e.g., 'string' is equivalent to { type: 'string' })
+  if (typeof schema === 'string') {
+    // Convert shorthand to equivalent type schema and recurse
+    generateSchemaValidator(code, { type: schema }, dataVar, pathExpr, ctx, dynamicScopeVar);
+    return;
+  }
+
   // Check if this schema is a new schema resource (has $id)
   // If so, we need to push its dynamic anchors to scope
   // Skip this in legacy mode ($dynamicAnchor is a draft-2020-12 feature)

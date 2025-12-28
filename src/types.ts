@@ -81,8 +81,9 @@ export interface JsonSchemaBase {
   $vocabulary?: Record<string, boolean>;
 }
 
-// JsonSchema can be a boolean or an object
-export type JsonSchema = boolean | JsonSchemaBase;
+// JsonSchema can be a boolean, type string shorthand, or an object
+// Shorthand: 'string' is equivalent to { type: 'string' }
+export type JsonSchema = boolean | JsonSchemaType | JsonSchemaBase;
 
 // Helper to map JSON Schema type strings to TS types
 export type PrimitiveTypeMap = {

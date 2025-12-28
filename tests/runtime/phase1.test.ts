@@ -1,6 +1,62 @@
 import { describe, it, expect } from 'vitest';
 import { schema } from '../../src/index.js';
 
+describe('shorthand type syntax', () => {
+  it('validates string shorthand', () => {
+    const S = schema('string');
+    expect(S.validate('hello')).toBe(true);
+    expect(S.validate(123)).toBe(false);
+    expect(S.validate(null)).toBe(false);
+  });
+
+  it('validates number shorthand', () => {
+    const N = schema('number');
+    expect(N.validate(123)).toBe(true);
+    expect(N.validate(12.5)).toBe(true);
+    expect(N.validate('123')).toBe(false);
+    expect(N.validate(null)).toBe(false);
+  });
+
+  it('validates integer shorthand', () => {
+    const I = schema('integer');
+    expect(I.validate(123)).toBe(true);
+    expect(I.validate(12.5)).toBe(false);
+    expect(I.validate('123')).toBe(false);
+  });
+
+  it('validates boolean shorthand', () => {
+    const B = schema('boolean');
+    expect(B.validate(true)).toBe(true);
+    expect(B.validate(false)).toBe(true);
+    expect(B.validate(1)).toBe(false);
+    expect(B.validate('true')).toBe(false);
+  });
+
+  it('validates null shorthand', () => {
+    const Null = schema('null');
+    expect(Null.validate(null)).toBe(true);
+    expect(Null.validate(undefined)).toBe(false);
+    expect(Null.validate('')).toBe(false);
+  });
+
+  it('validates object shorthand', () => {
+    const Obj = schema('object');
+    expect(Obj.validate({})).toBe(true);
+    expect(Obj.validate({ foo: 'bar' })).toBe(true);
+    expect(Obj.validate([])).toBe(false);
+    expect(Obj.validate(null)).toBe(false);
+    expect(Obj.validate('object')).toBe(false);
+  });
+
+  it('validates array shorthand', () => {
+    const Arr = schema('array');
+    expect(Arr.validate([])).toBe(true);
+    expect(Arr.validate([1, 2, 3])).toBe(true);
+    expect(Arr.validate({})).toBe(false);
+    expect(Arr.validate('array')).toBe(false);
+  });
+});
+
 describe('minProperties / maxProperties', () => {
   const MinProps = schema({
     type: 'object',

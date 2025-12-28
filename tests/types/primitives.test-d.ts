@@ -1,6 +1,38 @@
 import { schema } from 'json-schema-ts';
 
 // =============================================================================
+// Shorthand Type Syntax
+// =============================================================================
+
+// String shorthand
+const ShortString = schema('string');
+ShortString.type; // $ExpectType string
+
+// Number shorthand
+const ShortNumber = schema('number');
+ShortNumber.type; // $ExpectType number
+
+// Integer shorthand
+const ShortInteger = schema('integer');
+ShortInteger.type; // $ExpectType number
+
+// Boolean shorthand
+const ShortBoolean = schema('boolean');
+ShortBoolean.type; // $ExpectType boolean
+
+// Null shorthand
+const ShortNull = schema('null');
+ShortNull.type; // $ExpectType null
+
+// Object shorthand
+const ShortObject = schema('object');
+ShortObject.type; // $ExpectType Record<string, unknown>
+
+// Array shorthand
+const ShortArray = schema('array');
+ShortArray.type; // $ExpectType unknown[]
+
+// =============================================================================
 // Primitive Types
 // =============================================================================
 

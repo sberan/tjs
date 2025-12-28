@@ -4,6 +4,7 @@ import type {
   JsonArray,
   JsonSchema,
   JsonSchemaBase,
+  JsonSchemaType,
   PrimitiveTypeMap,
 } from './types.js';
 
@@ -14,6 +15,7 @@ type Simplify<T> = { -readonly [K in keyof T]: T[K] } & {};
 // Root is the root schema for resolving '#' refs
 // Defs are the combined $defs and definitions
 // Depth parameter prevents infinite recursion on circular $refs
+// Supports shorthand: 'string' is equivalent to { type: 'string' }
 export type Infer<
   S,
   Defs = GetDefs<S>,
@@ -25,8 +27,19 @@ export type Infer<
     ? S extends true
       ? unknown
       : never
-    : S extends JsonSchemaBase
-      ? InferSchema<S, Defs, Depth, Root>
+    : S extends JsonSchemaType
+      ? InferShorthand<S>
+      : S extends JsonSchemaBase
+        ? InferSchema<S, Defs, Depth, Root>
+        : unknown;
+
+// Infer from shorthand type string (e.g., 'string', 'number', 'object', 'array')
+type InferShorthand<T extends JsonSchemaType> = T extends 'object'
+  ? Record<string, unknown>
+  : T extends 'array'
+    ? unknown[]
+    : T extends keyof PrimitiveTypeMap
+      ? PrimitiveTypeMap[T]
       : unknown;
 
 // Extract $defs and definitions from schema (supporting both draft-2020-12 and draft-07)
@@ -111,8 +124,6 @@ type InferTypeUnion<
     : MapType<U>;
 
 // Map JSON Schema types to TS types
-type JsonSchemaType = 'string' | 'number' | 'integer' | 'boolean' | 'null' | 'array' | 'object';
-
 type MapType<T extends JsonSchemaType> = T extends 'string'
   ? string
   : T extends 'number'
