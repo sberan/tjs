@@ -72,6 +72,7 @@ function collectExternalRefs(
     }
   }
 
+  // TODO we really should find a better way to do this
   // Recurse into subschemas
   const subschemas: (JsonSchema | undefined)[] = [
     ...(schema.$defs ? Object.values(schema.$defs) : []),
@@ -199,6 +200,7 @@ export async function loadRemoteSchemas(
 export async function createValidatorAsync<T>(
   schema: JsonSchema,
   options: JITOptions & LoadRemotesOptions = {}
+  // TODO renami ValidatorJIT to just Validator
 ): Promise<ValidatorJIT<T>> {
   // Load remote schemas
   const loadedRemotes = await loadRemoteSchemas(schema, options);
@@ -234,6 +236,7 @@ export interface ValidatorJIT<T> {
   (data: unknown): data is T;
 
   /** Validate data against the schema */
+  // TODO should re remove this method and just use the callable directly?
   validate(data: unknown): data is T;
 
   /** Assert data is valid, throw if not */

@@ -295,35 +295,203 @@ function createDeepEqual(): (a: unknown, b: unknown) => boolean {
 }
 
 /**
- * Create format validators for format keyword
+ * Create format validators for format keyword.
+ * Optimized implementations using charCodeAt for hot paths.
  */
 function createFormatValidators(): Record<string, (s: string) => boolean> {
-  // IPv6 validation helper - handles full, compressed, and IPv4-mapped formats
-  const isValidIPv6 = (s: string): boolean => {
-    // Handle IPv4-mapped IPv6 (::ffff:192.0.2.1)
-    const ipv4Suffix = s.match(/:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
-    if (ipv4Suffix) {
-      const ipv4 = ipv4Suffix[1];
-      const octets = ipv4.split('.');
-      if (!octets.every((o) => parseInt(o) <= 255 && !/^0\d/.test(o))) return false;
-      s = s.slice(0, -ipv4Suffix[0].length) + ':0:0'; // Replace IPv4 with two groups
+  // Helper to get digit value (0-9) or -1 if not a digit
+  const digit = (s: string, i: number): number => {
+    const c = s.charCodeAt(i) - 48;
+    return c >= 0 && c <= 9 ? c : -1;
+  };
+
+  // Helper to check if char is hex digit
+  const isHex = (c: number): boolean =>
+    (c >= 48 && c <= 57) || (c >= 65 && c <= 70) || (c >= 97 && c <= 102);
+
+  // Optimized IPv4 validator
+  const isValidIPv4 = (s: string): boolean => {
+    const len = s.length;
+    if (len < 7 || len > 15) return false;
+
+    let octet = 0;
+    let digits = 0;
+    let octets = 0;
+
+    for (let i = 0; i <= len; i++) {
+      const c = i < len ? s.charCodeAt(i) : 46; // treat end as dot
+
+      if (c === 46) {
+        // .
+        if (digits === 0 || octet > 255) return false;
+        octets++;
+        octet = 0;
+        digits = 0;
+      } else if (c >= 48 && c <= 57) {
+        // 0-9
+        if (digits === 0 && c === 48 && i + 1 < len && s.charCodeAt(i + 1) !== 46) {
+          return false; // leading zero
+        }
+        octet = octet * 10 + (c - 48);
+        digits++;
+        if (digits > 3) return false;
+      } else {
+        return false;
+      }
     }
 
-    // Check for :: (zero compression)
-    const parts = s.split('::');
+    return octets === 4;
+  };
+
+  // Optimized IPv6 validator
+  const isValidIPv6 = (s: string): boolean => {
+    const len = s.length;
+    if (len < 2 || len > 45) return false;
+
+    // Check for IPv4 suffix (IPv4-mapped IPv6)
+    let ipv4Start = -1;
+    for (let i = len - 1; i >= 0; i--) {
+      const c = s.charCodeAt(i);
+      if (c === 46) {
+        // Found dot - look for IPv4
+        for (let j = i - 1; j >= 0; j--) {
+          if (s.charCodeAt(j) === 58) {
+            ipv4Start = j + 1;
+            break;
+          }
+        }
+        break;
+      }
+      if (c === 58) break; // : means no IPv4
+    }
+
+    let checkStr = s;
+    if (ipv4Start !== -1) {
+      if (!isValidIPv4(s.slice(ipv4Start))) return false;
+      checkStr = s.slice(0, ipv4Start) + '0:0';
+    }
+
+    // Validate hex groups
+    const isHexGroup = (g: string): boolean => {
+      const gLen = g.length;
+      if (gLen === 0 || gLen > 4) return false;
+      for (let i = 0; i < gLen; i++) {
+        if (!isHex(g.charCodeAt(i))) return false;
+      }
+      return true;
+    };
+
+    const parts = checkStr.split('::');
     if (parts.length > 2) return false;
 
     if (parts.length === 2) {
       const left = parts[0] ? parts[0].split(':') : [];
       const right = parts[1] ? parts[1].split(':') : [];
       if (left.length + right.length > 7) return false;
-      const groups = [...left, ...Array(8 - left.length - right.length).fill('0'), ...right];
-      return groups.every((g) => /^[0-9a-f]{1,4}$/i.test(g));
+      return (
+        left.every((g) => g === '' || isHexGroup(g)) &&
+        right.every((g) => g === '' || isHexGroup(g))
+      );
     }
 
-    // No compression - must have exactly 8 groups
-    const groups = s.split(':');
-    return groups.length === 8 && groups.every((g) => /^[0-9a-f]{1,4}$/i.test(g));
+    const groups = checkStr.split(':');
+    return groups.length === 8 && groups.every(isHexGroup);
+  };
+
+  // Optimized date validator (YYYY-MM-DD)
+  const isValidDate = (s: string): boolean => {
+    if (s.length !== 10) return false;
+    if (s.charCodeAt(4) !== 45 || s.charCodeAt(7) !== 45) return false; // -
+
+    // Year digits
+    if (digit(s, 0) < 0 || digit(s, 1) < 0 || digit(s, 2) < 0 || digit(s, 3) < 0) return false;
+
+    // Month 01-12
+    const m1 = digit(s, 5),
+      m2 = digit(s, 6);
+    if (m1 < 0 || m2 < 0) return false;
+    const m = m1 * 10 + m2;
+    if (m < 1 || m > 12) return false;
+
+    // Day 01-31
+    const d1 = digit(s, 8),
+      d2 = digit(s, 9);
+    if (d1 < 0 || d2 < 0) return false;
+    const d = d1 * 10 + d2;
+    return d >= 1 && d <= 31;
+  };
+
+  // Optimized date-time validator (RFC 3339)
+  const isValidDateTime = (s: string): boolean => {
+    const len = s.length;
+    if (len < 20) return false;
+
+    // Check separators: YYYY-MM-DDTHH:MM:SS
+    if (s.charCodeAt(4) !== 45 || s.charCodeAt(7) !== 45) return false; // -
+    if (s.charCodeAt(13) !== 58 || s.charCodeAt(16) !== 58) return false; // :
+    const t = s.charCodeAt(10);
+    if (t !== 84 && t !== 116) return false; // T or t
+
+    // Year digits
+    if (digit(s, 0) < 0 || digit(s, 1) < 0 || digit(s, 2) < 0 || digit(s, 3) < 0) return false;
+
+    // Month 01-12
+    const m1 = digit(s, 5),
+      m2 = digit(s, 6);
+    if (m1 < 0 || m2 < 0) return false;
+    const m = m1 * 10 + m2;
+    if (m < 1 || m > 12) return false;
+
+    // Day 01-31
+    const d1 = digit(s, 8),
+      d2 = digit(s, 9);
+    if (d1 < 0 || d2 < 0) return false;
+    const day = d1 * 10 + d2;
+    if (day < 1 || day > 31) return false;
+
+    // Hour 00-23
+    const h1 = digit(s, 11),
+      h2 = digit(s, 12);
+    if (h1 < 0 || h2 < 0 || h1 > 2 || (h1 === 2 && h2 > 3)) return false;
+
+    // Minute 00-59
+    const min1 = digit(s, 14),
+      min2 = digit(s, 15);
+    if (min1 < 0 || min2 < 0 || min1 > 5) return false;
+
+    // Second 00-60 (60 for leap second)
+    const s1 = digit(s, 17),
+      s2 = digit(s, 18);
+    if (s1 < 0 || s2 < 0 || s1 > 6 || (s1 === 6 && s2 > 0)) return false;
+
+    // Fractional seconds (optional)
+    let i = 19;
+    if (i < len && s.charCodeAt(i) === 46) {
+      // .
+      i++;
+      if (i >= len || digit(s, i) < 0) return false; // need at least one digit
+      i++;
+      while (i < len && digit(s, i) >= 0) i++;
+    }
+
+    if (i >= len) return false;
+
+    // Timezone
+    const tz = s.charCodeAt(i);
+    if (tz === 90 || tz === 122) return i === len - 1; // Z or z
+
+    if (tz !== 43 && tz !== 45) return false; // + or -
+
+    // +/-HH:MM
+    if (len - i !== 6 || s.charCodeAt(i + 3) !== 58) return false;
+    const tzh1 = digit(s, i + 1),
+      tzh2 = digit(s, i + 2);
+    const tzm1 = digit(s, i + 4),
+      tzm2 = digit(s, i + 5);
+    if (tzh1 < 0 || tzh2 < 0 || tzm1 < 0 || tzm2 < 0) return false;
+    if (tzh1 > 2 || (tzh1 === 2 && tzh2 > 3) || tzm1 > 5) return false;
+
+    return true;
   };
 
   return {
@@ -340,15 +508,7 @@ function createFormatValidators(): Record<string, (s: string) => boolean> {
     },
     uuid: (s) =>
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s),
-    // Date-time: RFC 3339 with case-insensitive T and Z
-    'date-time': (s) => {
-      const match = s.match(
-        /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/
-      );
-      if (!match) return false;
-      const [, , m, d, h, min, sec] = match.map(Number);
-      return m >= 1 && m <= 12 && d >= 1 && d <= 31 && h <= 23 && min <= 59 && sec <= 60;
-    },
+    'date-time': isValidDateTime,
     // URI: RFC 3986 - scheme followed by ":" and scheme-specific part
     uri: (s) => {
       // Must start with scheme (letter followed by letters, digits, +, -, .)
@@ -357,18 +517,9 @@ function createFormatValidators(): Record<string, (s: string) => boolean> {
       if (/[\s\x00-\x1f]/.test(s)) return false;
       return true;
     },
-    ipv4: (s) => {
-      const parts = s.split('.');
-      if (parts.length !== 4) return false;
-      return parts.every((p) => /^\d{1,3}$/.test(p) && parseInt(p) <= 255 && !/^0\d/.test(p));
-    },
+    ipv4: isValidIPv4,
     ipv6: isValidIPv6,
-    date: (s) => {
-      const match = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-      if (!match) return false;
-      const [, , m, d] = match.map(Number);
-      return m >= 1 && m <= 12 && d >= 1 && d <= 31;
-    },
+    date: isValidDate,
     time: (s) => /^\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})?$/i.test(s),
     duration: (s) =>
       /^P(\d+Y)?(\d+M)?(\d+W)?(\d+D)?(T(\d+H)?(\d+M)?(\d+(\.\d+)?S)?)?$/.test(s) &&
