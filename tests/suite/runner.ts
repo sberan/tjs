@@ -1,5 +1,5 @@
 import type { JsonSchema } from '../../src/types.js';
-import { Validator } from '../../src/index';
+import { createValidator, type Validator } from '../../src/index.js';
 import type { TestFile, TestResult, ComplianceReport } from './types.js';
 
 export interface RunnerOptions {
@@ -64,7 +64,7 @@ export function runTestSuite(files: TestFile[], options: RunnerOptions = {}): Co
       try {
         // Use formatAssertion: false for test suite compliance
         // (JSON Schema spec treats format as annotation-only by default)
-        validator = Validator(group.schema as JsonSchema, {
+        validator = createValidator(group.schema as JsonSchema, {
           formatAssertion: false,
           remotes: options.remotes,
         });

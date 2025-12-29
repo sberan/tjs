@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { loadTestFiles } from './loader.js';
 import { formatReport } from './runner.js';
-import { Validator, type Validator as ValidatorType } from '../../src/index.js';
+import { createValidator, type Validator } from '../../src/index.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -189,14 +189,14 @@ function testDraft(draft: Draft) {
       describe(keyword, () => {
         for (const group of file.groups) {
           describe(group.description, () => {
-            let validator: ValidatorType<unknown> | null = null;
+            let validator: Validator<unknown> | null = null;
             let schemaError: string | null = null;
 
             beforeAll(() => {
               if (isUnimplemented) return;
 
               try {
-                validator = Validator(group.schema as JsonSchema, {
+                validator = createValidator(group.schema as JsonSchema, {
                   formatAssertion: false,
                   remotes,
                   legacyRef,

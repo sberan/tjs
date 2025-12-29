@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500">
+  <defs>
+    <!-- Gradients for bars -->
+    <linearGradient id="grad-tjs" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#34d399;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#10b981;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="grad-ajv" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#818cf8;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#6366f1;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="grad-zod" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#fbbf24;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f59e0b;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="grad-joi" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f87171;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#ef4444;stop-opacity:1" />
+    </linearGradient>
+    <!-- Glow effects -->
+    <filter id="glow-tjs" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="500" fill="#0f172a"/>
+
+  <!-- Subtle grid pattern -->
+  <g opacity="0.1">
+    <line x1="100" y1="400" x2="750" y2="400" stroke="#94a3b8" stroke-width="1"/>
+    <line x1="100" y1="300" x2="750" y2="300" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
+    <line x1="100" y1="200" x2="750" y2="200" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
+    <line x1="100" y1="100" x2="750" y2="100" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
+  </g>
+
+  <!-- Y-axis labels -->
+  <text x="90" y="405" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="14">0</text>
+  <text x="90" y="305" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="14">7M</text>
+  <text x="90" y="205" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="14">14M</text>
+  <text x="90" y="105" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="14">21M</text>
+
+  <!-- Title -->
+  <text x="400" y="45" text-anchor="middle" fill="#f1f5f9" font-family="system-ui, -apple-system, sans-serif" font-size="24" font-weight="bold">Validation Performance</text>
+  <text x="400" y="75" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="16">Operations per second (higher is better)</text>
+
+  <!-- Bars -->
+  <!-- tjs: 21.5M = 300px height -->
+  <rect x="140" y="100" width="120" height="300" rx="8" fill="url(#grad-tjs)" filter="url(#glow-tjs)"/>
+  <text x="200" y="440" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="600">tjs</text>
+  <text x="200" y="85" text-anchor="middle" fill="#34d399" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">21.5M</text>
+
+  <!-- ajv: 14.0M = 200px height -->
+  <rect x="300" y="200" width="120" height="200" rx="8" fill="url(#grad-ajv)"/>
+  <text x="360" y="440" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="600">ajv</text>
+  <text x="360" y="185" text-anchor="middle" fill="#818cf8" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">14.0M</text>
+
+  <!-- zod: 2.0M = 29px height -->
+  <rect x="460" y="371" width="120" height="29" rx="8" fill="url(#grad-zod)"/>
+  <text x="520" y="440" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="600">zod</text>
+  <text x="520" y="356" text-anchor="middle" fill="#fbbf24" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">2.0M</text>
+
+  <!-- joi: 0.3M = 4px height (min 8px for visibility) -->
+  <rect x="620" y="392" width="120" height="8" rx="4" fill="url(#grad-joi)"/>
+  <text x="680" y="440" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="600">joi</text>
+  <text x="680" y="377" text-anchor="middle" fill="#f87171" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">0.3M</text>
+
+  <!-- Multiplier badges -->
+  <rect x="270" y="250" width="60" height="28" rx="14" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+  <text x="300" y="269" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600">1.5×</text>
+
+  <rect x="430" y="340" width="60" height="28" rx="14" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+  <text x="460" y="359" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600">11×</text>
+
+  <rect x="590" y="360" width="60" height="28" rx="14" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+  <text x="620" y="379" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600">72×</text>
+</svg>
