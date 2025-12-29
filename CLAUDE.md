@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 ## Project Overview
-json-schema-ts - A JSON Schema validator library with TypeScript type inference.
+tjs - A JSON Schema validator library with TypeScript type inference.
 
 ## Commands
 - `npm test` - Run all tests (type tests)
@@ -22,3 +22,18 @@ json-schema-ts - A JSON Schema validator library with TypeScript type inference.
 - Run `npm test` to verify type inference is working correctly
 - When creating debug test files, use `/private/tmp/debug.js` instead of files in the project directory
 - Use Write tool to create files instead of cat/heredoc in Bash
+
+## API Reference
+When making API changes, **always update README.md** to reflect the current API:
+- `schema(definition, options?)` - Creates a validator from JSON Schema
+- `struct(properties, options?)` - Ergonomic helper for object schemas
+- `schemaAsync(definition, options?)` - Async version that fetches remote $refs
+
+### Validator Methods
+- `validator.validate(data)` - Returns `{ value: T, error: undefined }` on success, `{ value: undefined, error: ValidationError[] }` on failure
+- `validator.assert(data)` - Returns typed value `T` on success, throws on failure
+- `validator.type` - Phantom property for type inference (`typeof validator.type`)
+
+### Important
+- There is NO `.parse()` method - use `.assert()` for throwing validation or `.validate()` for result-based
+- `.validate()` returns an object `{ value, error }`, NOT a boolean

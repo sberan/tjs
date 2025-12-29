@@ -16,7 +16,7 @@ const User = schema({
 });
 
 // TypeScript knows the exact shape
-const user = User.parse(data);
+const user = User.assert(data);
 //    ^? { name: string; email: string; age?: number }
 ```
 
@@ -41,9 +41,11 @@ Compare to other validators:
 | **tjs** | **100%** | **100%** | **100%** | **100%** | **100%** |
 | ajv | 93.8% | 98.9% | 94.1% | 92.9% | 94.6% |
 
-### Faster Than ajv
+### Blazing Fast
 
-tjs uses JIT compilation to generate optimized validation code. Benchmarks show **53.8% faster performance on average**:
+![Benchmark](assets/benchmark.svg)
+
+tjs uses JIT compilation to generate optimized validation code — **1.5× faster than ajv**, and up to **72× faster** than alternatives:
 
 ```
 Performance vs ajv (JSON Schema Test Suite):
@@ -116,8 +118,9 @@ const User = struct({
 // Automatically infers:
 // { id: string; name: string; email: string; age?: number; role?: 'admin' | 'user' }
 
-if (User.validate(input)) {
-  console.log(input.name); // TypeScript knows the type
+const result = User.validate(input);
+if (result.error === undefined) {
+  console.log(result.value.name); // TypeScript knows the type
 }
 ```
 
@@ -138,7 +141,8 @@ const Config = schema({
 }, { coerce: true });
 
 // String values are coerced to match types
-Config.validate({ port: '3000', debug: 'true', timeout: '30.5' }); // true
+const result = Config.validate({ port: '3000', debug: 'true', timeout: '30.5' });
+result.value; // { port: 3000, debug: true, timeout: 30.5 }
 
 // Fine-grained control
 const PartialCoerce = schema(mySchema, {
@@ -266,11 +270,11 @@ interface ValidatorOptions {
 | Feature | tjs | ajv | zod | joi |
 |---------|-----|-----|-----|-----|
 | JSON Schema compliance | ✅ 100% | ⚠️ 94.6% | ⚠️ Experimental | ❌ N/A |
-| TypeScript inference | ✅ First-class | ⚠️ Via json-schema-to-ts | ✅ Native | ❌ None |
+| TypeScript inference | ✅ First-class | ⚠️ Dependency required | ✅ Native | ❌ None |
 | Runtime dependencies | ✅ 0 | ❌ 4+ | ✅ 0 | ❌ 5+ |
 | Performance | ✅ Fastest | ⚠️ Fast | ❌ Slower | ❌ Slower |
 | Coercion support | ✅ Built-in | ⚠️ Via plugin | ✅ Built-in | ✅ Built-in |
-| Bundle size (min+gz) | ✅ ~16KB | ❌ ~35KB | ✅ ~13KB | ❌ ~50KB |
+| Bundle size (min+gz) | ✅ ~16KB | ❌ ~50KB (w/ ajv-formats) | ✅ ~13KB | ❌ ~50KB |
 
 ## Coercion Matrix
 
