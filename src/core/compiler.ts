@@ -6,7 +6,7 @@
 
 import type { JsonSchema, JsonSchemaBase } from '../types.js';
 import { CodeBuilder, escapeString, propAccess, stringify } from './codegen.js';
-import { CompileContext, VOCABULARIES, type CompileOptions } from './context.js';
+import { CompileContext, VOCABULARIES, supportsFeature, type CompileOptions } from './context.js';
 import { EvalTracker } from './eval-tracker.js';
 import { createFormatValidators } from './keywords/format.js';
 
@@ -1794,19 +1794,11 @@ export function generateItemsChecks(
 
   // Cross-draft compatibility: prefixItems was introduced in 2020-12
   // In 2019-09 and earlier, prefixItems is not a keyword and should be ignored
-  const schemaDialect = schema.$schema;
-  const supportsPrefixItems =
-    !schemaDialect ||
-    schemaDialect.includes('2020-12') ||
-    schemaDialect.includes('2021') ||
-    schemaDialect.includes('2022') ||
-    schemaDialect.includes('2023') ||
-    schemaDialect.includes('2024') ||
-    schemaDialect.includes('2025');
+  const hasPrefixItems = supportsFeature(schema.$schema, 'prefixItems');
 
   const tupleSchemas: JsonSchema[] = itemsIsArray
     ? (schema.items as JsonSchema[])
-    : supportsPrefixItems && schema.prefixItems
+    : hasPrefixItems && schema.prefixItems
       ? [...schema.prefixItems]
       : [];
 
