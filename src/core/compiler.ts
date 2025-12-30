@@ -68,12 +68,13 @@ export function compile(schema: JsonSchema, options: CompileOptions = {}): Valid
   ctx.registerCompiled(schema, mainFuncName);
 
   // In legacy mode (draft-07 and earlier), skip dynamic scope entirely for better performance
-  const useDynamicScope = !ctx.options.legacyRef;
-  const dynamicScopeVar = useDynamicScope ? new Name('dynamicScope') : undefined;
+  // Also skip if schema has no dynamic anchors (common case - significant perf improvement)
+  const hasDynamicFeatures = !ctx.options.legacyRef && ctx.hasAnyDynamicAnchors();
+  const dynamicScopeVar = hasDynamicFeatures ? new Name('dynamicScope') : undefined;
 
   // Collect dynamic anchors from the root resource to add to scope at startup
   const anchorFuncNames: Array<{ anchor: string; funcName: string }> = [];
-  if (useDynamicScope) {
+  if (hasDynamicFeatures) {
     const rootResourceId =
       typeof schema === 'object' && schema !== null && schema.$id ? schema.$id : '__root__';
     const rootDynamicAnchors = ctx.getResourceDynamicAnchors(rootResourceId);
@@ -99,7 +100,7 @@ export function compile(schema: JsonSchema, options: CompileOptions = {}): Valid
     const q = queued; // Capture for closure
     const qFuncName = new Name(q.funcName);
     code.blank();
-    if (useDynamicScope) {
+    if (hasDynamicFeatures) {
       // Function signature: (data, errors, path, dynamicScope, tracker?)
       code.block(_`function ${qFuncName}(data, errors, path, dynamicScope, tracker)`, () => {
         // Create a "runtime" tracker that generates conditional marking code
@@ -137,9 +138,9 @@ export function compile(schema: JsonSchema, options: CompileOptions = {}): Valid
   const runtimeNames = Array.from(runtimeFuncs.keys());
   const runtimeValues = Array.from(runtimeFuncs.values());
 
-  // Push root resource's dynamic anchors to scope at startup (only in modern mode)
+  // Push root resource's dynamic anchors to scope at startup (only when dynamic features present)
   let scopeInit = '';
-  if (useDynamicScope) {
+  if (hasDynamicFeatures) {
     scopeInit = 'const dynamicScope = [];\n';
     for (const { anchor, funcName } of anchorFuncNames) {
       scopeInit += `dynamicScope.push({ anchor: ${JSON.stringify(anchor)}, validate: ${funcName} });\n`;
@@ -1174,32 +1175,89 @@ export function generateContainsCheck(
     return;
   }
 
-  // Queue the contains schema for compilation (reuses all existing generators)
-  const containsFuncName = new Name(ctx.queueCompile(containsSchema));
-
   code.if(_`Array.isArray(${dataVar})`, () => {
     const countVar = code.genVar('containsCount');
     code.line(_`let ${countVar} = 0;`);
 
     const iVar = code.genVar('i');
-    code.forArray(iVar, dataVar, () => {
-      const itemAccess = indexAccess(dataVar, iVar);
 
-      // Call the compiled contains validator (pass null for errors to skip collection)
-      code.if(_`${containsFuncName}(${itemAccess}, null, '')`, () => {
-        code.line(_`${countVar}++;`);
-        // Mark this item as evaluated (for unevaluatedItems)
-        evalTracker?.markSingleItem(iVar);
-      });
+    // Try to inline simple type checks for better performance
+    // Check if schema is a simple type-only schema that can be inlined
+    const simpleType = getSimpleType(containsSchema);
 
-      // Early exit if we've found enough and no maxContains
-      // But only if we're not tracking items (need to find all matches for tracking)
-      if (maxContains === undefined && !evalTracker?.trackingItems) {
-        code.if(_`${countVar} >= ${minContains}`, () => {
-          code.line(_`break;`);
+    if (simpleType) {
+      // Inline the type check directly in the loop for better performance
+      // Cache array length for better performance
+      const lenVar = code.genVar('len');
+      code.line(_`const ${lenVar} = ${dataVar}.length;`);
+
+      code.for(_`let ${iVar} = 0`, _`${iVar} < ${lenVar}`, _`${iVar}++`, () => {
+        const itemAccess = indexAccess(dataVar, iVar);
+        // Manually construct the type check for the array item
+        let inlineCheck: Code;
+        switch (simpleType) {
+          case 'string':
+            inlineCheck = _`typeof ${itemAccess} === 'string'`;
+            break;
+          case 'number':
+            inlineCheck = _`typeof ${itemAccess} === 'number'`;
+            break;
+          case 'integer':
+            inlineCheck = _`typeof ${itemAccess} === 'number' && ${itemAccess} % 1 === 0 && isFinite(${itemAccess})`;
+            break;
+          case 'boolean':
+            inlineCheck = _`typeof ${itemAccess} === 'boolean'`;
+            break;
+          case 'null':
+            inlineCheck = _`${itemAccess} === null`;
+            break;
+          case 'array':
+            inlineCheck = _`Array.isArray(${itemAccess})`;
+            break;
+          case 'object':
+            inlineCheck = _`${itemAccess} && typeof ${itemAccess} === 'object' && !Array.isArray(${itemAccess})`;
+            break;
+          default:
+            inlineCheck = _`false`;
+        }
+
+        code.if(inlineCheck, () => {
+          code.line(_`${countVar}++;`);
+          // Mark this item as evaluated (for unevaluatedItems)
+          evalTracker?.markSingleItem(iVar);
         });
-      }
-    });
+
+        // Early exit if we've found enough and no maxContains
+        // But only if we're not tracking items (need to find all matches for tracking)
+        if (maxContains === undefined && !evalTracker?.trackingItems) {
+          code.if(_`${countVar} >= ${minContains}`, () => {
+            code.line(_`break;`);
+          });
+        }
+      });
+    } else {
+      // Queue the contains schema for compilation (reuses all existing generators)
+      const containsFuncName = new Name(ctx.queueCompile(containsSchema));
+
+      code.forArray(iVar, dataVar, () => {
+        const itemAccess = indexAccess(dataVar, iVar);
+
+        // Call the compiled contains validator (pass null for errors to skip collection)
+        code.if(_`${containsFuncName}(${itemAccess}, null, '')`, () => {
+          code.line(_`${countVar}++;`);
+          // Mark this item as evaluated (for unevaluatedItems)
+          evalTracker?.markSingleItem(iVar);
+        });
+
+        // Early exit if we've found enough and no maxContains
+        // But only if we're not tracking items (need to find all matches for tracking)
+        if (maxContains === undefined && !evalTracker?.trackingItems) {
+          code.if(_`${countVar} >= ${minContains}`, () => {
+            code.line(_`break;`);
+          });
+        }
+      });
+    }
 
     code.if(_`${countVar} < ${minContains}`, () => {
       genError(
@@ -1705,7 +1763,8 @@ function generateSubschemaCheck(
   // Compile as a separate function call
   const funcName = new Name(ctx.queueCompile(schema));
   const trackerArg = trackerVar ? _`, ${trackerVar}` : _``;
-  if (ctx.options.legacyRef) {
+  // Skip dynamicScope in legacy mode OR when there are no dynamic anchors
+  if (ctx.options.legacyRef || !ctx.hasAnyDynamicAnchors()) {
     return _`${funcName}(${dataVar}, null, ''${trackerArg})`;
   }
   return _`${funcName}(${dataVar}, null, '', dynamicScope${trackerArg})`;
