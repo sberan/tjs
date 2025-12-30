@@ -490,6 +490,39 @@ export class CodeBuilder {
   }
 
   /**
+   * Add a for loop iterating over array indices.
+   * Common pattern: for (let i = start; i < arr.length; i++)
+   * @param indexVar - The loop index variable name
+   * @param array - The array expression to iterate over
+   * @param body - Loop body callback
+   * @param start - Starting index (default 0)
+   */
+  forArray(indexVar: Name, array: Code | Name, body: () => void, start: number = 0): this {
+    return this.for(
+      _`let ${indexVar} = ${start}`,
+      _`${indexVar} < ${array}.length`,
+      _`${indexVar}++`,
+      body
+    );
+  }
+
+  /**
+   * Add a try-catch block
+   */
+  try(tryBody: () => void, catchBody: () => void, errorVar: Name = new Name('e')): this {
+    this.#lines.push('  '.repeat(this.#indent) + 'try {');
+    this.#indent++;
+    tryBody();
+    this.#indent--;
+    this.#lines.push('  '.repeat(this.#indent) + `} catch (${errorVar}) {`);
+    this.#indent++;
+    catchBody();
+    this.#indent--;
+    this.line`}`;
+    return this;
+  }
+
+  /**
    * Generate a unique variable name and return it as a Name
    */
   genVar(prefix = 'v'): Name {
