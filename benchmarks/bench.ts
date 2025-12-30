@@ -5,7 +5,7 @@ import { loadTestFiles } from '../tests/suite/loader.js';
 import type { TestFile } from '../tests/suite/types.js';
 import type { ValidatorAdapter, BenchmarkResult, Draft } from './types.js';
 import { ajvAdapter } from './adapters/ajv.js';
-import { jitAdapter } from './adapters/jit.js';
+import { tjsAdapter } from './adapters/tjs.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -114,23 +114,41 @@ function compileTests(
   return { compiled, skippedByKeyword, skippedByError, errors };
 }
 
-function runBenchmark(
-  compiled: CompiledTest[],
-  iterations: number
-): { totalValidations: number; durationMs: number; byKeyword: Record<string, number> } {
-  const keywordTimes: Record<string, number> = {};
+interface BenchmarkRunResult {
+  totalValidations: number;
+  durationMs: number;
+  byKeyword: Record<string, number>;
+  correctCount: number;
+  incorrectCount: number;
+}
 
-  // Test each validator to ensure it doesn't throw/stack overflow
+function runBenchmark(compiled: CompiledTest[], iterations: number): BenchmarkRunResult {
+  const keywordTimes: Record<string, number> = {};
+  let correctCount = 0;
+  let incorrectCount = 0;
+
+  // Test each validator to ensure it doesn't throw/stack overflow and verify correctness
   const safeCompiled: CompiledTest[] = [];
   for (const c of compiled) {
     try {
-      // Test that validation doesn't crash
+      // Test that validation doesn't crash and produces correct results
+      let allCorrect = true;
       for (const test of c.tests) {
-        c.validate(test.data);
+        const result = c.validate(test.data);
+        if (result === test.valid) {
+          correctCount++;
+        } else {
+          incorrectCount++;
+          allCorrect = false;
+        }
       }
-      safeCompiled.push(c);
+      // Only include in benchmark if all tests pass
+      if (allCorrect) {
+        safeCompiled.push(c);
+      }
     } catch {
       // Skip tests that cause runtime errors (e.g., stack overflow)
+      incorrectCount += c.tests.length;
     }
   }
 
@@ -176,7 +194,7 @@ function runBenchmark(
     keywordTimes[keyword] = Math.round((keywordTests * iterations) / (kwDuration / 1000));
   }
 
-  return { totalValidations, durationMs, byKeyword: keywordTimes };
+  return { totalValidations, durationMs, byKeyword: keywordTimes, correctCount, incorrectCount };
 }
 
 function formatNumber(n: number): string {
@@ -222,7 +240,10 @@ function runDraftBenchmark(
       }
     }
 
-    const { totalValidations, durationMs, byKeyword } = runBenchmark(compiled, iterations);
+    const { totalValidations, durationMs, byKeyword, correctCount, incorrectCount } = runBenchmark(
+      compiled,
+      iterations
+    );
     const opsPerSec = Math.round((totalValidations / durationMs) * 1000);
 
     results.push({
@@ -231,6 +252,8 @@ function runDraftBenchmark(
       totalValidations,
       durationMs,
       skipped: skippedByKeyword + skippedByError,
+      correctCount,
+      incorrectCount,
       byKeyword,
     });
   }
@@ -257,11 +280,11 @@ function main() {
     drafts.push('draft4', 'draft6', 'draft7', 'draft2020-12');
   }
 
-  const adapters: ValidatorAdapter[] = [jitAdapter, ajvAdapter];
+  const adapters: ValidatorAdapter[] = [tjsAdapter, ajvAdapter];
   const allResults: DraftResult[] = [];
 
   if (!jsonOutput) {
-    console.log('json-schema-ts Benchmark');
+    console.log('tjs Benchmark');
     console.log('='.repeat(70));
     console.log();
   }
@@ -275,17 +298,19 @@ function main() {
     allResults.push(draftResult);
 
     if (!jsonOutput) {
-      const jit = draftResult.results.find((r) => r.validator === 'json-schema-ts-jit');
+      const tjs = draftResult.results.find((r) => r.validator === 'tjs');
       const ajv = draftResult.results.find((r) => r.validator === 'ajv');
 
-      if (jit && ajv) {
-        const ratio = jit.opsPerSec / ajv.opsPerSec;
+      if (tjs && ajv) {
+        const ratio = tjs.opsPerSec / ajv.opsPerSec;
         const pct = ((ratio - 1) * 100).toFixed(1);
         const comparison = ratio >= 1 ? `+${pct}%` : `${pct}%`;
+        const tjsStatus = tjs.incorrectCount > 0 ? ` ❌${tjs.incorrectCount}` : '';
+        const ajvStatus = ajv.incorrectCount > 0 ? ` ❌${ajv.incorrectCount}` : '';
         console.log(
           `  ${draftResult.testCount} tests | ` +
-            `jit: ${formatNumber(jit.opsPerSec)} ops/s (skip ${jit.skipped}) | ` +
-            `ajv: ${formatNumber(ajv.opsPerSec)} ops/s (skip ${ajv.skipped}) | ` +
+            `tjs: ${formatNumber(tjs.opsPerSec)} ops/s (skip ${tjs.skipped}${tjsStatus}) | ` +
+            `ajv: ${formatNumber(ajv.opsPerSec)} ops/s (skip ${ajv.skipped}${ajvStatus}) | ` +
             `${comparison}`
         );
       }
@@ -307,23 +332,23 @@ function main() {
     console.log(
       'Draft'.padEnd(15) +
         'Tests'.padStart(8) +
-        'jit ops/s'.padStart(14) +
+        'tjs ops/s'.padStart(14) +
         'ajv ops/s'.padStart(14) +
-        'jit skip'.padStart(10) +
+        'tjs skip'.padStart(10) +
         'ajv skip'.padStart(10)
     );
     console.log('─'.repeat(70));
 
     for (const dr of allResults) {
-      const jit = dr.results.find((r) => r.validator === 'json-schema-ts-jit');
+      const tjs = dr.results.find((r) => r.validator === 'tjs');
       const ajv = dr.results.find((r) => r.validator === 'ajv');
 
       console.log(
         dr.draft.padEnd(15) +
           dr.testCount.toString().padStart(8) +
-          (jit ? formatNumber(jit.opsPerSec) : '-').padStart(14) +
+          (tjs ? formatNumber(tjs.opsPerSec) : '-').padStart(14) +
           (ajv ? formatNumber(ajv.opsPerSec) : '-').padStart(14) +
-          (jit ? jit.skipped.toString() : '-').padStart(10) +
+          (tjs ? tjs.skipped.toString() : '-').padStart(10) +
           (ajv ? ajv.skipped.toString() : '-').padStart(10)
       );
     }
@@ -331,30 +356,35 @@ function main() {
     // Overall comparison
     console.log('─'.repeat(70));
 
-    let jitTotal = 0;
+    let tjsTotal = 0;
     let ajvTotal = 0;
-    let jitSkipTotal = 0;
+    let tjsSkipTotal = 0;
     let ajvSkipTotal = 0;
+    let tjsIncorrectTotal = 0;
+    let ajvIncorrectTotal = 0;
 
     for (const dr of allResults) {
-      const jit = dr.results.find((r) => r.validator === 'json-schema-ts-jit');
+      const tjs = dr.results.find((r) => r.validator === 'tjs');
       const ajv = dr.results.find((r) => r.validator === 'ajv');
-      if (jit) {
-        jitTotal += jit.opsPerSec;
-        jitSkipTotal += jit.skipped;
+      if (tjs) {
+        tjsTotal += tjs.opsPerSec;
+        tjsSkipTotal += tjs.skipped;
+        tjsIncorrectTotal += tjs.incorrectCount;
       }
       if (ajv) {
         ajvTotal += ajv.opsPerSec;
         ajvSkipTotal += ajv.skipped;
+        ajvIncorrectTotal += ajv.incorrectCount;
       }
     }
 
-    const overallRatio = jitTotal / ajvTotal;
+    const overallRatio = tjsTotal / ajvTotal;
     const overallPct = ((overallRatio - 1) * 100).toFixed(1);
-    console.log(
-      `\nOverall: json-schema-ts is ${overallRatio >= 1 ? '+' : ''}${overallPct}% vs AJV`
-    );
-    console.log(`Total skipped: jit=${jitSkipTotal}, ajv=${ajvSkipTotal}`);
+    console.log(`\nOverall: tjs is ${overallRatio >= 1 ? '+' : ''}${overallPct}% vs AJV`);
+    console.log(`Total skipped: tjs=${tjsSkipTotal}, ajv=${ajvSkipTotal}`);
+    if (tjsIncorrectTotal > 0 || ajvIncorrectTotal > 0) {
+      console.log(`Incorrect results: tjs=${tjsIncorrectTotal}, ajv=${ajvIncorrectTotal}`);
+    }
   }
 }
 

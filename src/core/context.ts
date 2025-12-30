@@ -114,11 +114,24 @@ export class CompileContext {
   constructor(rootSchema: JsonSchema, options: CompileOptions = {}) {
     this.#rootSchema = rootSchema;
 
-    // Content keywords are annotation-only by default per modern JSON Schema specs
-    // Only enable content assertion if explicitly requested
+    // Auto-detect formatAssertion from $schema if not explicitly set
+    // In draft 2020-12 and 2019-09, format is annotation-only by default
+    let formatAssertion = options.formatAssertion;
+    if (formatAssertion === undefined) {
+      const schemaUri =
+        typeof rootSchema === 'object' && rootSchema !== null ? rootSchema.$schema : undefined;
+      if (
+        schemaUri === 'https://json-schema.org/draft/2020-12/schema' ||
+        schemaUri === 'https://json-schema.org/draft/2019-09/schema'
+      ) {
+        formatAssertion = false;
+      } else {
+        formatAssertion = true;
+      }
+    }
 
     this.options = {
-      formatAssertion: options.formatAssertion ?? true,
+      formatAssertion,
       contentAssertion: options.contentAssertion ?? false,
       remotes: options.remotes ?? {},
       legacyRef: options.legacyRef ?? true,
