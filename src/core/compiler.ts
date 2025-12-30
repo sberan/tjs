@@ -31,6 +31,7 @@ import {
   getTypeCheck,
   getItemTypes,
   isNoOpSchema,
+  getSimpleType,
 } from './keywords/utils.js';
 
 export type { RuntimeTracker } from './eval-tracker.js';
@@ -895,7 +896,7 @@ export function generateObjectChecks(
   } else {
     // Only check if data is an object
     code.if(
-      _`typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
+      _`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`,
       genChecks
     );
   }
@@ -1079,7 +1080,7 @@ export function generatePropertiesChecks(
   } else {
     // Only check if data is an object
     code.if(
-      _`typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
+      _`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`,
       genChecks
     );
   }
@@ -1238,26 +1239,23 @@ export function generateDependentRequiredCheck(
   const deps = Object.entries(schema.dependentRequired).filter(([, reqs]) => reqs.length > 0);
   if (deps.length === 0) return;
 
-  code.if(
-    _`typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
-    () => {
-      for (const [prop, requiredProps] of deps) {
-        code.if(_`${prop} in ${dataVar}`, () => {
-          for (const reqProp of requiredProps) {
-            const reqPathExpr = pathExpr(pathExprCode, reqProp);
-            code.if(_`!(${reqProp} in ${dataVar})`, () => {
-              genError(
-                code,
-                reqPathExpr,
-                'dependentRequired',
-                `Property required when ${prop} is present`
-              );
-            });
-          }
-        });
-      }
+  code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
+    for (const [prop, requiredProps] of deps) {
+      code.if(_`${prop} in ${dataVar}`, () => {
+        for (const reqProp of requiredProps) {
+          const reqPathExpr = pathExpr(pathExprCode, reqProp);
+          code.if(_`!(${reqProp} in ${dataVar})`, () => {
+            genError(
+              code,
+              reqPathExpr,
+              'dependentRequired',
+              `Property required when ${prop} is present`
+            );
+          });
+        }
+      });
     }
-  );
+  });
 }
 
 /**
@@ -1274,24 +1272,21 @@ export function generateDependentSchemasCheck(
 ): void {
   if (!schema.dependentSchemas) return;
 
-  code.if(
-    _`typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
-    () => {
-      for (const [prop, depSchema] of Object.entries(schema.dependentSchemas!)) {
-        code.if(_`${prop} in ${dataVar}`, () => {
-          generateSchemaValidator(
-            code,
-            depSchema,
-            dataVar,
-            pathExprCode,
-            ctx,
-            dynamicScopeVar,
-            evalTracker
-          );
-        });
-      }
+  code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
+    for (const [prop, depSchema] of Object.entries(schema.dependentSchemas!)) {
+      code.if(_`${prop} in ${dataVar}`, () => {
+        generateSchemaValidator(
+          code,
+          depSchema,
+          dataVar,
+          pathExprCode,
+          ctx,
+          dynamicScopeVar,
+          evalTracker
+        );
+      });
     }
-  );
+  });
 }
 
 /**
@@ -1324,40 +1319,37 @@ export function generateDependenciesCheck(
 
   if (nonTrivialDeps.length === 0) return;
 
-  code.if(
-    _`typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
-    () => {
-      for (const [prop, dep] of nonTrivialDeps) {
-        code.if(_`${prop} in ${dataVar}`, () => {
-          if (Array.isArray(dep)) {
-            // Array of required property names
-            for (const reqProp of dep) {
-              const reqPathExpr = pathExpr(pathExprCode, reqProp);
-              code.if(_`!(${reqProp} in ${dataVar})`, () => {
-                genError(
-                  code,
-                  reqPathExpr,
-                  'dependencies',
-                  `Property required when ${prop} is present`
-                );
-              });
-            }
-          } else {
-            // Schema that must validate
-            generateSchemaValidator(
-              code,
-              dep as JsonSchema,
-              dataVar,
-              pathExprCode,
-              ctx,
-              dynamicScopeVar,
-              evalTracker
-            );
+  code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
+    for (const [prop, dep] of nonTrivialDeps) {
+      code.if(_`${prop} in ${dataVar}`, () => {
+        if (Array.isArray(dep)) {
+          // Array of required property names
+          for (const reqProp of dep) {
+            const reqPathExpr = pathExpr(pathExprCode, reqProp);
+            code.if(_`!(${reqProp} in ${dataVar})`, () => {
+              genError(
+                code,
+                reqPathExpr,
+                'dependencies',
+                `Property required when ${prop} is present`
+              );
+            });
           }
-        });
-      }
+        } else {
+          // Schema that must validate
+          generateSchemaValidator(
+            code,
+            dep as JsonSchema,
+            dataVar,
+            pathExprCode,
+            ctx,
+            dynamicScopeVar,
+            evalTracker
+          );
+        }
+      });
     }
-  );
+  });
 }
 
 /**
@@ -1383,27 +1375,21 @@ export function generatePropertyNamesCheck(
 
   if (propNamesSchema === false) {
     // No property names are valid - object must be empty
-    code.if(
-      _`typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
-      () => {
-        code.if(_`Object.keys(${dataVar}).length > 0`, () => {
-          genError(code, pathExprCode, 'propertyNames', 'No properties allowed');
-        });
-      }
-    );
+    code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
+      code.if(_`Object.keys(${dataVar}).length > 0`, () => {
+        genError(code, pathExprCode, 'propertyNames', 'No properties allowed');
+      });
+    });
     return;
   }
 
-  code.if(
-    _`typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
-    () => {
-      const keyVar = new Name('key');
-      code.forIn(keyVar, dataVar, () => {
-        // For propertyNames, the path is the key itself
-        generateSchemaValidator(code, propNamesSchema, keyVar, keyVar, ctx, dynamicScopeVar);
-      });
-    }
-  );
+  code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
+    const keyVar = new Name('key');
+    code.forIn(keyVar, dataVar, () => {
+      // For propertyNames, the path is the key itself
+      generateSchemaValidator(code, propNamesSchema, keyVar, keyVar, ctx, dynamicScopeVar);
+    });
+  });
 }
 
 /**
@@ -1817,26 +1803,51 @@ export function generateItemsChecks(
         }
       } else if (afterTupleSchema !== true) {
         // Validate each item after tuple
-        const iVar = code.genVar('i');
-        code.forArray(
-          iVar,
-          dataVar,
-          () => {
-            const itemAccess = indexAccess(dataVar, iVar);
-            const itemPathExpr = pathExprIndex(pathExprCode, iVar);
-            const itemVar = code.genVar('item');
-            code.line(_`const ${itemVar} = ${itemAccess};`);
-            generateSchemaValidator(
-              code,
-              afterTupleSchema!,
-              itemVar,
-              itemPathExpr,
-              ctx,
-              dynamicScopeVar
-            );
-          },
-          startIndex
-        );
+        // Optimization: inline simple type-only item schemas to avoid function call overhead
+        const simpleType = getSimpleType(afterTupleSchema);
+
+        if (simpleType) {
+          // Inline simple type check for better performance
+          const iVar = code.genVar('i');
+          code.forArray(
+            iVar,
+            dataVar,
+            () => {
+              const itemAccess = indexAccess(dataVar, iVar);
+              const itemPathExpr = pathExprIndex(pathExprCode, iVar);
+              const itemVar = code.genVar('item');
+              code.line(_`const ${itemVar} = ${itemAccess};`);
+              // Inline type check with error handling
+              const typeCheck = getTypeCheck(itemVar, simpleType);
+              code.if(not(typeCheck), () => {
+                genError(code, itemPathExpr, 'type', `Expected ${simpleType}`);
+              });
+            },
+            startIndex
+          );
+        } else {
+          // Complex schema - use normal validation path
+          const iVar = code.genVar('i');
+          code.forArray(
+            iVar,
+            dataVar,
+            () => {
+              const itemAccess = indexAccess(dataVar, iVar);
+              const itemPathExpr = pathExprIndex(pathExprCode, iVar);
+              const itemVar = code.genVar('item');
+              code.line(_`const ${itemVar} = ${itemAccess};`);
+              generateSchemaValidator(
+                code,
+                afterTupleSchema!,
+                itemVar,
+                itemPathExpr,
+                ctx,
+                dynamicScopeVar
+              );
+            },
+            startIndex
+          );
+        }
       }
     }
   };
@@ -1871,6 +1882,10 @@ const KNOWN_FORMATS = new Set([
   'regex',
 ]);
 
+// Pre-created format validators instances (one for full validation, one for fast regex-only)
+const sharedFormatValidators = createFormatValidators(false);
+const sharedFastFormatValidators = createFormatValidators(true);
+
 export function generateFormatCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
@@ -1888,12 +1903,26 @@ export function generateFormatCheck(
   // Check if schema already has type: 'string' (no need to re-check type)
   const hasStringType = schema.type === 'string';
 
-  // For known formats, skip the existence check
+  // For known formats, register a direct function reference for faster calls
   const isKnownFormat = KNOWN_FORMATS.has(format);
 
-  const formatCheck = isKnownFormat
-    ? _`!formatValidators[${format}](${dataVar})`
-    : _`formatValidators[${format}] && !formatValidators[${format}](${dataVar})`;
+  // Use fast validators if fastFormats option is enabled
+  const validators = ctx.options.fastFormats ? sharedFastFormatValidators : sharedFormatValidators;
+
+  let formatCheck: Code;
+  if (isKnownFormat) {
+    // Register the specific format validator as a runtime function for direct calls
+    // This avoids the object property lookup overhead on every validation
+    const funcName = 'fmt_' + format.replace(/-/g, '_');
+    const validatorName = new Name(funcName);
+
+    // Always register the runtime function (ctx.addRuntimeFunction is idempotent for same name)
+    ctx.addRuntimeFunction(funcName, validators[format]);
+
+    formatCheck = _`!${validatorName}(${dataVar})`;
+  } else {
+    formatCheck = _`formatValidators[${format}] && !formatValidators[${format}](${dataVar})`;
+  }
 
   const genFormatCheck = () => {
     code.if(formatCheck, () => {
@@ -2029,44 +2058,36 @@ export function generateUnevaluatedPropertiesCheck(
   }
 
   // Only check if data is an object
-  code.if(
-    _`typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
-    () => {
-      // Check each property against the tracker
-      const keyVar = new Name('key');
-      code.forIn(keyVar, dataVar, () => {
-        const condition = evalTracker.isUnevaluatedProp(keyVar);
-        const keyPathExpr = pathExprDynamic(pathExprCode, keyVar);
+  code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
+    // Check each property against the tracker
+    const keyVar = new Name('key');
+    code.forIn(keyVar, dataVar, () => {
+      const condition = evalTracker.isUnevaluatedProp(keyVar);
+      const keyPathExpr = pathExprDynamic(pathExprCode, keyVar);
 
-        code.if(condition, () => {
-          if (schema.unevaluatedProperties === false) {
-            genError(
-              code,
-              keyPathExpr,
-              'unevaluatedProperties',
-              'Unevaluated property not allowed'
-            );
-          } else if (schema.unevaluatedProperties === true) {
-            // unevaluatedProperties: true - mark as evaluated (for bubbling to parent)
-            evalTracker.markPropDynamic(keyVar);
-          } else if (schema.unevaluatedProperties !== undefined) {
-            // unevaluatedProperties: <schema> - validate and mark as evaluated
-            const propVar = code.genVar('up');
-            code.line(_`const ${propVar} = ${dataVar}[${keyVar}];`);
-            generateSchemaValidator(
-              code,
-              schema.unevaluatedProperties,
-              propVar,
-              keyPathExpr,
-              ctx,
-              dynamicScopeVar
-            );
-            evalTracker.markPropDynamic(keyVar);
-          }
-        });
+      code.if(condition, () => {
+        if (schema.unevaluatedProperties === false) {
+          genError(code, keyPathExpr, 'unevaluatedProperties', 'Unevaluated property not allowed');
+        } else if (schema.unevaluatedProperties === true) {
+          // unevaluatedProperties: true - mark as evaluated (for bubbling to parent)
+          evalTracker.markPropDynamic(keyVar);
+        } else if (schema.unevaluatedProperties !== undefined) {
+          // unevaluatedProperties: <schema> - validate and mark as evaluated
+          const propVar = code.genVar('up');
+          code.line(_`const ${propVar} = ${dataVar}[${keyVar}];`);
+          generateSchemaValidator(
+            code,
+            schema.unevaluatedProperties,
+            propVar,
+            keyPathExpr,
+            ctx,
+            dynamicScopeVar
+          );
+          evalTracker.markPropDynamic(keyVar);
+        }
       });
-    }
-  );
+    });
+  });
 }
 
 /**

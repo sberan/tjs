@@ -114,7 +114,7 @@ export function getTypeCheck(dataVar: Name, type: string): Code {
     case 'number':
       return _`typeof ${dataVar} === 'number'`;
     case 'integer':
-      return _`typeof ${dataVar} === 'number' && Number.isInteger(${dataVar})`;
+      return _`typeof ${dataVar} === 'number' && ${dataVar} % 1 === 0 && isFinite(${dataVar})`;
     case 'boolean':
       return _`typeof ${dataVar} === 'boolean'`;
     case 'null':
@@ -122,7 +122,7 @@ export function getTypeCheck(dataVar: Name, type: string): Code {
     case 'array':
       return _`Array.isArray(${dataVar})`;
     case 'object':
-      return _`typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`;
+      return _`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`;
     default:
       return _`false`;
   }
@@ -158,4 +158,37 @@ export function isNoOpSchema(schema: unknown): boolean {
     return Object.keys(schema).length === 0;
   }
   return false;
+}
+
+/**
+ * Get the simple type from a type-only schema.
+ * Returns undefined if the schema is not a simple type-only schema.
+ */
+export function getSimpleType(schema: unknown): string | undefined {
+  if (typeof schema !== 'object' || schema === null) return undefined;
+  const s = schema as JsonSchemaBase;
+  const keys = Object.keys(s);
+  if (keys.length === 1 && keys[0] === 'type' && typeof s.type === 'string') {
+    return s.type;
+  }
+  // Allow $schema + type
+  if (
+    keys.length === 2 &&
+    keys.includes('type') &&
+    keys.includes('$schema') &&
+    typeof s.type === 'string'
+  ) {
+    return s.type;
+  }
+  return undefined;
+}
+
+/**
+ * Get inline type check code for a simple type-only schema.
+ * Returns undefined if the schema cannot be inlined.
+ */
+export function getInlineTypeCheck(dataVar: Name, schema: unknown): Code | undefined {
+  const simpleType = getSimpleType(schema);
+  if (!simpleType) return undefined;
+  return getTypeCheck(dataVar, simpleType);
 }
