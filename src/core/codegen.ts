@@ -10,6 +10,9 @@
  * - `Name`: Subclass for variable/identifier names
  * - `_` template: Creates Code instances, strings are auto-quoted
  * - `str` template: Creates string expression code
+ *
+ * SECURITY: All CodeBuilder methods ONLY accept Code types. Raw strings cannot
+ * be passed directly - they must go through the `_` template which auto-escapes.
  */
 
 // ============================================================================
@@ -52,15 +55,15 @@ export class Code {
  */
 export class Name extends Code {
   /** The identifier string */
-  readonly name: string;
+  readonly str: string;
 
-  constructor(name: string) {
-    super(name);
-    this.name = name;
+  constructor(s: string) {
+    super(s);
+    this.str = s;
   }
 
   toString(): string {
-    return this.name;
+    return this.str;
   }
 }
 
@@ -181,34 +184,140 @@ export function name(s: string): Name {
 }
 
 /**
- * Generate a property access expression.
+ * Generate a property access expression as Code.
  * Handles both dot notation (data.foo) and bracket notation (data["foo-bar"])
- * Returns string for backwards compatibility with existing code.
  */
-export function propAccess(obj: Code | Name | string, prop: string): string {
-  const objStr = obj instanceof Code ? obj.toString() : obj;
+export function propAccess(obj: Code | Name, prop: string): Code {
+  const objStr = obj.toString();
   // Use dot notation if property is a valid identifier
   if (/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(prop)) {
-    return `${objStr}.${prop}`;
+    return new Code(`${objStr}.${prop}`);
   }
   // Otherwise use bracket notation with escaped string
-  return `${objStr}["${escapeString(prop)}"]`;
+  return new Code(`${objStr}["${escapeString(prop)}"]`);
+}
+
+/**
+ * Generate an index access expression as Code.
+ * e.g., data[i] or data[0]
+ */
+export function indexAccess(obj: Code | Name, index: Code | Name | number): Code {
+  const objStr = obj.toString();
+  const indexStr = index instanceof Code ? index.toString() : String(index);
+  return new Code(`${objStr}[${indexStr}]`);
 }
 
 /**
  * Stringify a value for embedding in generated code (JSON.stringify).
- * Returns a string since JSON.stringify output is always safe.
+ * Returns Code since it's safe to embed.
  */
-export function stringify(value: unknown): string {
-  return JSON.stringify(value);
+export function stringify(value: unknown): Code {
+  return new Code(JSON.stringify(value));
 }
 
 /**
- * Create raw code from a trusted string.
- * WARNING: Only use for compile-time constants, never for user input!
+ * Create a string literal Code from a raw string.
+ * The string will be quoted and escaped.
  */
-export function rawCode(s: string): Code {
-  return new Code(s);
+export function strLit(s: string): Code {
+  return new Code(`"${escapeString(s)}"`);
+}
+
+/**
+ * Create a single-quoted string literal Code.
+ */
+export function strLitSingle(s: string): Code {
+  return new Code(`'${escapeString(s)}'`);
+}
+
+/**
+ * Create a number literal Code.
+ */
+export function numLit(n: number): Code {
+  return new Code(String(n));
+}
+
+/**
+ * Concatenate multiple Code fragments.
+ */
+export function concat(...codes: Code[]): Code {
+  return new Code(codes.map((c) => c.toString()).join(''));
+}
+
+/**
+ * Join Code fragments with a separator.
+ */
+export function join(codes: Code[], separator: string): Code {
+  return new Code(codes.map((c) => c.toString()).join(separator));
+}
+
+/**
+ * Create an "and" expression (&&) from multiple conditions.
+ */
+export function and(...conditions: Code[]): Code {
+  if (conditions.length === 0) return _`true`;
+  if (conditions.length === 1) return conditions[0];
+  return new Code(conditions.map((c) => c.toString()).join(' && '));
+}
+
+/**
+ * Create an "or" expression (||) from multiple conditions.
+ */
+export function or(...conditions: Code[]): Code {
+  if (conditions.length === 0) return _`false`;
+  if (conditions.length === 1) return conditions[0];
+  return new Code(conditions.map((c) => c.toString()).join(' || '));
+}
+
+/**
+ * Negate a condition.
+ */
+export function not(condition: Code): Code {
+  return _`!(${condition})`;
+}
+
+/**
+ * Generate a path expression for error messages.
+ * Returns Code that evaluates to a path string at runtime.
+ */
+export function pathExpr(basePath: Code | Name, segment: string | number): Code {
+  if (typeof segment === 'number') {
+    if (basePath.toString() === "''") {
+      return _`'[${new Code(String(segment))}]'`;
+    }
+    return _`${basePath} + '[${new Code(String(segment))}]'`;
+  }
+  const escaped = escapeString(segment);
+  if (/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(segment)) {
+    if (basePath.toString() === "''") {
+      return new Code(`'${escaped}'`);
+    }
+    return _`${basePath} + '.${new Code(escaped)}'`;
+  }
+  if (basePath.toString() === "''") {
+    return new Code(`'["${escaped}"]'`);
+  }
+  return _`${basePath} + '["${new Code(escaped)}"]'`;
+}
+
+/**
+ * Generate a dynamic path expression (when segment is a variable).
+ */
+export function pathExprDynamic(basePath: Code | Name, segmentVar: Code | Name): Code {
+  if (basePath.toString() === "''") {
+    return segmentVar;
+  }
+  return _`${basePath} + '.' + ${segmentVar}`;
+}
+
+/**
+ * Generate a dynamic array index path expression.
+ */
+export function pathExprIndex(basePath: Code | Name, indexVar: Code | Name): Code {
+  if (basePath.toString() === "''") {
+    return _`'[' + ${indexVar} + ']'`;
+  }
+  return _`${basePath} + '[' + ${indexVar} + ']'`;
 }
 
 // ============================================================================
@@ -217,6 +326,7 @@ export function rawCode(s: string): Code {
 
 /**
  * Builds JavaScript code with proper indentation and safe interpolation.
+ * All methods ONLY accept Code types - no raw strings allowed.
  */
 export class CodeBuilder {
   #lines: string[] = [];
@@ -225,11 +335,10 @@ export class CodeBuilder {
 
   /**
    * Add a line of code at current indentation.
-   * Accepts Code for safety, or string for backwards compatibility.
+   * ONLY accepts Code - use the `_` template to create Code from strings.
    */
-  line(code: Code | string): this {
-    const codeStr = code instanceof Code ? code.toString() : code;
-    this.#lines.push('  '.repeat(this.#indent) + codeStr);
+  line(code: Code): this {
+    this.#lines.push('  '.repeat(this.#indent) + code.toString());
     return this;
   }
 
@@ -244,22 +353,20 @@ export class CodeBuilder {
   /**
    * Add a block with braces (e.g., if, for, function)
    */
-  block(header: Code | string, body: () => void): this {
-    const headerStr = header instanceof Code ? header.toString() : header;
-    this.line(headerStr + ' {');
+  block(header: Code, body: () => void): this {
+    this.#lines.push('  '.repeat(this.#indent) + header.toString() + ' {');
     this.#indent++;
     body();
     this.#indent--;
-    this.line('}');
+    this.line(_`}`);
     return this;
   }
 
   /**
    * Add an if statement
    */
-  if(condition: Code | string, body: () => void): this {
-    const condStr = condition instanceof Code ? condition.toString() : condition;
-    return this.block(`if (${condStr})`, body);
+  if(condition: Code, body: () => void): this {
+    return this.block(_`if (${condition})`, body);
   }
 
   /**
@@ -273,7 +380,7 @@ export class CodeBuilder {
       this.#indent++;
       body();
       this.#indent--;
-      this.line('}');
+      this.line(_`}`);
     }
     return this;
   }
@@ -281,15 +388,14 @@ export class CodeBuilder {
   /**
    * Add an else-if clause
    */
-  elseIf(condition: Code | string, body: () => void): this {
-    const condStr = condition instanceof Code ? condition.toString() : condition;
+  elseIf(condition: Code, body: () => void): this {
     const lastLine = this.#lines.pop();
     if (lastLine?.trim() === '}') {
-      this.#lines.push(lastLine.replace('}', `} else if (${condStr}) {`));
+      this.#lines.push(lastLine.replace('}', `} else if (${condition.toString()}) {`));
       this.#indent++;
       body();
       this.#indent--;
-      this.line('}');
+      this.line(_`}`);
     }
     return this;
   }
@@ -297,47 +403,28 @@ export class CodeBuilder {
   /**
    * Add a for loop
    */
-  for(
-    init: Code | string,
-    condition: Code | string,
-    update: Code | string,
-    body: () => void
-  ): this {
-    const initStr = init instanceof Code ? init.toString() : init;
-    const condStr = condition instanceof Code ? condition.toString() : condition;
-    const updateStr = update instanceof Code ? update.toString() : update;
-    return this.block(`for (${initStr}; ${condStr}; ${updateStr})`, body);
+  for(init: Code, condition: Code, update: Code, body: () => void): this {
+    return this.block(_`for (${init}; ${condition}; ${update})`, body);
   }
 
   /**
    * Add a for-of loop
    */
-  forOf(variable: Name | string, iterable: Code | string, body: () => void): this {
-    const varStr = variable instanceof Name ? variable.name : variable;
-    const iterStr = iterable instanceof Code ? iterable.toString() : iterable;
-    return this.block(`for (const ${varStr} of ${iterStr})`, body);
+  forOf(variable: Name, iterable: Code, body: () => void): this {
+    return this.block(_`for (const ${variable} of ${iterable})`, body);
   }
 
   /**
    * Add a for-in loop
    */
-  forIn(variable: Name | string, object: Code | string, body: () => void): this {
-    const varStr = variable instanceof Name ? variable.name : variable;
-    const objStr = object instanceof Code ? object.toString() : object;
-    return this.block(`for (const ${varStr} in ${objStr})`, body);
+  forIn(variable: Name, object: Code, body: () => void): this {
+    return this.block(_`for (const ${variable} in ${object})`, body);
   }
 
   /**
    * Generate a unique variable name and return it as a Name
    */
-  genVar(prefix = 'v'): string {
-    return `${prefix}${this.#varCounter++}`;
-  }
-
-  /**
-   * Generate a unique variable Name
-   */
-  genName(prefix = 'v'): Name {
+  genVar(prefix = 'v'): Name {
     return new Name(`${prefix}${this.#varCounter++}`);
   }
 
@@ -377,24 +464,4 @@ export class CodeBuilder {
     this.#indent--;
     return this;
   }
-}
-
-// ============================================================================
-// Legacy exports for backwards compatibility
-// ============================================================================
-
-/**
- * Generate a path string for error messages
- * @deprecated Use the new safe code generation patterns instead
- */
-export function pathExpr(basePath: string, segment: string | number): string {
-  if (typeof segment === 'number') {
-    return basePath ? `${basePath} + '[${segment}]'` : `'[${segment}]'`;
-  }
-  if (/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(segment)) {
-    return basePath ? `${basePath} + '.${segment}'` : `'${segment}'`;
-  }
-  return basePath
-    ? `${basePath} + '["${escapeString(segment)}"]'`
-    : `'["${escapeString(segment)}"]'`;
 }

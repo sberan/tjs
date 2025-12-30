@@ -2,86 +2,39 @@
  * JSON Schema Compiler
  *
  * Generates optimized JavaScript validation functions from schemas.
+ * Uses safe code generation to prevent injection attacks.
  */
 
 import type { JsonSchema, JsonSchemaBase } from '../types.js';
-import { CodeBuilder, escapeString, propAccess, stringify } from './codegen.js';
+import {
+  CodeBuilder,
+  Code,
+  Name,
+  _,
+  escapeString,
+  stringify,
+  indexAccess,
+  pathExpr,
+  pathExprDynamic,
+  pathExprIndex,
+  or,
+  and,
+  not,
+} from './codegen.js';
 import { CompileContext, VOCABULARIES, supportsFeature, type CompileOptions } from './context.js';
 import { EvalTracker } from './eval-tracker.js';
 import { createFormatValidators } from './keywords/format.js';
+import {
+  genError,
+  genPropertyCheck,
+  genRequiredCheck,
+  hasTypeConstraint,
+  getTypeCheck,
+  getItemTypes,
+  isNoOpSchema,
+} from './keywords/utils.js';
 
 export type { RuntimeTracker } from './eval-tracker.js';
-
-/**
- * Property names that exist on Object.prototype or Array.prototype.
- * These require Object.hasOwn for accurate existence check.
- * Other property names can use the faster `!== undefined` pattern.
- * Generated at module load time from actual prototype chains.
- */
-const PROTOTYPE_PROPS = new Set([
-  ...Object.getOwnPropertyNames(Object.prototype),
-  ...Object.getOwnPropertyNames(Array.prototype),
-]);
-
-/**
- * Check if a property name is safe for fast existence check (!== undefined).
- * Unsafe names are those that exist on Object.prototype or Array.prototype.
- */
-function isSafePropertyName(name: string): boolean {
-  return !PROTOTYPE_PROPS.has(name);
-}
-
-/**
- * Generate code to check if a property exists and execute a callback with the value.
- * Uses fast path (!== undefined) for safe property names, Object.hasOwn for prototype names.
- */
-function genPropertyCheck(
-  code: CodeBuilder,
-  dataVar: string,
-  propName: string,
-  callback: (valueVar: string) => void
-): void {
-  const propStr = escapeString(propName);
-  const propAccessed = propAccess(dataVar, propName);
-
-  if (isSafePropertyName(propName)) {
-    // Fast path: store value and check !== undefined
-    const propVar = code.genVar('prop');
-    code.line(`const ${propVar} = ${propAccessed};`);
-    code.if(`${propVar} !== undefined`, () => {
-      callback(propVar);
-    });
-  } else {
-    // Slow path: use Object.hasOwn for prototype property names
-    code.if(`Object.hasOwn(${dataVar}, '${propStr}')`, () => {
-      callback(propAccessed);
-    });
-  }
-}
-
-/**
- * Generate code to check if a required property exists.
- * Uses fast path ('in' operator) for safe names, Object.hasOwn for prototype names.
- */
-function genRequiredCheck(
-  code: CodeBuilder,
-  dataVar: string,
-  propName: string,
-  pathExpr: string
-): void {
-  const propStr = escapeString(propName);
-  const propPathExpr = pathExpr === "''" ? `'${propStr}'` : `${pathExpr} + '.${propStr}'`;
-
-  // For prototype property names, use Object.hasOwn for accuracy.
-  // For other names, use the faster 'in' operator.
-  const checkExpr = isSafePropertyName(propName)
-    ? `!('${propStr}' in ${dataVar})`
-    : `!Object.hasOwn(${dataVar}, '${propStr}')`;
-
-  code.if(checkExpr, () => {
-    genError(code, propPathExpr, 'required', 'Required property missing');
-  });
-}
 
 /**
  * Compile error type for internal use
@@ -116,7 +69,7 @@ export function compile(schema: JsonSchema, options: CompileOptions = {}): Valid
 
   // In legacy mode (draft-07 and earlier), skip dynamic scope entirely for better performance
   const useDynamicScope = !ctx.options.legacyRef;
-  const dynamicScopeVar = useDynamicScope ? 'dynamicScope' : '';
+  const dynamicScopeVar = useDynamicScope ? new Name('dynamicScope') : undefined;
 
   // Collect dynamic anchors from the root resource to add to scope at startup
   const anchorFuncNames: Array<{ anchor: string; funcName: string }> = [];
@@ -134,7 +87,9 @@ export function compile(schema: JsonSchema, options: CompileOptions = {}): Valid
   }
 
   // Generate code for main schema
-  generateSchemaValidator(code, schema, 'data', "''", ctx, dynamicScopeVar);
+  const dataVar = new Name('data');
+  const pathVar = _`''`;
+  generateSchemaValidator(code, schema, dataVar, pathVar, ctx, dynamicScopeVar);
 
   // Process any queued schemas (from $ref)
   // Each compiled function takes an optional tracker parameter for eval tracking
@@ -142,10 +97,11 @@ export function compile(schema: JsonSchema, options: CompileOptions = {}): Valid
   let queued: { schema: JsonSchema; funcName: string } | undefined;
   while ((queued = ctx.nextToCompile())) {
     const q = queued; // Capture for closure
+    const qFuncName = new Name(q.funcName);
     code.blank();
     if (useDynamicScope) {
       // Function signature: (data, errors, path, dynamicScope, tracker?)
-      code.block(`function ${q.funcName}(data, errors, path, dynamicScope, tracker)`, () => {
+      code.block(_`function ${qFuncName}(data, errors, path, dynamicScope, tracker)`, () => {
         // Create a "runtime" tracker that generates conditional marking code
         // The code checks `if (tracker)` before each mark operation
         const trackerObj = new EvalTracker(code, 'tracker', {
@@ -153,20 +109,25 @@ export function compile(schema: JsonSchema, options: CompileOptions = {}): Valid
           trackItems: true,
           isRuntimeOptional: true,
         });
-        generateSchemaValidator(code, q.schema, 'data', 'path', ctx, 'dynamicScope', trackerObj);
-        code.line('return true;');
+        const qDataVar = new Name('data');
+        const qPathVar = new Name('path');
+        const qDynamicScope = new Name('dynamicScope');
+        generateSchemaValidator(code, q.schema, qDataVar, qPathVar, ctx, qDynamicScope, trackerObj);
+        code.line(_`return true;`);
       });
     } else {
       // In legacy mode, skip dynamicScope parameter for faster function calls
       // Function signature: (data, errors, path, tracker?)
-      code.block(`function ${q.funcName}(data, errors, path, tracker)`, () => {
+      code.block(_`function ${qFuncName}(data, errors, path, tracker)`, () => {
         const trackerObj = new EvalTracker(code, 'tracker', {
           trackProps: true,
           trackItems: true,
           isRuntimeOptional: true,
         });
-        generateSchemaValidator(code, q.schema, 'data', 'path', ctx, '', trackerObj);
-        code.line('return true;');
+        const qDataVar = new Name('data');
+        const qPathVar = new Name('path');
+        generateSchemaValidator(code, q.schema, qDataVar, qPathVar, ctx, undefined, trackerObj);
+        code.line(_`return true;`);
       });
     }
   }
@@ -181,7 +142,7 @@ export function compile(schema: JsonSchema, options: CompileOptions = {}): Valid
   if (useDynamicScope) {
     scopeInit = 'const dynamicScope = [];\n';
     for (const { anchor, funcName } of anchorFuncNames) {
-      scopeInit += `dynamicScope.push({ anchor: ${stringify(anchor)}, validate: ${funcName} });\n`;
+      scopeInit += `dynamicScope.push({ anchor: ${JSON.stringify(anchor)}, validate: ${funcName} });\n`;
     }
   }
 
@@ -259,21 +220,21 @@ function schemaHasContains(
 
 /**
  * Generate validation code for a schema
- * @param pathExpr - JavaScript expression that evaluates to the current path string
+ * @param pathExprCode - Code expression that evaluates to the current path string
  * @param dynamicScopeVar - Variable name for the dynamic scope array (for $dynamicRef)
  * @param evalTracker - Tracker for evaluated properties/items (for unevaluated* keywords)
  */
 function generateSchemaValidator(
   code: CodeBuilder,
   schema: JsonSchema,
-  dataVar: string,
-  pathExpr: string,
+  dataVar: Name,
+  pathExprCode: Code,
   ctx: CompileContext,
-  dynamicScopeVar?: string,
+  dynamicScopeVar?: Name,
   evalTracker?: EvalTracker
 ): void {
   // In legacy mode, never use dynamic scope
-  const scopeVar = ctx.options.legacyRef ? '' : (dynamicScopeVar ?? 'dynamicScope');
+  const scopeVar = ctx.options.legacyRef ? undefined : dynamicScopeVar;
   // Boolean schemas
   if (schema === true) {
     // Always valid - no code needed
@@ -281,14 +242,14 @@ function generateSchemaValidator(
   }
 
   if (schema === false) {
-    genError(code, pathExpr, 'false', 'Schema is false');
+    genError(code, pathExprCode, 'false', 'Schema is false');
     return;
   }
 
   // String shorthand types (e.g., 'string' is equivalent to { type: 'string' })
   if (typeof schema === 'string') {
     // Convert shorthand to equivalent type schema and recurse
-    generateSchemaValidator(code, { type: schema }, dataVar, pathExpr, ctx, dynamicScopeVar);
+    generateSchemaValidator(code, { type: schema }, dataVar, pathExprCode, ctx, dynamicScopeVar);
     return;
   }
 
@@ -305,7 +266,7 @@ function generateSchemaValidator(
       for (const { anchor, schema: anchorSchema } of resourceAnchors) {
         const anchorFuncName = ctx.getCompiledName(anchorSchema) ?? ctx.queueCompile(anchorSchema);
         code.line(
-          `${scopeVar}.push({ anchor: ${stringify(anchor)}, validate: ${anchorFuncName} });`
+          _`${scopeVar}.push({ anchor: ${stringify(anchor)}, validate: ${new Name(anchorFuncName)} });`
         );
       }
     }
@@ -315,7 +276,7 @@ function generateSchemaValidator(
   // Only generate $ref check and skip everything else
   // BUT if we have an eval tracker, we still need to inline for property tracking
   if (schema.$ref && ctx.options.legacyRef && !evalTracker) {
-    generateRefCheck(code, schema, dataVar, pathExpr, ctx, scopeVar);
+    generateRefCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
   } else {
     // Set up evaluation tracking if this schema has unevaluatedProperties/unevaluatedItems
     // IMPORTANT: Each schema with unevaluatedProperties/unevaluatedItems needs its OWN tracker
@@ -346,27 +307,27 @@ function generateSchemaValidator(
     // so that properties evaluated here are visible to the parent's unevaluatedProperties check
 
     // Generate code for each keyword (draft-2020-12 behavior)
-    generateTypeCheck(code, schema, dataVar, pathExpr, ctx);
-    generateConstCheck(code, schema, dataVar, pathExpr, ctx);
-    generateEnumCheck(code, schema, dataVar, pathExpr, ctx);
-    generateStringChecks(code, schema, dataVar, pathExpr, ctx);
-    generateFormatCheck(code, schema, dataVar, pathExpr, ctx);
-    generateContentChecks(code, schema, dataVar, pathExpr, ctx);
-    generateNumberChecks(code, schema, dataVar, pathExpr, ctx);
-    generateItemsChecks(code, schema, dataVar, pathExpr, ctx, tracker);
-    generateArrayChecks(code, schema, dataVar, pathExpr, ctx);
-    generateObjectChecks(code, schema, dataVar, pathExpr, ctx);
-    generatePropertiesChecks(code, schema, dataVar, pathExpr, ctx, tracker);
-    generateCompositionChecks(code, schema, dataVar, pathExpr, ctx, scopeVar, tracker);
-    generateRefCheck(code, schema, dataVar, pathExpr, ctx, scopeVar, tracker);
-    generateDynamicRefCheck(code, schema, dataVar, pathExpr, ctx, scopeVar, tracker);
-    generateContainsCheck(code, schema, dataVar, pathExpr, ctx, tracker);
-    generateDependentRequiredCheck(code, schema, dataVar, pathExpr, ctx);
-    generatePropertyNamesCheck(code, schema, dataVar, pathExpr, ctx);
-    generateDependentSchemasCheck(code, schema, dataVar, pathExpr, ctx, tracker);
-    generateDependenciesCheck(code, schema, dataVar, pathExpr, ctx, tracker);
-    generateUnevaluatedPropertiesCheck(code, schema, dataVar, pathExpr, ctx, tracker);
-    generateUnevaluatedItemsCheck(code, schema, dataVar, pathExpr, ctx, tracker);
+    generateTypeCheck(code, schema, dataVar, pathExprCode, ctx);
+    generateConstCheck(code, schema, dataVar, pathExprCode, ctx);
+    generateEnumCheck(code, schema, dataVar, pathExprCode, ctx);
+    generateStringChecks(code, schema, dataVar, pathExprCode, ctx);
+    generateFormatCheck(code, schema, dataVar, pathExprCode, ctx);
+    generateContentChecks(code, schema, dataVar, pathExprCode, ctx);
+    generateNumberChecks(code, schema, dataVar, pathExprCode, ctx);
+    generateItemsChecks(code, schema, dataVar, pathExprCode, ctx, scopeVar, tracker);
+    generateArrayChecks(code, schema, dataVar, pathExprCode, ctx);
+    generateObjectChecks(code, schema, dataVar, pathExprCode, ctx);
+    generatePropertiesChecks(code, schema, dataVar, pathExprCode, ctx, scopeVar, tracker);
+    generateCompositionChecks(code, schema, dataVar, pathExprCode, ctx, scopeVar, tracker);
+    generateRefCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar, tracker);
+    generateDynamicRefCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar, tracker);
+    generateContainsCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar, tracker);
+    generateDependentRequiredCheck(code, schema, dataVar, pathExprCode, ctx);
+    generatePropertyNamesCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
+    generateDependentSchemasCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar, tracker);
+    generateDependenciesCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar, tracker);
+    generateUnevaluatedPropertiesCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar, tracker);
+    generateUnevaluatedItemsCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar, tracker);
 
     // After unevaluatedProperties/Items checks, bubble up evaluated props to parent
     // This ensures nested unevaluatedProperties: true marks props for parent too
@@ -376,9 +337,9 @@ function generateSchemaValidator(
   }
 
   // Pop dynamic anchors after validation (if we pushed any)
-  if (resourceAnchors.length > 0) {
+  if (resourceAnchors.length > 0 && scopeVar) {
     for (let i = 0; i < resourceAnchors.length; i++) {
-      code.line(`${scopeVar}.pop();`);
+      code.line(_`${scopeVar}.pop();`);
     }
   }
 }
@@ -436,35 +397,13 @@ function createUcs2Length(): (str: string) => number {
 // =============================================================================
 
 /**
- * Generate code to push an error and return false (or just return false if no errors array)
- */
-function genError(code: CodeBuilder, pathExpr: string, keyword: string, message: string): void {
-  code.line(
-    `if (errors) errors.push({ path: ${pathExpr}, message: '${escapeString(message)}', keyword: '${keyword}' });`
-  );
-  code.line('return false;');
-}
-
-/**
- * Check if schema has a specific type constraint that guarantees the type is already validated
- */
-function hasTypeConstraint(schema: JsonSchemaBase, type: string): boolean {
-  if (!schema.type) return false;
-  if (Array.isArray(schema.type)) {
-    // Only if single type
-    return schema.type.length === 1 && schema.type[0] === type;
-  }
-  return schema.type === type;
-}
-
-/**
  * Generate type check code
  */
 export function generateTypeCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
-  dataVar: string,
-  pathExpr: string,
+  dataVar: Name,
+  pathExprCode: Code,
   ctx: CompileContext
 ): void {
   if (!schema.type) return;
@@ -473,40 +412,18 @@ export function generateTypeCheck(
 
   const types = Array.isArray(schema.type) ? schema.type : [schema.type];
   const expectedType = types.join(' or ');
-  //TODO we dont't need this optimization, the multiple case is fine
   if (types.length === 1) {
     const type = types[0];
     const check = getTypeCheck(dataVar, type);
-    code.if(`!(${check})`, () => {
-      genError(code, pathExpr, 'type', `Expected ${expectedType}`);
+    code.if(not(check), () => {
+      genError(code, pathExprCode, 'type', `Expected ${expectedType}`);
     });
   } else {
     // Multiple types - need OR
     const checks = types.map((t) => getTypeCheck(dataVar, t));
-    code.if(`!(${checks.join(' || ')})`, () => {
-      genError(code, pathExpr, 'type', `Expected ${expectedType}`);
+    code.if(not(or(...checks)), () => {
+      genError(code, pathExprCode, 'type', `Expected ${expectedType}`);
     });
-  }
-}
-
-function getTypeCheck(dataVar: string, type: string): string {
-  switch (type) {
-    case 'string':
-      return `typeof ${dataVar} === 'string'`;
-    case 'number':
-      return `typeof ${dataVar} === 'number'`;
-    case 'integer':
-      return `typeof ${dataVar} === 'number' && Number.isInteger(${dataVar})`;
-    case 'boolean':
-      return `typeof ${dataVar} === 'boolean'`;
-    case 'null':
-      return `${dataVar} === null`;
-    case 'array':
-      return `Array.isArray(${dataVar})`;
-    case 'object':
-      return `typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`;
-    default:
-      return 'false';
   }
 }
 
@@ -516,23 +433,21 @@ function getTypeCheck(dataVar: string, type: string): string {
 export function generateConstCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
-  dataVar: string,
-  pathExpr: string,
+  dataVar: Name,
+  pathExprCode: Code,
   _ctx: CompileContext
 ): void {
   if (schema.const === undefined) return;
 
   // For primitives, use strict equality
   if (schema.const === null || typeof schema.const !== 'object') {
-    // TODO let's make a conveninece function to do an if check with an error if true
-    // i.e. code.assertIf(condition, pathExpr, keyword, message)
-    code.if(`${dataVar} !== ${stringify(schema.const)}`, () => {
-      genError(code, pathExpr, 'const', `Expected constant value`);
+    code.if(_`${dataVar} !== ${stringify(schema.const)}`, () => {
+      genError(code, pathExprCode, 'const', `Expected constant value`);
     });
   } else {
     // For objects/arrays, use deepEqual
-    code.if(`!deepEqual(${dataVar}, ${stringify(schema.const)})`, () => {
-      genError(code, pathExpr, 'const', `Expected constant value`);
+    code.if(_`!deepEqual(${dataVar}, ${stringify(schema.const)})`, () => {
+      genError(code, pathExprCode, 'const', `Expected constant value`);
     });
   }
 }
@@ -543,8 +458,8 @@ export function generateConstCheck(
 export function generateEnumCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
-  dataVar: string,
-  pathExpr: string,
+  dataVar: Name,
+  pathExprCode: Code,
   ctx: CompileContext
 ): void {
   if (!schema.enum) return;
@@ -563,29 +478,29 @@ export function generateEnumCheck(
 
   if (complexValues.length === 0) {
     // All primitives - use Set for O(1) lookup
-    const setName = ctx.genRuntimeName('enumSet');
-    ctx.addRuntimeFunction(setName, new Set(primitives));
-    code.if(`!${setName}.has(${dataVar})`, () => {
-      genError(code, pathExpr, 'enum', `Value must be one of the allowed values`);
+    const setName = new Name(ctx.genRuntimeName('enumSet'));
+    ctx.addRuntimeFunction(setName.str, new Set(primitives));
+    code.if(_`!${setName}.has(${dataVar})`, () => {
+      genError(code, pathExprCode, 'enum', `Value must be one of the allowed values`);
     });
   } else if (primitives.length === 0) {
     // All complex - use deepEqual for all
-    const arrName = ctx.genRuntimeName('enumArr');
-    ctx.addRuntimeFunction(arrName, complexValues);
-    code.if(`!${arrName}.some(v => deepEqual(${dataVar}, v))`, () => {
-      genError(code, pathExpr, 'enum', `Value must be one of the allowed values`);
+    const arrName = new Name(ctx.genRuntimeName('enumArr'));
+    ctx.addRuntimeFunction(arrName.str, complexValues);
+    code.if(_`!${arrName}.some(v => deepEqual(${dataVar}, v))`, () => {
+      genError(code, pathExprCode, 'enum', `Value must be one of the allowed values`);
     });
   } else {
     // Mixed: check primitives with Set, complex with deepEqual
     // Only call deepEqual if data is an object (since primitives are already covered by Set)
-    const setName = ctx.genRuntimeName('enumSet');
-    ctx.addRuntimeFunction(setName, new Set(primitives));
-    const arrName = ctx.genRuntimeName('enumArr');
-    ctx.addRuntimeFunction(arrName, complexValues);
+    const setName = new Name(ctx.genRuntimeName('enumSet'));
+    ctx.addRuntimeFunction(setName.str, new Set(primitives));
+    const arrName = new Name(ctx.genRuntimeName('enumArr'));
+    ctx.addRuntimeFunction(arrName.str, complexValues);
     code.if(
-      `!${setName}.has(${dataVar}) && (typeof ${dataVar} !== 'object' || ${dataVar} === null || !${arrName}.some(v => deepEqual(${dataVar}, v)))`,
+      _`!${setName}.has(${dataVar}) && (typeof ${dataVar} !== 'object' || ${dataVar} === null || !${arrName}.some(v => deepEqual(${dataVar}, v)))`,
       () => {
-        genError(code, pathExpr, 'enum', `Value must be one of the allowed values`);
+        genError(code, pathExprCode, 'enum', `Value must be one of the allowed values`);
       }
     );
   }
@@ -597,8 +512,8 @@ export function generateEnumCheck(
 export function generateStringChecks(
   code: CodeBuilder,
   schema: JsonSchemaBase,
-  dataVar: string,
-  pathExpr: string,
+  dataVar: Name,
+  pathExprCode: Code,
   ctx: CompileContext
 ): void {
   const hasStringChecks =
@@ -609,17 +524,17 @@ export function generateStringChecks(
   if (!hasStringChecks) return;
 
   // Only check if data is a string
-  code.if(`typeof ${dataVar} === 'string'`, () => {
+  code.if(_`typeof ${dataVar} === 'string'`, () => {
     // Use ucs2length for proper Unicode code point counting (handles surrogate pairs)
     if (schema.minLength !== undefined || schema.maxLength !== undefined) {
       const lenVar = code.genVar('len');
-      code.line(`const ${lenVar} = ucs2length(${dataVar});`);
+      code.line(_`const ${lenVar} = ucs2length(${dataVar});`);
 
       if (schema.minLength !== undefined) {
-        code.if(`${lenVar} < ${schema.minLength}`, () => {
+        code.if(_`${lenVar} < ${new Code(String(schema.minLength))}`, () => {
           genError(
             code,
-            pathExpr,
+            pathExprCode,
             'minLength',
             `String must be at least ${schema.minLength} characters`
           );
@@ -627,10 +542,10 @@ export function generateStringChecks(
       }
 
       if (schema.maxLength !== undefined) {
-        code.if(`${lenVar} > ${schema.maxLength}`, () => {
+        code.if(_`${lenVar} > ${new Code(String(schema.maxLength))}`, () => {
           genError(
             code,
-            pathExpr,
+            pathExprCode,
             'maxLength',
             `String must be at most ${schema.maxLength} characters`
           );
@@ -641,10 +556,10 @@ export function generateStringChecks(
     if (schema.pattern !== undefined) {
       // Pre-compile regex as a runtime function for consistent performance
       // Use 'u' flag for Unicode support (enables \p{...} property escapes)
-      const regexName = ctx.genRuntimeName('pattern');
-      ctx.addRuntimeFunction(regexName, new RegExp(schema.pattern, 'u'));
-      code.if(`!${regexName}.test(${dataVar})`, () => {
-        genError(code, pathExpr, 'pattern', `String must match pattern ${schema.pattern}`);
+      const regexName = new Name(ctx.genRuntimeName('pattern'));
+      ctx.addRuntimeFunction(regexName.str, new RegExp(schema.pattern, 'u'));
+      code.if(_`!${regexName}.test(${dataVar})`, () => {
+        genError(code, pathExprCode, 'pattern', `String must match pattern ${schema.pattern}`);
       });
     }
   });
@@ -658,8 +573,8 @@ export function generateStringChecks(
 export function generateContentChecks(
   code: CodeBuilder,
   schema: JsonSchemaBase,
-  dataVar: string,
-  pathExpr: string,
+  dataVar: Name,
+  pathExprCode: Code,
   ctx: CompileContext
 ): void {
   const hasContentChecks =
@@ -674,16 +589,16 @@ export function generateContentChecks(
   }
 
   // Only check if data is a string
-  code.if(`typeof ${dataVar} === 'string'`, () => {
+  code.if(_`typeof ${dataVar} === 'string'`, () => {
     // First check encoding if present
     if (schema.contentEncoding !== undefined) {
       if (schema.contentEncoding === 'base64') {
         // Validate base64 encoding
         // Base64 characters: A-Z, a-z, 0-9, +, /, and = for padding
-        const regexName = ctx.genRuntimeName('base64Re');
-        ctx.addRuntimeFunction(regexName, /^[A-Za-z0-9+/]*={0,2}$/);
-        code.if(`!${regexName}.test(${dataVar}) || ${dataVar}.length % 4 !== 0`, () => {
-          genError(code, pathExpr, 'contentEncoding', 'String must be valid base64');
+        const regexName = new Name(ctx.genRuntimeName('base64Re'));
+        ctx.addRuntimeFunction(regexName.str, /^[A-Za-z0-9+/]*={0,2}$/);
+        code.if(_`!${regexName}.test(${dataVar}) || ${dataVar}.length % 4 !== 0`, () => {
+          genError(code, pathExprCode, 'contentEncoding', 'String must be valid base64');
         });
       }
     }
@@ -694,22 +609,22 @@ export function generateContentChecks(
         // If there's also base64 encoding, we need to decode first
         if (schema.contentEncoding === 'base64') {
           const decodedVar = code.genVar('decoded');
-          code.block('', () => {
-            code.line('try {');
-            code.line(`  const ${decodedVar} = atob(${dataVar});`);
-            code.line(`  JSON.parse(${decodedVar});`);
-            code.line('} catch (e) {');
-            genError(code, pathExpr, 'contentMediaType', 'String must be valid JSON');
-            code.line('}');
+          code.block(_``, () => {
+            code.line(_`try {`);
+            code.line(_`  const ${decodedVar} = atob(${dataVar});`);
+            code.line(_`  JSON.parse(${decodedVar});`);
+            code.line(_`} catch (e) {`);
+            genError(code, pathExprCode, 'contentMediaType', 'String must be valid JSON');
+            code.line(_`}`);
           });
         } else {
           // Validate directly as JSON
-          code.block('', () => {
-            code.line('try {');
-            code.line(`  JSON.parse(${dataVar});`);
-            code.line('} catch (e) {');
-            genError(code, pathExpr, 'contentMediaType', 'String must be valid JSON');
-            code.line('}');
+          code.block(_``, () => {
+            code.line(_`try {`);
+            code.line(_`  JSON.parse(${dataVar});`);
+            code.line(_`} catch (e) {`);
+            genError(code, pathExprCode, 'contentMediaType', 'String must be valid JSON');
+            code.line(_`}`);
           });
         }
       }
@@ -723,8 +638,8 @@ export function generateContentChecks(
 export function generateNumberChecks(
   code: CodeBuilder,
   schema: JsonSchemaBase,
-  dataVar: string,
-  pathExpr: string,
+  dataVar: Name,
+  pathExprCode: Code,
   ctx: CompileContext
 ): void {
   // Number checks are validation vocabulary keywords
@@ -748,12 +663,12 @@ export function generateNumberChecks(
     if (schema.minimum !== undefined) {
       // In draft4, exclusiveMinimum is a boolean that modifies minimum
       if (schema.exclusiveMinimum === true) {
-        code.if(`${dataVar} <= ${schema.minimum}`, () => {
-          genError(code, pathExpr, 'minimum', `Value must be > ${schema.minimum}`);
+        code.if(_`${dataVar} <= ${new Code(String(schema.minimum))}`, () => {
+          genError(code, pathExprCode, 'minimum', `Value must be > ${schema.minimum}`);
         });
       } else {
-        code.if(`${dataVar} < ${schema.minimum}`, () => {
-          genError(code, pathExpr, 'minimum', `Value must be >= ${schema.minimum}`);
+        code.if(_`${dataVar} < ${new Code(String(schema.minimum))}`, () => {
+          genError(code, pathExprCode, 'minimum', `Value must be >= ${schema.minimum}`);
         });
       }
     }
@@ -762,27 +677,37 @@ export function generateNumberChecks(
     if (schema.maximum !== undefined) {
       // In draft4, exclusiveMaximum is a boolean that modifies maximum
       if (schema.exclusiveMaximum === true) {
-        code.if(`${dataVar} >= ${schema.maximum}`, () => {
-          genError(code, pathExpr, 'maximum', `Value must be < ${schema.maximum}`);
+        code.if(_`${dataVar} >= ${new Code(String(schema.maximum))}`, () => {
+          genError(code, pathExprCode, 'maximum', `Value must be < ${schema.maximum}`);
         });
       } else {
-        code.if(`${dataVar} > ${schema.maximum}`, () => {
-          genError(code, pathExpr, 'maximum', `Value must be <= ${schema.maximum}`);
+        code.if(_`${dataVar} > ${new Code(String(schema.maximum))}`, () => {
+          genError(code, pathExprCode, 'maximum', `Value must be <= ${schema.maximum}`);
         });
       }
     }
 
     // Handle exclusiveMinimum as number (draft 2020-12 form)
     if (typeof schema.exclusiveMinimum === 'number') {
-      code.if(`${dataVar} <= ${schema.exclusiveMinimum}`, () => {
-        genError(code, pathExpr, 'exclusiveMinimum', `Value must be > ${schema.exclusiveMinimum}`);
+      code.if(_`${dataVar} <= ${new Code(String(schema.exclusiveMinimum))}`, () => {
+        genError(
+          code,
+          pathExprCode,
+          'exclusiveMinimum',
+          `Value must be > ${schema.exclusiveMinimum}`
+        );
       });
     }
 
     // Handle exclusiveMaximum as number (draft 2020-12 form)
     if (typeof schema.exclusiveMaximum === 'number') {
-      code.if(`${dataVar} >= ${schema.exclusiveMaximum}`, () => {
-        genError(code, pathExpr, 'exclusiveMaximum', `Value must be < ${schema.exclusiveMaximum}`);
+      code.if(_`${dataVar} >= ${new Code(String(schema.exclusiveMaximum))}`, () => {
+        genError(
+          code,
+          pathExprCode,
+          'exclusiveMaximum',
+          `Value must be < ${schema.exclusiveMaximum}`
+        );
       });
     }
 
@@ -792,21 +717,21 @@ export function generateNumberChecks(
       // For integer multipleOf values, can use simpler modulo check
       if (Number.isInteger(multipleOf) && multipleOf >= 1) {
         // Fast path for integer multipleOf: simple modulo
-        code.if(`${dataVar} % ${multipleOf} !== 0`, () => {
+        code.if(_`${dataVar} % ${new Code(String(multipleOf))} !== 0`, () => {
           genError(
             code,
-            pathExpr,
+            pathExprCode,
             'multipleOf',
             `Value must be a multiple of ${schema.multipleOf}`
           );
         });
       } else {
         const divVar = code.genVar('div');
-        code.line(`const ${divVar} = ${dataVar} / ${multipleOf};`);
-        code.if(`!Number.isInteger(${divVar})`, () => {
+        code.line(_`const ${divVar} = ${dataVar} / ${new Code(String(multipleOf))};`);
+        code.if(_`!Number.isInteger(${divVar})`, () => {
           genError(
             code,
-            pathExpr,
+            pathExprCode,
             'multipleOf',
             `Value must be a multiple of ${schema.multipleOf}`
           );
@@ -817,30 +742,10 @@ export function generateNumberChecks(
 
   // Skip type guard if we already know it's a number/integer
   if (needsTypeGuard) {
-    code.if(`typeof ${dataVar} === 'number'`, genChecks);
+    code.if(_`typeof ${dataVar} === 'number'`, genChecks);
   } else {
     genChecks();
   }
-}
-
-/**
- * Get the types of items from the schema's items/prefixItems definition
- * Returns empty array if types are unknown or could include objects/arrays
- */
-function getItemTypes(schema: JsonSchemaBase): string[] {
-  // Check items schema for type constraints
-  const itemsSchema = schema.items;
-  if (typeof itemsSchema === 'object' && itemsSchema !== null && !Array.isArray(itemsSchema)) {
-    const itemType = (itemsSchema as JsonSchemaBase).type;
-    if (typeof itemType === 'string') {
-      return [itemType];
-    }
-    if (Array.isArray(itemType)) {
-      return itemType as string[];
-    }
-  }
-  // prefixItems or array items - too complex to analyze
-  return [];
 }
 
 /**
@@ -849,8 +754,8 @@ function getItemTypes(schema: JsonSchemaBase): string[] {
 export function generateArrayChecks(
   code: CodeBuilder,
   schema: JsonSchemaBase,
-  dataVar: string,
-  pathExpr: string,
+  dataVar: Name,
+  pathExprCode: Code,
   _ctx: CompileContext
 ): void {
   const hasArrayChecks =
@@ -860,14 +765,24 @@ export function generateArrayChecks(
 
   const genChecks = () => {
     if (schema.minItems !== undefined) {
-      code.if(`${dataVar}.length < ${schema.minItems}`, () => {
-        genError(code, pathExpr, 'minItems', `Array must have at least ${schema.minItems} items`);
+      code.if(_`${dataVar}.length < ${new Code(String(schema.minItems))}`, () => {
+        genError(
+          code,
+          pathExprCode,
+          'minItems',
+          `Array must have at least ${schema.minItems} items`
+        );
       });
     }
 
     if (schema.maxItems !== undefined) {
-      code.if(`${dataVar}.length > ${schema.maxItems}`, () => {
-        genError(code, pathExpr, 'maxItems', `Array must have at most ${schema.maxItems} items`);
+      code.if(_`${dataVar}.length > ${new Code(String(schema.maxItems))}`, () => {
+        genError(
+          code,
+          pathExprCode,
+          'maxItems',
+          `Array must have at most ${schema.maxItems} items`
+        );
       });
     }
 
@@ -886,26 +801,26 @@ export function generateArrayChecks(
         const indicesVar = code.genVar('indices');
         const hasMultipleTypes = itemTypes.length > 1;
 
-        code.line(`const ${indicesVar} = {};`);
-        code.block(`for (let ${iVar} = ${dataVar}.length; ${iVar}--;)`, () => {
-          code.line(`let ${itemVar} = ${dataVar}[${iVar}];`);
+        code.line(_`const ${indicesVar} = {};`);
+        code.block(_`for (let ${iVar} = ${dataVar}.length; ${iVar}--;)`, () => {
+          code.line(_`let ${itemVar} = ${dataVar}[${iVar}];`);
           // If multiple types possible, prefix strings to avoid collision with numbers
           if (hasMultipleTypes) {
-            code.if(`typeof ${itemVar} === 'string'`, () => {
-              code.line(`${itemVar} = '_' + ${itemVar};`);
+            code.if(_`typeof ${itemVar} === 'string'`, () => {
+              code.line(_`${itemVar} = '_' + ${itemVar};`);
             });
           }
-          code.if(`typeof ${indicesVar}[${itemVar}] === 'number'`, () => {
-            genError(code, pathExpr, 'uniqueItems', `Array items must be unique`);
+          code.if(_`typeof ${indicesVar}[${itemVar}] === 'number'`, () => {
+            genError(code, pathExprCode, 'uniqueItems', `Array items must be unique`);
           });
-          code.line(`${indicesVar}[${itemVar}] = ${iVar};`);
+          code.line(_`${indicesVar}[${itemVar}] = ${iVar};`);
         });
       } else {
         // Slow path: O(n²) comparison using deepEqual
-        code.block(`outer: for (let ${iVar} = ${dataVar}.length; ${iVar}--;)`, () => {
-          code.block(`for (let ${jVar} = ${iVar}; ${jVar}--;)`, () => {
-            code.if(`deepEqual(${dataVar}[${iVar}], ${dataVar}[${jVar}])`, () => {
-              genError(code, pathExpr, 'uniqueItems', `Array items must be unique`);
+        code.block(_`outer: for (let ${iVar} = ${dataVar}.length; ${iVar}--;)`, () => {
+          code.block(_`for (let ${jVar} = ${iVar}; ${jVar}--;)`, () => {
+            code.if(_`deepEqual(${dataVar}[${iVar}], ${dataVar}[${jVar}])`, () => {
+              genError(code, pathExprCode, 'uniqueItems', `Array items must be unique`);
             });
           });
         });
@@ -918,7 +833,7 @@ export function generateArrayChecks(
     genChecks();
   } else {
     // Only check if data is an array
-    code.if(`Array.isArray(${dataVar})`, genChecks);
+    code.if(_`Array.isArray(${dataVar})`, genChecks);
   }
 }
 
@@ -928,8 +843,8 @@ export function generateArrayChecks(
 export function generateObjectChecks(
   code: CodeBuilder,
   schema: JsonSchemaBase,
-  dataVar: string,
-  pathExpr: string,
+  dataVar: Name,
+  pathExprCode: Code,
   _ctx: CompileContext
 ): void {
   const hasObjectChecks =
@@ -942,18 +857,18 @@ export function generateObjectChecks(
   const genChecks = () => {
     if (schema.required && schema.required.length > 0) {
       for (const prop of schema.required) {
-        genRequiredCheck(code, dataVar, prop, pathExpr);
+        genRequiredCheck(code, dataVar, prop, pathExprCode);
       }
     }
 
     if (schema.minProperties !== undefined || schema.maxProperties !== undefined) {
-      code.line(`const propCount = Object.keys(${dataVar}).length;`);
+      code.line(_`const propCount = Object.keys(${dataVar}).length;`);
 
       if (schema.minProperties !== undefined) {
-        code.if(`propCount < ${schema.minProperties}`, () => {
+        code.if(_`propCount < ${new Code(String(schema.minProperties))}`, () => {
           genError(
             code,
-            pathExpr,
+            pathExprCode,
             'minProperties',
             `Object must have at least ${schema.minProperties} properties`
           );
@@ -961,10 +876,10 @@ export function generateObjectChecks(
       }
 
       if (schema.maxProperties !== undefined) {
-        code.if(`propCount > ${schema.maxProperties}`, () => {
+        code.if(_`propCount > ${new Code(String(schema.maxProperties))}`, () => {
           genError(
             code,
-            pathExpr,
+            pathExprCode,
             'maxProperties',
             `Object must have at most ${schema.maxProperties} properties`
           );
@@ -979,7 +894,7 @@ export function generateObjectChecks(
   } else {
     // Only check if data is an object
     code.if(
-      `typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
+      _`typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
       genChecks
     );
   }
@@ -988,21 +903,13 @@ export function generateObjectChecks(
 /**
  * Generate properties, additionalProperties, patternProperties checks
  */
-// Check if a schema is a no-op (true, {})
-function isNoOpSchema(schema: JsonSchema): boolean {
-  if (schema === true) return true;
-  if (typeof schema === 'object' && schema !== null && Object.keys(schema).length === 0) {
-    return true;
-  }
-  return false;
-}
-
 export function generatePropertiesChecks(
   code: CodeBuilder,
   schema: JsonSchemaBase,
-  dataVar: string,
-  pathExpr: string,
+  dataVar: Name,
+  pathExprCode: Code,
   ctx: CompileContext,
+  dynamicScopeVar?: Name,
   evalTracker?: EvalTracker
 ): void {
   // Check for non-trivial property schemas
@@ -1047,12 +954,20 @@ export function generatePropertiesChecks(
 
     // Validate defined properties (only non-trivial ones)
     for (const [propName, propSchema] of nonTrivialProps) {
-      const propPathExpr =
-        pathExpr === "''"
-          ? `'${escapeString(propName)}'`
-          : `${pathExpr} + '.${escapeString(propName)}'`;
+      const propPathExpr = pathExpr(pathExprCode, propName);
       genPropertyCheck(code, dataVar, propName, (valueVar) => {
-        generateSchemaValidator(code, propSchema, valueVar, propPathExpr, ctx);
+        const valueVarName = valueVar instanceof Name ? valueVar : code.genVar('pv');
+        if (!(valueVar instanceof Name)) {
+          code.line(_`const ${valueVarName} = ${valueVar};`);
+        }
+        generateSchemaValidator(
+          code,
+          propSchema,
+          valueVarName as Name,
+          propPathExpr,
+          ctx,
+          dynamicScopeVar
+        );
       });
     }
 
@@ -1071,10 +986,10 @@ export function generatePropertiesChecks(
 
       // Pre-compile pattern regexes for ALL patterns (needed for additionalProperties check)
       // Use 'u' flag for Unicode support (enables \p{...} property escapes)
-      const patternRegexNames: string[] = [];
+      const patternRegexNames: Name[] = [];
       for (const pattern of allPatterns) {
-        const regexName = ctx.genRuntimeName('patternRe');
-        ctx.addRuntimeFunction(regexName, new RegExp(pattern, 'u'));
+        const regexName = new Name(ctx.genRuntimeName('patternRe'));
+        ctx.addRuntimeFunction(regexName.str, new RegExp(pattern, 'u'));
         patternRegexNames.push(regexName);
         // Register pattern with tracker for unevaluatedProperties check
         if (evalTracker) {
@@ -1082,8 +997,9 @@ export function generatePropertiesChecks(
         }
       }
 
-      code.forIn('key', dataVar, () => {
-        const keyPathExpr = pathExpr === "''" ? 'key' : `${pathExpr} + '.' + key`;
+      const keyVar = new Name('key');
+      code.forIn(keyVar, dataVar, () => {
+        const keyPathExpr = pathExprDynamic(pathExprCode, keyVar);
 
         // Generate patternProperties checks (only non-trivial ones)
         for (let i = 0; i < nonTrivialPatternProps.length; i++) {
@@ -1091,9 +1007,18 @@ export function generatePropertiesChecks(
           // Find the index in allPatterns to get the right regex
           const regexIdx = allPatterns.indexOf(pattern);
           const regexName = patternRegexNames[regexIdx];
-          code.if(`${regexName}.test(key)`, () => {
-            const propAccessed = `${dataVar}[key]`;
-            generateSchemaValidator(code, patternSchema, propAccessed, keyPathExpr, ctx);
+          code.if(_`${regexName}.test(${keyVar})`, () => {
+            const propAccessed = indexAccess(dataVar, keyVar);
+            const propVar = code.genVar('pv');
+            code.line(_`const ${propVar} = ${propAccessed};`);
+            generateSchemaValidator(
+              code,
+              patternSchema,
+              propVar,
+              keyPathExpr,
+              ctx,
+              dynamicScopeVar
+            );
           });
         }
 
@@ -1103,36 +1028,44 @@ export function generatePropertiesChecks(
 
           // Build condition: not a defined prop and not matching any pattern
           // Use inline comparisons for small numbers of properties (faster than Set.has)
-          const conditions: string[] = [];
+          const conditions: Code[] = [];
 
           // For defined properties, use inline comparison for up to ~10 props
           if (definedProps.length > 0 && definedProps.length <= 10) {
-            const propChecks = definedProps.map((p) => `key !== "${escapeString(p)}"`).join(' && ');
-            conditions.push(`(${propChecks})`);
+            const propChecks = definedProps.map((p) => _`${keyVar} !== ${p}`);
+            conditions.push(_`(${and(...propChecks)})`);
           } else if (definedProps.length > 10) {
             // Use Set for larger number of properties
-            const propsSetName = ctx.genRuntimeName('propsSet');
-            ctx.addRuntimeFunction(propsSetName, new Set(definedProps));
-            conditions.push(`!${propsSetName}.has(key)`);
+            const propsSetName = new Name(ctx.genRuntimeName('propsSet'));
+            ctx.addRuntimeFunction(propsSetName.str, new Set(definedProps));
+            conditions.push(_`!${propsSetName}.has(${keyVar})`);
           }
 
           // Pattern checks using pre-compiled regexes
           for (const regexName of patternRegexNames) {
-            conditions.push(`!${regexName}.test(key)`);
+            conditions.push(_`!${regexName}.test(${keyVar})`);
           }
 
           if (conditions.length > 0) {
-            code.if(conditions.join(' && '), () => {
+            code.if(and(...conditions), () => {
               generateAdditionalPropsCheck(
                 code,
                 addPropsSchema,
-                `${dataVar}[key]`,
+                indexAccess(dataVar, keyVar),
                 keyPathExpr,
-                ctx
+                ctx,
+                dynamicScopeVar
               );
             });
           } else {
-            generateAdditionalPropsCheck(code, addPropsSchema, `${dataVar}[key]`, keyPathExpr, ctx);
+            generateAdditionalPropsCheck(
+              code,
+              addPropsSchema,
+              indexAccess(dataVar, keyVar),
+              keyPathExpr,
+              ctx,
+              dynamicScopeVar
+            );
           }
         }
       });
@@ -1145,7 +1078,7 @@ export function generatePropertiesChecks(
   } else {
     // Only check if data is an object
     code.if(
-      `typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
+      _`typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
       genChecks
     );
   }
@@ -1154,16 +1087,19 @@ export function generatePropertiesChecks(
 function generateAdditionalPropsCheck(
   code: CodeBuilder,
   schema: JsonSchema,
-  dataVar: string,
-  pathExpr: string,
-  ctx: CompileContext
+  dataExpr: Code,
+  pathExprCode: Code,
+  ctx: CompileContext,
+  dynamicScopeVar?: Name
 ): void {
   if (schema === false) {
-    genError(code, pathExpr, 'additionalProperties', 'Additional properties not allowed');
+    genError(code, pathExprCode, 'additionalProperties', 'Additional properties not allowed');
   } else if (schema === true) {
     // No check needed
   } else {
-    generateSchemaValidator(code, schema, dataVar, pathExpr, ctx);
+    const propVar = code.genVar('ap');
+    code.line(_`const ${propVar} = ${dataExpr};`);
+    generateSchemaValidator(code, schema, propVar, pathExprCode, ctx, dynamicScopeVar);
   }
 }
 
@@ -1173,9 +1109,10 @@ function generateAdditionalPropsCheck(
 export function generateContainsCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
-  dataVar: string,
-  pathExpr: string,
+  dataVar: Name,
+  pathExprCode: Code,
   ctx: CompileContext,
+  _dynamicScopeVar?: Name,
   evalTracker?: EvalTracker
 ): void {
   if (schema.contains === undefined) return;
@@ -1187,23 +1124,23 @@ export function generateContainsCheck(
   // Handle boolean schemas directly
   if (containsSchema === true) {
     // Every item matches - mark all items as evaluated and check array length
-    code.if(`Array.isArray(${dataVar})`, () => {
+    code.if(_`Array.isArray(${dataVar})`, () => {
       // All items match, so mark all as evaluated
       evalTracker?.markAllItems();
 
-      code.if(`${dataVar}.length < ${minContains}`, () => {
+      code.if(_`${dataVar}.length < ${new Code(String(minContains))}`, () => {
         genError(
           code,
-          pathExpr,
+          pathExprCode,
           'contains',
           `Array must contain at least ${minContains} matching items`
         );
       });
       if (maxContains !== undefined) {
-        code.if(`${dataVar}.length > ${maxContains}`, () => {
+        code.if(_`${dataVar}.length > ${new Code(String(maxContains))}`, () => {
           genError(
             code,
-            pathExpr,
+            pathExprCode,
             'maxContains',
             `Array must contain at most ${maxContains} matching items`
           );
@@ -1215,11 +1152,11 @@ export function generateContainsCheck(
 
   if (containsSchema === false) {
     // Nothing matches - only valid if minContains is 0
-    code.if(`Array.isArray(${dataVar})`, () => {
+    code.if(_`Array.isArray(${dataVar})`, () => {
       if (minContains > 0) {
         genError(
           code,
-          pathExpr,
+          pathExprCode,
           'contains',
           `Array must contain at least ${minContains} matching items`
         );
@@ -1236,19 +1173,19 @@ export function generateContainsCheck(
   }
 
   // Queue the contains schema for compilation (reuses all existing generators)
-  const containsFuncName = ctx.queueCompile(containsSchema);
+  const containsFuncName = new Name(ctx.queueCompile(containsSchema));
 
-  code.if(`Array.isArray(${dataVar})`, () => {
+  code.if(_`Array.isArray(${dataVar})`, () => {
     const countVar = code.genVar('containsCount');
-    code.line(`let ${countVar} = 0;`);
+    code.line(_`let ${countVar} = 0;`);
 
     const iVar = code.genVar('i');
-    code.for(`let ${iVar} = 0`, `${iVar} < ${dataVar}.length`, `${iVar}++`, () => {
-      const itemAccess = `${dataVar}[${iVar}]`;
+    code.for(_`let ${iVar} = 0`, _`${iVar} < ${dataVar}.length`, _`${iVar}++`, () => {
+      const itemAccess = indexAccess(dataVar, iVar);
 
       // Call the compiled contains validator (pass null for errors to skip collection)
-      code.if(`${containsFuncName}(${itemAccess}, null, '')`, () => {
-        code.line(`${countVar}++;`);
+      code.if(_`${containsFuncName}(${itemAccess}, null, '')`, () => {
+        code.line(_`${countVar}++;`);
         // Mark this item as evaluated (for unevaluatedItems)
         evalTracker?.markSingleItem(iVar);
       });
@@ -1256,26 +1193,26 @@ export function generateContainsCheck(
       // Early exit if we've found enough and no maxContains
       // But only if we're not tracking items (need to find all matches for tracking)
       if (maxContains === undefined && !evalTracker?.trackingItems) {
-        code.if(`${countVar} >= ${minContains}`, () => {
-          code.line('break;');
+        code.if(_`${countVar} >= ${new Code(String(minContains))}`, () => {
+          code.line(_`break;`);
         });
       }
     });
 
-    code.if(`${countVar} < ${minContains}`, () => {
+    code.if(_`${countVar} < ${new Code(String(minContains))}`, () => {
       genError(
         code,
-        pathExpr,
+        pathExprCode,
         'contains',
         `Array must contain at least ${minContains} matching items`
       );
     });
 
     if (maxContains !== undefined) {
-      code.if(`${countVar} > ${maxContains}`, () => {
+      code.if(_`${countVar} > ${new Code(String(maxContains))}`, () => {
         genError(
           code,
-          pathExpr,
+          pathExprCode,
           'maxContains',
           `Array must contain at most ${maxContains} matching items`
         );
@@ -1290,8 +1227,8 @@ export function generateContainsCheck(
 export function generateDependentRequiredCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
-  dataVar: string,
-  pathExpr: string,
+  dataVar: Name,
+  pathExprCode: Code,
   _ctx: CompileContext
 ): void {
   if (!schema.dependentRequired) return;
@@ -1301,16 +1238,15 @@ export function generateDependentRequiredCheck(
   if (deps.length === 0) return;
 
   code.if(
-    `typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
+    _`typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
     () => {
       for (const [prop, requiredProps] of deps) {
         const propStr = escapeString(prop);
-        code.if(`'${propStr}' in ${dataVar}`, () => {
+        code.if(_`'${new Code(propStr)}' in ${dataVar}`, () => {
           for (const reqProp of requiredProps) {
             const reqPropStr = escapeString(reqProp);
-            const reqPathExpr =
-              pathExpr === "''" ? `'${reqPropStr}'` : `${pathExpr} + '.${reqPropStr}'`;
-            code.if(`!('${reqPropStr}' in ${dataVar})`, () => {
+            const reqPathExpr = pathExpr(pathExprCode, reqProp);
+            code.if(_`!('${new Code(reqPropStr)}' in ${dataVar})`, () => {
               genError(
                 code,
                 reqPathExpr,
@@ -1331,20 +1267,29 @@ export function generateDependentRequiredCheck(
 export function generateDependentSchemasCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
-  dataVar: string,
-  pathExpr: string,
+  dataVar: Name,
+  pathExprCode: Code,
   ctx: CompileContext,
+  dynamicScopeVar?: Name,
   evalTracker?: EvalTracker
 ): void {
   if (!schema.dependentSchemas) return;
 
   code.if(
-    `typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
+    _`typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
     () => {
       for (const [prop, depSchema] of Object.entries(schema.dependentSchemas!)) {
         const propStr = escapeString(prop);
-        code.if(`'${propStr}' in ${dataVar}`, () => {
-          generateSchemaValidator(code, depSchema, dataVar, pathExpr, ctx, undefined, evalTracker);
+        code.if(_`'${new Code(propStr)}' in ${dataVar}`, () => {
+          generateSchemaValidator(
+            code,
+            depSchema,
+            dataVar,
+            pathExprCode,
+            ctx,
+            dynamicScopeVar,
+            evalTracker
+          );
         });
       }
     }
@@ -1360,9 +1305,10 @@ export function generateDependentSchemasCheck(
 export function generateDependenciesCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
-  dataVar: string,
-  pathExpr: string,
+  dataVar: Name,
+  pathExprCode: Code,
   ctx: CompileContext,
+  dynamicScopeVar?: Name,
   evalTracker?: EvalTracker
 ): void {
   if (!schema.dependencies) return;
@@ -1381,18 +1327,17 @@ export function generateDependenciesCheck(
   if (nonTrivialDeps.length === 0) return;
 
   code.if(
-    `typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
+    _`typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
     () => {
       for (const [prop, dep] of nonTrivialDeps) {
         const propStr = escapeString(prop);
-        code.if(`'${propStr}' in ${dataVar}`, () => {
+        code.if(_`'${new Code(propStr)}' in ${dataVar}`, () => {
           if (Array.isArray(dep)) {
             // Array of required property names
             for (const reqProp of dep) {
               const reqPropStr = escapeString(reqProp);
-              const reqPathExpr =
-                pathExpr === "''" ? `'${reqPropStr}'` : `${pathExpr} + '.${reqPropStr}'`;
-              code.if(`!('${reqPropStr}' in ${dataVar})`, () => {
+              const reqPathExpr = pathExpr(pathExprCode, reqProp);
+              code.if(_`!('${new Code(reqPropStr)}' in ${dataVar})`, () => {
                 genError(
                   code,
                   reqPathExpr,
@@ -1407,9 +1352,9 @@ export function generateDependenciesCheck(
               code,
               dep as JsonSchema,
               dataVar,
-              pathExpr,
+              pathExprCode,
               ctx,
-              undefined,
+              dynamicScopeVar,
               evalTracker
             );
           }
@@ -1425,9 +1370,10 @@ export function generateDependenciesCheck(
 export function generatePropertyNamesCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
-  dataVar: string,
-  pathExpr: string,
-  ctx: CompileContext
+  dataVar: Name,
+  pathExprCode: Code,
+  ctx: CompileContext,
+  dynamicScopeVar?: Name
 ): void {
   if (schema.propertyNames === undefined) return;
 
@@ -1442,10 +1388,10 @@ export function generatePropertyNamesCheck(
   if (propNamesSchema === false) {
     // No property names are valid - object must be empty
     code.if(
-      `typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
+      _`typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
       () => {
-        code.if(`Object.keys(${dataVar}).length > 0`, () => {
-          genError(code, pathExpr, 'propertyNames', 'No properties allowed');
+        code.if(_`Object.keys(${dataVar}).length > 0`, () => {
+          genError(code, pathExprCode, 'propertyNames', 'No properties allowed');
         });
       }
     );
@@ -1453,11 +1399,12 @@ export function generatePropertyNamesCheck(
   }
 
   code.if(
-    `typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
+    _`typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
     () => {
-      code.forIn('key', dataVar, () => {
+      const keyVar = new Name('key');
+      code.forIn(keyVar, dataVar, () => {
         // For propertyNames, the path is the key itself
-        generateSchemaValidator(code, propNamesSchema, 'key', 'key', ctx);
+        generateSchemaValidator(code, propNamesSchema, keyVar, keyVar, ctx, dynamicScopeVar);
       });
     }
   );
@@ -1469,10 +1416,10 @@ export function generatePropertyNamesCheck(
 export function generateRefCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
-  dataVar: string,
-  pathExpr: string,
+  dataVar: Name,
+  pathExprCode: Code,
   ctx: CompileContext,
-  dynamicScopeVar: string = 'dynamicScope',
+  dynamicScopeVar?: Name,
   evalTracker?: EvalTracker
 ): void {
   if (!schema.$ref) return;
@@ -1500,7 +1447,7 @@ export function generateRefCheck(
 
   if (!refSchema) {
     // Can't resolve - schema is invalid, always fail
-    genError(code, pathExpr, '$ref', `Cannot resolve reference ${schema.$ref}`);
+    genError(code, pathExprCode, '$ref', `Cannot resolve reference ${schema.$ref}`);
     return;
   }
 
@@ -1513,12 +1460,12 @@ export function generateRefCheck(
   }
 
   // Get the function name (queue for compilation if needed)
-  const funcName = ctx.getCompiledName(refSchema) ?? ctx.queueCompile(refSchema);
+  const funcName = new Name(ctx.getCompiledName(refSchema) ?? ctx.queueCompile(refSchema));
 
-  // In legacy mode, dynamicScopeVar is empty - simpler function call
+  // In legacy mode, dynamicScopeVar is undefined - simpler function call
   if (!dynamicScopeVar) {
-    code.if(`!${funcName}(${dataVar}, errors, ${pathExpr})`, () => {
-      code.line('return false;');
+    code.if(_`!${funcName}(${dataVar}, errors, ${pathExprCode})`, () => {
+      code.line(_`return false;`);
     });
     return;
   }
@@ -1549,29 +1496,30 @@ export function generateRefCheck(
     if (resourceAnchors.length > 0) {
       // Push dynamic anchors for this resource, call validator, then pop
       // Pass tracker if we have one (for runtime-optional tracking)
-      const trackerArg = evalTracker ? `, ${evalTracker.trackerVar}` : '';
-      code.block('', () => {
+      const trackerArg = evalTracker ? _`, ${evalTracker.trackerVar}` : _``;
+      code.block(_``, () => {
         const pushCount = resourceAnchors.length;
         for (const { anchor, schema: anchorSchema } of resourceAnchors) {
-          const anchorFuncName =
-            ctx.getCompiledName(anchorSchema) ?? ctx.queueCompile(anchorSchema);
+          const anchorFuncName = new Name(
+            ctx.getCompiledName(anchorSchema) ?? ctx.queueCompile(anchorSchema)
+          );
           code.line(
-            `${dynamicScopeVar}.push({ anchor: ${stringify(anchor)}, validate: ${anchorFuncName} });`
+            _`${dynamicScopeVar}.push({ anchor: ${stringify(anchor)}, validate: ${anchorFuncName} });`
           );
         }
         code.if(
-          `!${funcName}(${dataVar}, errors, ${pathExpr}, ${dynamicScopeVar}${trackerArg})`,
+          _`!${funcName}(${dataVar}, errors, ${pathExprCode}, ${dynamicScopeVar}${trackerArg})`,
           () => {
             // Pop before returning
             for (let i = 0; i < pushCount; i++) {
-              code.line(`${dynamicScopeVar}.pop();`);
+              code.line(_`${dynamicScopeVar}.pop();`);
             }
-            code.line('return false;');
+            code.line(_`return false;`);
           }
         );
         // Pop after successful validation
         for (let i = 0; i < pushCount; i++) {
-          code.line(`${dynamicScopeVar}.pop();`);
+          code.line(_`${dynamicScopeVar}.pop();`);
         }
       });
       return;
@@ -1580,10 +1528,13 @@ export function generateRefCheck(
 
   // No dynamic anchors to push - simple call
   // Pass tracker if we have one (for runtime-optional tracking)
-  const trackerArg = evalTracker ? `, ${evalTracker.trackerVar}` : '';
-  code.if(`!${funcName}(${dataVar}, errors, ${pathExpr}, ${dynamicScopeVar}${trackerArg})`, () => {
-    code.line('return false;');
-  });
+  const trackerArg = evalTracker ? _`, ${evalTracker.trackerVar}` : _``;
+  code.if(
+    _`!${funcName}(${dataVar}, errors, ${pathExprCode}, ${dynamicScopeVar}${trackerArg})`,
+    () => {
+      code.line(_`return false;`);
+    }
+  );
 }
 
 /**
@@ -1596,10 +1547,10 @@ export function generateRefCheck(
 export function generateCompositionChecks(
   code: CodeBuilder,
   schema: JsonSchemaBase,
-  dataVar: string,
-  pathExpr: string,
+  dataVar: Name,
+  pathExprCode: Code,
   ctx: CompileContext,
-  dynamicScopeVar?: string,
+  dynamicScopeVar?: Name,
   evalTracker?: EvalTracker
 ): void {
   // allOf - all subschemas must validate
@@ -1610,7 +1561,7 @@ export function generateCompositionChecks(
         code,
         subSchema,
         dataVar,
-        pathExpr,
+        pathExprCode,
         ctx,
         dynamicScopeVar,
         evalTracker
@@ -1627,20 +1578,20 @@ export function generateCompositionChecks(
       // Skip generating anyOf check entirely when not tracking
     } else {
       const resultVar = code.genVar('anyOfResult');
-      code.line(`let ${resultVar} = false;`);
+      code.line(_`let ${resultVar} = false;`);
 
       // Use a temp tracker for each branch, merge into parent only if valid
       schema.anyOf.forEach((subSchema) => {
         const tempVar = evalTracker?.createTempTracker('anyOfTracker');
-        const checkExpr = generateSubschemaCheck(subSchema, dataVar, ctx, tempVar);
+        const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx, tempVar);
         code.if(checkExpr, () => {
-          code.line(`${resultVar} = true;`);
+          code.line(_`${resultVar} = true;`);
           evalTracker?.mergeFrom(tempVar);
         });
       });
 
-      code.if(`!${resultVar}`, () => {
-        genError(code, pathExpr, 'anyOf', 'Value must match at least one schema');
+      code.if(_`!${resultVar}`, () => {
+        genError(code, pathExprCode, 'anyOf', 'Value must match at least one schema');
       });
     }
   }
@@ -1648,26 +1599,26 @@ export function generateCompositionChecks(
   // oneOf - exactly one subschema must validate
   if (schema.oneOf && schema.oneOf.length > 0) {
     const countVar = code.genVar('oneOfCount');
-    code.line(`let ${countVar} = 0;`);
+    code.line(_`let ${countVar} = 0;`);
 
     // Use a temp tracker for each branch, merge into parent only if valid
     schema.oneOf.forEach((subSchema) => {
       const tempVar = evalTracker?.createTempTracker('oneOfTracker');
-      const checkExpr = generateSubschemaCheck(subSchema, dataVar, ctx, tempVar);
+      const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx, tempVar);
       code.if(checkExpr, () => {
-        code.line(`${countVar}++;`);
+        code.line(_`${countVar}++;`);
         evalTracker?.mergeFrom(tempVar);
       });
       // Early exit if more than one matches (only when not tracking)
       if (!evalTracker?.enabled) {
-        code.if(`${countVar} > 1`, () => {
-          genError(code, pathExpr, 'oneOf', 'Value must match exactly one schema');
+        code.if(_`${countVar} > 1`, () => {
+          genError(code, pathExprCode, 'oneOf', 'Value must match exactly one schema');
         });
       }
     });
 
-    code.if(`${countVar} !== 1`, () => {
-      genError(code, pathExpr, 'oneOf', 'Value must match exactly one schema');
+    code.if(_`${countVar} !== 1`, () => {
+      genError(code, pathExprCode, 'oneOf', 'Value must match exactly one schema');
     });
   }
 
@@ -1675,9 +1626,9 @@ export function generateCompositionChecks(
   // Note: 'not' doesn't evaluate properties - it just checks they DON'T match
   if (schema.not !== undefined) {
     const notSchema = schema.not;
-    const checkExpr = generateSubschemaCheck(notSchema, dataVar, ctx);
+    const checkExpr = generateSubschemaCheck(code, notSchema, dataVar, ctx);
     code.if(checkExpr, () => {
-      genError(code, pathExpr, 'not', 'Value must not match schema');
+      genError(code, pathExprCode, 'not', 'Value must not match schema');
     });
   }
 
@@ -1697,8 +1648,8 @@ export function generateCompositionChecks(
     // Use temp tracker so we only merge if condition matches
     const condVar = code.genVar('ifCond');
     const tempVar = evalTracker?.createTempTracker('ifTracker');
-    const checkExpr = generateSubschemaCheck(ifSchema, dataVar, ctx, tempVar);
-    code.line(`const ${condVar} = ${checkExpr};`);
+    const checkExpr = generateSubschemaCheck(code, ifSchema, dataVar, ctx, tempVar);
+    code.line(_`const ${condVar} = ${checkExpr};`);
 
     // Merge temp tracker into parent only if condition matched
     if (tempVar) {
@@ -1711,13 +1662,13 @@ export function generateCompositionChecks(
     code.if(condVar, () => {
       if (thenSchema !== undefined) {
         if (thenSchema === false) {
-          genError(code, pathExpr, 'then', 'Conditional validation failed');
+          genError(code, pathExprCode, 'then', 'Conditional validation failed');
         } else if (thenSchema !== true) {
           generateSchemaValidator(
             code,
             thenSchema,
             dataVar,
-            pathExpr,
+            pathExprCode,
             ctx,
             dynamicScopeVar,
             evalTracker
@@ -1728,15 +1679,15 @@ export function generateCompositionChecks(
 
     // When if doesn't match, apply else schema if present
     if (elseSchema !== undefined) {
-      code.if(`!${condVar}`, () => {
+      code.if(_`!${condVar}`, () => {
         if (elseSchema === false) {
-          genError(code, pathExpr, 'else', 'Conditional validation failed');
+          genError(code, pathExprCode, 'else', 'Conditional validation failed');
         } else if (elseSchema !== true) {
           generateSchemaValidator(
             code,
             elseSchema,
             dataVar,
-            pathExpr,
+            pathExprCode,
             ctx,
             dynamicScopeVar,
             evalTracker
@@ -1755,26 +1706,27 @@ export function generateCompositionChecks(
  * For anyOf/oneOf, we first check with this, then call again with tracker if matched.
  */
 function generateSubschemaCheck(
+  _code: CodeBuilder,
   schema: JsonSchema,
-  dataVar: string,
+  dataVar: Name,
   ctx: CompileContext,
-  trackerVar?: string
-): string {
+  trackerVar?: Name
+): Code {
   // Handle no-op schemas (true, {}) - always pass
-  if (schema === true) return 'true';
+  if (schema === true) return _`true`;
   if (typeof schema === 'object' && schema !== null && Object.keys(schema).length === 0) {
-    return 'true';
+    return _`true`;
   }
   // Handle always-fail schema
-  if (schema === false) return 'false';
+  if (schema === false) return _`false`;
 
   // Compile as a separate function call
-  const funcName = ctx.queueCompile(schema);
-  const trackerArg = trackerVar ? `, ${trackerVar}` : '';
+  const funcName = new Name(ctx.queueCompile(schema));
+  const trackerArg = trackerVar ? _`, ${trackerVar}` : _``;
   if (ctx.options.legacyRef) {
-    return `${funcName}(${dataVar}, null, ''${trackerArg})`;
+    return _`${funcName}(${dataVar}, null, ''${trackerArg})`;
   }
-  return `${funcName}(${dataVar}, null, '', dynamicScope${trackerArg})`;
+  return _`${funcName}(${dataVar}, null, '', dynamicScope${trackerArg})`;
 }
 
 /**
@@ -1784,9 +1736,10 @@ function generateSubschemaCheck(
 export function generateItemsChecks(
   code: CodeBuilder,
   schema: JsonSchemaBase,
-  dataVar: string,
-  pathExpr: string,
+  dataVar: Name,
+  pathExprCode: Code,
   ctx: CompileContext,
+  dynamicScopeVar?: Name,
   evalTracker?: EvalTracker
 ): void {
   // Draft-07 compatibility: items can be an array (acts like prefixItems)
@@ -1818,7 +1771,7 @@ export function generateItemsChecks(
   // Filter out no-op tuple schemas
   const nonTrivialTupleSchemas = tupleSchemas
     .map((s, i) => ({ schema: s, index: i }))
-    .filter(({ schema }) => !isNoOpSchema(schema));
+    .filter(({ schema: s }) => !isNoOpSchema(s));
   const hasNonTrivialTuples = nonTrivialTupleSchemas.length > 0;
 
   // Mark tuple items as evaluated (even trivial ones count for unevaluatedItems)
@@ -1837,10 +1790,12 @@ export function generateItemsChecks(
     // Handle tuple items (prefixItems in 2020-12, items array in draft-07)
     // Only validate non-trivial schemas
     for (const { schema: itemSchema, index: i } of nonTrivialTupleSchemas) {
-      const itemPathExpr = pathExpr === "''" ? `'[${i}]'` : `${pathExpr} + '[${i}]'`;
-      code.if(`${dataVar}.length > ${i}`, () => {
-        const itemAccess = `${dataVar}[${i}]`;
-        generateSchemaValidator(code, itemSchema, itemAccess, itemPathExpr, ctx);
+      const itemPathExpr = pathExpr(pathExprCode, i);
+      code.if(_`${dataVar}.length > ${new Code(String(i))}`, () => {
+        const itemAccess = indexAccess(dataVar, i);
+        const itemVar = code.genVar('item');
+        code.line(_`const ${itemVar} = ${itemAccess};`);
+        generateSchemaValidator(code, itemSchema, itemVar, itemPathExpr, ctx, dynamicScopeVar);
       });
     }
 
@@ -1851,28 +1806,41 @@ export function generateItemsChecks(
       if (afterTupleSchema === false) {
         // No additional items allowed
         if (startIndex > 0) {
-          code.if(`${dataVar}.length > ${startIndex}`, () => {
+          code.if(_`${dataVar}.length > ${new Code(String(startIndex))}`, () => {
             genError(
               code,
-              pathExpr,
+              pathExprCode,
               itemsIsArray ? 'additionalItems' : 'items',
               `Array must have at most ${startIndex} items`
             );
           });
         } else {
-          code.if(`${dataVar}.length > 0`, () => {
-            genError(code, pathExpr, 'items', 'Array must be empty');
+          code.if(_`${dataVar}.length > 0`, () => {
+            genError(code, pathExprCode, 'items', 'Array must be empty');
           });
         }
       } else if (afterTupleSchema !== true) {
         // Validate each item after tuple
         const iVar = code.genVar('i');
-        code.for(`let ${iVar} = ${startIndex}`, `${iVar} < ${dataVar}.length`, `${iVar}++`, () => {
-          const itemAccess = `${dataVar}[${iVar}]`;
-          const itemPathExpr =
-            pathExpr === "''" ? `'[' + ${iVar} + ']'` : `${pathExpr} + '[' + ${iVar} + ']'`;
-          generateSchemaValidator(code, afterTupleSchema!, itemAccess, itemPathExpr, ctx);
-        });
+        code.for(
+          _`let ${iVar} = ${new Code(String(startIndex))}`,
+          _`${iVar} < ${dataVar}.length`,
+          _`${iVar}++`,
+          () => {
+            const itemAccess = indexAccess(dataVar, iVar);
+            const itemPathExpr = pathExprIndex(pathExprCode, iVar);
+            const itemVar = code.genVar('item');
+            code.line(_`const ${itemVar} = ${itemAccess};`);
+            generateSchemaValidator(
+              code,
+              afterTupleSchema!,
+              itemVar,
+              itemPathExpr,
+              ctx,
+              dynamicScopeVar
+            );
+          }
+        );
       }
     }
   };
@@ -1882,7 +1850,7 @@ export function generateItemsChecks(
     genChecks();
   } else {
     // Only check if data is an array
-    code.if(`Array.isArray(${dataVar})`, genChecks);
+    code.if(_`Array.isArray(${dataVar})`, genChecks);
   }
 }
 
@@ -1910,8 +1878,8 @@ const KNOWN_FORMATS = new Set([
 export function generateFormatCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
-  dataVar: string,
-  pathExpr: string,
+  dataVar: Name,
+  pathExprCode: Code,
   ctx: CompileContext
 ): void {
   if (schema.format === undefined) return;
@@ -1929,12 +1897,12 @@ export function generateFormatCheck(
   const isKnownFormat = KNOWN_FORMATS.has(format);
 
   const formatCheck = isKnownFormat
-    ? `!formatValidators['${escapedFormat}'](${dataVar})`
-    : `formatValidators['${escapedFormat}'] && !formatValidators['${escapedFormat}'](${dataVar})`;
+    ? _`!formatValidators['${new Code(escapedFormat)}'](${dataVar})`
+    : _`formatValidators['${new Code(escapedFormat)}'] && !formatValidators['${new Code(escapedFormat)}'](${dataVar})`;
 
   const genFormatCheck = () => {
     code.if(formatCheck, () => {
-      genError(code, pathExpr, 'format', `Invalid ${format} format`);
+      genError(code, pathExprCode, 'format', `Invalid ${format} format`);
     });
   };
 
@@ -1943,7 +1911,7 @@ export function generateFormatCheck(
     genFormatCheck();
   } else {
     // Only check if data is a string
-    code.if(`typeof ${dataVar} === 'string'`, genFormatCheck);
+    code.if(_`typeof ${dataVar} === 'string'`, genFormatCheck);
   }
 }
 
@@ -1953,10 +1921,10 @@ export function generateFormatCheck(
 export function generateDynamicRefCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
-  dataVar: string,
-  pathExpr: string,
+  dataVar: Name,
+  pathExprCode: Code,
   ctx: CompileContext,
-  dynamicScopeVar: string = 'dynamicScope',
+  dynamicScopeVar?: Name,
   evalTracker?: EvalTracker
 ): void {
   if (!schema.$dynamicRef) return;
@@ -1974,10 +1942,10 @@ export function generateDynamicRefCheck(
     // Resolve the static fallback
     const staticSchema = ctx.resolveRef(ref, schema);
     if (!staticSchema) {
-      genError(code, pathExpr, '$dynamicRef', `Cannot resolve reference ${ref}`);
+      genError(code, pathExprCode, '$dynamicRef', `Cannot resolve reference ${ref}`);
       return;
     }
-    const staticFuncName = ctx.queueCompile(staticSchema);
+    const staticFuncName = new Name(ctx.queueCompile(staticSchema));
 
     // Check if the statically resolved schema has a matching $dynamicAnchor
     // If not, $dynamicRef behaves like a regular $ref (no dynamic scope search)
@@ -1988,33 +1956,36 @@ export function generateDynamicRefCheck(
 
     // If no dynamic scope var (legacy mode or empty), just call static validator
     if (!dynamicScopeVar) {
-      code.if(`!${staticFuncName}(${dataVar}, errors, ${pathExpr}, [])`, () => {
-        code.line('return false;');
+      code.if(_`!${staticFuncName}(${dataVar}, errors, ${pathExprCode}, [])`, () => {
+        code.line(_`return false;`);
       });
     } else if (!hasDynamicAnchor) {
       // No matching $dynamicAnchor - behave like a regular $ref
-      code.if(`!${staticFuncName}(${dataVar}, errors, ${pathExpr}, ${dynamicScopeVar})`, () => {
-        code.line('return false;');
-      });
+      code.if(
+        _`!${staticFuncName}(${dataVar}, errors, ${pathExprCode}, ${dynamicScopeVar})`,
+        () => {
+          code.line(_`return false;`);
+        }
+      );
     } else {
       // Has matching $dynamicAnchor - search dynamic scope at runtime
       // The dynamic scope is searched from the BEGINNING (outermost/first) to find the first match
-      const trackerArg = evalTracker ? `, ${evalTracker.trackerVar}` : '';
-      code.block('', () => {
-        code.line(`let dynamicValidator = null;`);
-        code.line(`for (let i = 0; i < ${dynamicScopeVar}.length; i++) {`);
-        code.line(`  if (${dynamicScopeVar}[i].anchor === ${stringify(anchorName)}) {`);
-        code.line(`    dynamicValidator = ${dynamicScopeVar}[i].validate;`);
-        code.line(`    break;`);
-        code.line(`  }`);
-        code.line(`}`);
+      const trackerArg = evalTracker ? _`, ${evalTracker.trackerVar}` : _``;
+      code.block(_``, () => {
+        code.line(_`let dynamicValidator = null;`);
+        code.line(_`for (let i = 0; i < ${dynamicScopeVar}.length; i++) {`);
+        code.line(_`  if (${dynamicScopeVar}[i].anchor === ${stringify(anchorName)}) {`);
+        code.line(_`    dynamicValidator = ${dynamicScopeVar}[i].validate;`);
+        code.line(_`    break;`);
+        code.line(_`  }`);
+        code.line(_`}`);
         // Use dynamic validator if found, otherwise use static fallback
         // Pass tracker so properties are marked at runtime
-        code.line(`const validator = dynamicValidator || ${staticFuncName};`);
+        code.line(_`const validator = dynamicValidator || ${staticFuncName};`);
         code.if(
-          `!validator(${dataVar}, errors, ${pathExpr}, ${dynamicScopeVar}${trackerArg})`,
+          _`!validator(${dataVar}, errors, ${pathExprCode}, ${dynamicScopeVar}${trackerArg})`,
           () => {
-            code.line('return false;');
+            code.line(_`return false;`);
           }
         );
       });
@@ -2025,15 +1996,15 @@ export function generateDynamicRefCheck(
     const refSchema = ctx.resolveRef(ref, schema);
 
     if (!refSchema) {
-      genError(code, pathExpr, '$dynamicRef', `Cannot resolve reference ${ref}`);
+      genError(code, pathExprCode, '$dynamicRef', `Cannot resolve reference ${ref}`);
       return;
     }
 
-    const funcName = ctx.queueCompile(refSchema);
-    const scopeArg = dynamicScopeVar || '[]';
-    const trackerArg = evalTracker ? `, ${evalTracker.trackerVar}` : '';
-    code.if(`!${funcName}(${dataVar}, errors, ${pathExpr}, ${scopeArg}${trackerArg})`, () => {
-      code.line('return false;');
+    const funcName = new Name(ctx.queueCompile(refSchema));
+    const scopeArg = dynamicScopeVar || _`[]`;
+    const trackerArg = evalTracker ? _`, ${evalTracker.trackerVar}` : _``;
+    code.if(_`!${funcName}(${dataVar}, errors, ${pathExprCode}, ${scopeArg}${trackerArg})`, () => {
+      code.line(_`return false;`);
     });
   }
 }
@@ -2048,9 +2019,10 @@ export function generateDynamicRefCheck(
 export function generateUnevaluatedPropertiesCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
-  dataVar: string,
-  pathExpr: string,
+  dataVar: Name,
+  pathExprCode: Code,
   ctx: CompileContext,
+  dynamicScopeVar?: Name,
   evalTracker?: EvalTracker
 ): void {
   if (schema.unevaluatedProperties === undefined) return;
@@ -2063,12 +2035,13 @@ export function generateUnevaluatedPropertiesCheck(
 
   // Only check if data is an object
   code.if(
-    `typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
+    _`typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
     () => {
       // Check each property against the tracker
-      code.forIn('key', dataVar, () => {
-        const condition = evalTracker.isUnevaluatedProp('key');
-        const keyPathExpr = pathExpr === "''" ? 'key' : `${pathExpr} + '.' + key`;
+      const keyVar = new Name('key');
+      code.forIn(keyVar, dataVar, () => {
+        const condition = evalTracker.isUnevaluatedProp(keyVar);
+        const keyPathExpr = pathExprDynamic(pathExprCode, keyVar);
 
         code.if(condition, () => {
           if (schema.unevaluatedProperties === false) {
@@ -2080,17 +2053,20 @@ export function generateUnevaluatedPropertiesCheck(
             );
           } else if (schema.unevaluatedProperties === true) {
             // unevaluatedProperties: true - mark as evaluated (for bubbling to parent)
-            evalTracker.markPropDynamic('key');
+            evalTracker.markPropDynamic(keyVar);
           } else if (schema.unevaluatedProperties !== undefined) {
             // unevaluatedProperties: <schema> - validate and mark as evaluated
+            const propVar = code.genVar('up');
+            code.line(_`const ${propVar} = ${dataVar}[${keyVar}];`);
             generateSchemaValidator(
               code,
               schema.unevaluatedProperties,
-              `${dataVar}[key]`,
+              propVar,
               keyPathExpr,
-              ctx
+              ctx,
+              dynamicScopeVar
             );
-            evalTracker.markPropDynamic('key');
+            evalTracker.markPropDynamic(keyVar);
           }
         });
       });
@@ -2108,9 +2084,10 @@ export function generateUnevaluatedPropertiesCheck(
 export function generateUnevaluatedItemsCheck(
   code: CodeBuilder,
   schema: JsonSchemaBase,
-  dataVar: string,
-  pathExpr: string,
+  dataVar: Name,
+  pathExprCode: Code,
   ctx: CompileContext,
+  dynamicScopeVar?: Name,
   evalTracker?: EvalTracker
 ): void {
   if (schema.unevaluatedItems === undefined) return;
@@ -2122,13 +2099,12 @@ export function generateUnevaluatedItemsCheck(
   }
 
   // Only check if data is an array
-  code.if(`Array.isArray(${dataVar})`, () => {
+  code.if(_`Array.isArray(${dataVar})`, () => {
     // Check each item against the tracker
     const iVar = code.genVar('i');
-    code.for(`let ${iVar} = 0`, `${iVar} < ${dataVar}.length`, `${iVar}++`, () => {
+    code.for(_`let ${iVar} = 0`, _`${iVar} < ${dataVar}.length`, _`${iVar}++`, () => {
       const condition = evalTracker.isUnevaluatedItem(iVar);
-      const itemPathExpr =
-        pathExpr === "''" ? `'[' + ${iVar} + ']'` : `${pathExpr} + '[' + ${iVar} + ']'`;
+      const itemPathExpr = pathExprIndex(pathExprCode, iVar);
 
       code.if(condition, () => {
         if (schema.unevaluatedItems === false) {
@@ -2138,12 +2114,15 @@ export function generateUnevaluatedItemsCheck(
           evalTracker.markItemsDynamic(iVar);
         } else {
           // unevaluatedItems: <schema> - validate and mark as evaluated
+          const itemVar = code.genVar('ui');
+          code.line(_`const ${itemVar} = ${dataVar}[${iVar}];`);
           generateSchemaValidator(
             code,
             schema.unevaluatedItems as JsonSchema,
-            `${dataVar}[${iVar}]`,
+            itemVar,
             itemPathExpr,
-            ctx
+            ctx,
+            dynamicScopeVar
           );
           evalTracker.markItemsDynamic(iVar);
         }
