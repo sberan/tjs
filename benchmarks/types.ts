@@ -15,6 +15,8 @@ export interface BenchmarkResult {
   totalValidations: number;
   durationMs: number;
   skipped: number;
+  correctCount: number;
+  incorrectCount: number;
   byKeyword: Record<string, number>;
 }
 
