@@ -76,10 +76,7 @@ function genRequiredCheck(
     : `!Object.hasOwn(${dataVar}, '${propStr}')`;
 
   code.if(checkExpr, () => {
-    code.line(
-      `if (errors) errors.push({ path: ${propPathExpr}, message: 'Required property missing', keyword: 'required' });`
-    );
-    code.line('return false;');
+    genError(code, propPathExpr, 'required', 'Required property missing');
   });
 }
 
@@ -208,10 +205,7 @@ function generateSchemaValidator(
   }
 
   if (schema === false) {
-    code.line(
-      `if (errors) errors.push({ path: ${pathExpr}, message: 'Schema is false', keyword: 'false' });`
-    );
-    code.line('return false;');
+    genError(code, pathExpr, 'false', 'Schema is false');
     return;
   }
 
@@ -1163,10 +1157,12 @@ export function generateDependentRequiredCheck(
             const reqPathExpr =
               pathExpr === "''" ? `'${reqPropStr}'` : `${pathExpr} + '.${reqPropStr}'`;
             code.if(`!('${reqPropStr}' in ${dataVar})`, () => {
-              code.line(
-                `if (errors) errors.push({ path: ${reqPathExpr}, message: 'Property required when ${propStr} is present', keyword: 'dependentRequired' });`
+              genError(
+                code,
+                reqPathExpr,
+                'dependentRequired',
+                `Property required when ${propStr} is present`
               );
-              code.line('return false;');
             });
           }
         });
@@ -1241,10 +1237,12 @@ export function generateDependenciesCheck(
               const reqPathExpr =
                 pathExpr === "''" ? `'${reqPropStr}'` : `${pathExpr} + '.${reqPropStr}'`;
               code.if(`!('${reqPropStr}' in ${dataVar})`, () => {
-                code.line(
-                  `if (errors) errors.push({ path: ${reqPathExpr}, message: 'Property required when ${propStr} is present', keyword: 'dependencies' });`
+                genError(
+                  code,
+                  reqPathExpr,
+                  'dependencies',
+                  `Property required when ${propStr} is present`
                 );
-                code.line('return false;');
               });
             }
           } else {
@@ -2309,10 +2307,12 @@ export function generateUnevaluatedPropertiesCheck(
             code.if(conditions.join(' && '), () => {
               const keyPathExpr = pathExpr === "''" ? 'key' : `${pathExpr} + '.' + key`;
               if (schema.unevaluatedProperties === false) {
-                code.line(
-                  `if (errors) errors.push({ path: ${keyPathExpr}, message: 'Unevaluated property not allowed', keyword: 'unevaluatedProperties' });`
+                genError(
+                  code,
+                  keyPathExpr,
+                  'unevaluatedProperties',
+                  'Unevaluated property not allowed'
                 );
-                code.line('return false;');
               } else if (
                 schema.unevaluatedProperties !== true &&
                 schema.unevaluatedProperties !== undefined
@@ -2366,10 +2366,12 @@ export function generateUnevaluatedPropertiesCheck(
           const keyPathExpr = pathExpr === "''" ? 'key' : `${pathExpr} + '.' + key`;
           code.if(condition, () => {
             if (schema.unevaluatedProperties === false) {
-              code.line(
-                `if (errors) errors.push({ path: ${keyPathExpr}, message: 'Unevaluated property not allowed', keyword: 'unevaluatedProperties' });`
+              genError(
+                code,
+                keyPathExpr,
+                'unevaluatedProperties',
+                'Unevaluated property not allowed'
               );
-              code.line('return false;');
             } else if (
               schema.unevaluatedProperties !== true &&
               schema.unevaluatedProperties !== undefined
@@ -2747,10 +2749,7 @@ export function generateUnevaluatedItemsCheck(
             code.if(`!${evaluatedSetVar}.has(${jVar})`, () => {
               const itemPathExpr =
                 pathExpr === "''" ? `'[' + ${jVar} + ']'` : `${pathExpr} + '[' + ${jVar} + ']'`;
-              code.line(
-                `if (errors) errors.push({ path: ${itemPathExpr}, message: 'Unevaluated item not allowed', keyword: 'unevaluatedItems' });`
-              );
-              code.line('return false;');
+              genError(code, itemPathExpr, 'unevaluatedItems', 'Unevaluated item not allowed');
             });
           });
         } else {
@@ -2760,10 +2759,7 @@ export function generateUnevaluatedItemsCheck(
               pathExpr === "''"
                 ? `'[' + (${maxIndexVar} + 1) + ']'`
                 : `${pathExpr} + '[' + (${maxIndexVar} + 1) + ']'`;
-            code.line(
-              `if (errors) errors.push({ path: ${itemPathExpr}, message: 'Unevaluated item not allowed', keyword: 'unevaluatedItems' });`
-            );
-            code.line('return false;');
+            genError(code, itemPathExpr, 'unevaluatedItems', 'Unevaluated item not allowed');
           });
         }
       } else if (schema.unevaluatedItems !== true) {
@@ -2812,10 +2808,7 @@ export function generateUnevaluatedItemsCheck(
               pathExpr === "''"
                 ? `'[' + ${staticPrefixCount} + ']'`
                 : `${pathExpr} + '[' + ${staticPrefixCount} + ']'`;
-            code.line(
-              `if (errors) errors.push({ path: ${itemPathExpr}, message: 'Unevaluated item not allowed', keyword: 'unevaluatedItems' });`
-            );
-            code.line('return false;');
+            genError(code, itemPathExpr, 'unevaluatedItems', 'Unevaluated item not allowed');
           });
         } else {
           code.if(`${dataVar}.length > 0`, () => {
