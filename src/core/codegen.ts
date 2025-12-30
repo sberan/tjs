@@ -47,18 +47,6 @@ export class Code {
   get isEmpty(): boolean {
     return this.#str === '';
   }
-
-  /**
-   * Create Code from a raw compile-time constant value.
-   * Use for numbers and booleans only.
-   * Throws if the value is not actually a number or boolean (defense against injection).
-   */
-  static raw(value: number | boolean): Code {
-    if (typeof value !== 'number' && typeof value !== 'boolean') {
-      throw new Error(`Code.raw() only accepts numbers and booleans, got ${typeof value}`);
-    }
-    return new Code(String(value));
-  }
 }
 
 /**
@@ -107,8 +95,12 @@ export function escapeString(s: string): string {
  * Safely interpolate a value into code.
  * - Code/Name: inserted as-is (already safe)
  * - string: wrapped in quotes and escaped
- * - number/boolean/null: converted to literal
+ * - number/boolean: validated at runtime, then converted to literal
+ * - null: converted to "null"
  * - undefined: converted to "undefined"
+ *
+ * SECURITY: Numbers and booleans are validated at runtime to prevent injection
+ * attacks where a value typed as number could actually be a malicious string.
  */
 function safeInterpolate(value: SafeValue): string {
   if (value instanceof Code) {
@@ -118,7 +110,14 @@ function safeInterpolate(value: SafeValue): string {
     // Strings are ALWAYS quoted - this is the key safety feature
     return `"${escapeString(value)}"`;
   }
-  if (typeof value === 'number' || typeof value === 'boolean') {
+  if (typeof value === 'number') {
+    // Defense: reject NaN and Infinity which could cause issues in generated code
+    if (!Number.isFinite(value)) {
+      throw new Error(`Expected finite number in template, got: ${value}`);
+    }
+    return String(value);
+  }
+  if (typeof value === 'boolean') {
     return String(value);
   }
   if (value === null) {
@@ -127,8 +126,8 @@ function safeInterpolate(value: SafeValue): string {
   if (value === undefined) {
     return 'undefined';
   }
-  // Fallback - should not happen with proper typing
-  return String(value);
+  // Fallback - should not happen with proper typing, but escape as string for safety
+  throw new Error(`Unexpected value type in template: ${typeof value}`);
 }
 
 /**
@@ -337,8 +336,24 @@ export function pathExprIndex(basePath: Code | Name, indexVar: Code | Name): Cod
 // ============================================================================
 
 /**
+ * Helper type for tagged template or Code argument
+ */
+type TemplateInput = Code | TemplateStringsArray;
+
+/**
+ * Convert tagged template or Code to Code
+ */
+function toCode(input: TemplateInput, values?: SafeValue[]): Code {
+  if (input instanceof Code) return input;
+  // It's a TemplateStringsArray - use _ to build Code
+  return _(input, ...(values || []));
+}
+
+/**
  * Builds JavaScript code with proper indentation and safe interpolation.
- * All methods ONLY accept Code types - no raw strings allowed.
+ * Methods accept either Code or tagged template syntax:
+ *   code.if(_`condition`, body)  // traditional
+ *   code.if`condition`(body)     // tagged template
  */
 export class CodeBuilder {
   #lines: string[] = [];
@@ -347,9 +362,10 @@ export class CodeBuilder {
 
   /**
    * Add a line of code at current indentation.
-   * ONLY accepts Code - use the `_` template to create Code from strings.
+   * Supports both: code.line(_`...`) and code.line`...`
    */
-  line(code: Code): this {
+  line(input: TemplateInput, ...values: SafeValue[]): this {
+    const code = toCode(input, values);
     this.#lines.push('  '.repeat(this.#indent) + code.toString());
     return this;
   }
@@ -364,21 +380,49 @@ export class CodeBuilder {
 
   /**
    * Add a block with braces (e.g., if, for, function)
+   * Supports both: code.block(_`header`, body) and code.block`header`(body)
    */
-  block(header: Code, body: () => void): this {
+  block(input: TemplateInput, ...rest: unknown[]): this | ((body: () => void) => this) {
+    // Check if called as tagged template
+    if (Array.isArray(input) && 'raw' in input) {
+      const values = rest as SafeValue[];
+      const code = _(input as TemplateStringsArray, ...values);
+      // Return a function that takes the body
+      return (body: () => void) => {
+        this.#lines.push('  '.repeat(this.#indent) + code.toString() + ' {');
+        this.#indent++;
+        body();
+        this.#indent--;
+        this.line`}`;
+        return this;
+      };
+    }
+    // Traditional call: block(code, body)
+    const header = input as Code;
+    const body = rest[0] as () => void;
     this.#lines.push('  '.repeat(this.#indent) + header.toString() + ' {');
     this.#indent++;
     body();
     this.#indent--;
-    this.line(_`}`);
+    this.line`}`;
     return this;
   }
 
   /**
    * Add an if statement
+   * Supports both: code.if(_`cond`, body) and code.if`cond`(body)
    */
-  if(condition: Code, body: () => void): this {
-    return this.block(_`if (${condition})`, body);
+  if(input: TemplateInput, ...rest: unknown[]): this | ((body: () => void) => this) {
+    // Check if called as tagged template
+    if (Array.isArray(input) && 'raw' in input) {
+      const values = rest as SafeValue[];
+      const condition = _(input as TemplateStringsArray, ...values);
+      return (body: () => void) => this.block(_`if (${condition})`, body) as this;
+    }
+    // Traditional call: if(code, body)
+    const condition = input as Code;
+    const body = rest[0] as () => void;
+    return this.block(_`if (${condition})`, body) as this;
   }
 
   /**
@@ -392,45 +436,57 @@ export class CodeBuilder {
       this.#indent++;
       body();
       this.#indent--;
-      this.line(_`}`);
+      this.line`}`;
     }
     return this;
   }
 
   /**
    * Add an else-if clause
+   * Supports both: code.elseIf(_`cond`, body) and code.elseIf`cond`(body)
    */
-  elseIf(condition: Code, body: () => void): this {
-    const lastLine = this.#lines.pop();
-    if (lastLine?.trim() === '}') {
-      this.#lines.push(lastLine.replace('}', `} else if (${condition.toString()}) {`));
-      this.#indent++;
-      body();
-      this.#indent--;
-      this.line(_`}`);
+  elseIf(input: TemplateInput, ...rest: unknown[]): this | ((body: () => void) => this) {
+    const doElseIf = (condition: Code, body: () => void) => {
+      const lastLine = this.#lines.pop();
+      if (lastLine?.trim() === '}') {
+        this.#lines.push(lastLine.replace('}', `} else if (${condition.toString()}) {`));
+        this.#indent++;
+        body();
+        this.#indent--;
+        this.line`}`;
+      }
+      return this;
+    };
+
+    // Check if called as tagged template
+    if (Array.isArray(input) && 'raw' in input) {
+      const values = rest as SafeValue[];
+      const condition = _(input as TemplateStringsArray, ...values);
+      return (body: () => void) => doElseIf(condition, body);
     }
-    return this;
+    // Traditional call
+    return doElseIf(input as Code, rest[0] as () => void);
   }
 
   /**
    * Add a for loop
    */
   for(init: Code, condition: Code, update: Code, body: () => void): this {
-    return this.block(_`for (${init}; ${condition}; ${update})`, body);
+    return this.block(_`for (${init}; ${condition}; ${update})`, body) as this;
   }
 
   /**
    * Add a for-of loop
    */
   forOf(variable: Name, iterable: Code, body: () => void): this {
-    return this.block(_`for (const ${variable} of ${iterable})`, body);
+    return this.block(_`for (const ${variable} of ${iterable})`, body) as this;
   }
 
   /**
    * Add a for-in loop
    */
   forIn(variable: Name, object: Code, body: () => void): this {
-    return this.block(_`for (const ${variable} in ${object})`, body);
+    return this.block(_`for (const ${variable} in ${object})`, body) as this;
   }
 
   /**
