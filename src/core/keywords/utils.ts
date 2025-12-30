@@ -3,7 +3,7 @@
  */
 
 import type { JsonSchemaBase } from '../../types.js';
-import { CodeBuilder, escapeString, propAccess } from '../codegen.js';
+import { CodeBuilder, Code, Name, _, escapeString, propAccess, pathExpr } from '../codegen.js';
 
 /**
  * Property names that exist on Object.prototype or Array.prototype.
@@ -30,24 +30,24 @@ export function isSafePropertyName(name: string): boolean {
  */
 export function genPropertyCheck(
   code: CodeBuilder,
-  dataVar: string,
+  dataVar: Name,
   propName: string,
-  callback: (valueVar: string) => void
+  callback: (valueVar: Name | Code) => void
 ): void {
   const propStr = escapeString(propName);
-  const propAccessed = propAccess(dataVar, propName);
+  const propAccessCode = propAccess(dataVar, propName);
 
   if (isSafePropertyName(propName)) {
     // Fast path: store value and check !== undefined
     const propVar = code.genVar('prop');
-    code.line(`const ${propVar} = ${propAccessed};`);
-    code.if(`${propVar} !== undefined`, () => {
+    code.line(_`const ${propVar} = ${propAccessCode};`);
+    code.if(_`${propVar} !== undefined`, () => {
       callback(propVar);
     });
   } else {
     // Slow path: use Object.hasOwn for prototype property names
-    code.if(`Object.hasOwn(${dataVar}, '${propStr}')`, () => {
-      callback(propAccessed);
+    code.if(_`Object.hasOwn(${dataVar}, '${new Code(propStr)}')`, () => {
+      callback(propAccessCode);
     });
   }
 }
@@ -58,18 +58,18 @@ export function genPropertyCheck(
  */
 export function genRequiredCheck(
   code: CodeBuilder,
-  dataVar: string,
+  dataVar: Name,
   propName: string,
-  pathExpr: string
+  pathExprCode: Code
 ): void {
   const propStr = escapeString(propName);
-  const propPathExpr = pathExpr === "''" ? `'${propStr}'` : `${pathExpr} + '.${propStr}'`;
+  const propPathExpr = pathExpr(pathExprCode, propName);
 
   // For prototype property names, use Object.hasOwn for accuracy.
   // For other names, use the faster 'in' operator.
   const checkExpr = isSafePropertyName(propName)
-    ? `!('${propStr}' in ${dataVar})`
-    : `!Object.hasOwn(${dataVar}, '${propStr}')`;
+    ? _`!('${new Code(propStr)}' in ${dataVar})`
+    : _`!Object.hasOwn(${dataVar}, '${new Code(propStr)}')`;
 
   code.if(checkExpr, () => {
     genError(code, propPathExpr, 'required', 'Required property missing');
@@ -77,19 +77,19 @@ export function genRequiredCheck(
 }
 
 /**
- * Generate code to assign error and return false (like AJV)
+ * Generate code to push an error and return false
  */
 export function genError(
   code: CodeBuilder,
-  pathExpr: string,
+  pathExprCode: Code,
   keyword: string,
   message: string
 ): void {
-  // Assign error directly to main function (like AJV) - avoids array push overhead
+  const escapedMessage = escapeString(message);
   code.line(
-    `validate0.errors = [{ path: ${pathExpr}, message: '${escapeString(message)}', keyword: '${keyword}' }];`
+    _`if (errors) errors.push({ path: ${pathExprCode}, message: '${new Code(escapedMessage)}', keyword: '${new Code(keyword)}' });`
   );
-  code.line('return false;');
+  code.line(_`return false;`);
 }
 
 /**
@@ -107,24 +107,24 @@ export function hasTypeConstraint(schema: JsonSchemaBase, type: string): boolean
 /**
  * Generate type checking expression for a given type
  */
-export function getTypeCheck(dataVar: string, type: string): string {
+export function getTypeCheck(dataVar: Name, type: string): Code {
   switch (type) {
     case 'string':
-      return `typeof ${dataVar} === 'string'`;
+      return _`typeof ${dataVar} === 'string'`;
     case 'number':
-      return `typeof ${dataVar} === 'number'`;
+      return _`typeof ${dataVar} === 'number'`;
     case 'integer':
-      return `typeof ${dataVar} === 'number' && Number.isInteger(${dataVar})`;
+      return _`typeof ${dataVar} === 'number' && Number.isInteger(${dataVar})`;
     case 'boolean':
-      return `typeof ${dataVar} === 'boolean'`;
+      return _`typeof ${dataVar} === 'boolean'`;
     case 'null':
-      return `${dataVar} === null`;
+      return _`${dataVar} === null`;
     case 'array':
-      return `Array.isArray(${dataVar})`;
+      return _`Array.isArray(${dataVar})`;
     case 'object':
-      return `typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`;
+      return _`typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`;
     default:
-      return 'false';
+      return _`false`;
   }
 }
 
