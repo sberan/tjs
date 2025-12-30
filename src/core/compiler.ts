@@ -1794,7 +1794,7 @@ export function generateItemsChecks(
 
   // Cross-draft compatibility: prefixItems was introduced in 2020-12
   // In 2019-09 and earlier, prefixItems is not a keyword and should be ignored
-  const hasPrefixItems = supportsFeature(schema.$schema, 'prefixItems');
+  const hasPrefixItems = supportsFeature(schema.$schema ?? ctx.options.defaultMeta, 'prefixItems');
 
   const tupleSchemas: JsonSchema[] = itemsIsArray
     ? (schema.items as JsonSchema[])

@@ -275,11 +275,11 @@ describe('minContains / maxContains', () => {
   });
 });
 
-// Format validation is enabled by default (formatAssertion: true)
-// Can be disabled with schema({...}, { formatAssertion: false })
+// In draft 2020-12, format is annotation-only by default.
+// To test format validation, we explicitly enable formatAssertion.
 describe('format validators', () => {
   describe('date', () => {
-    const DateSchema = schema({ type: 'string', format: 'date' });
+    const DateSchema = schema({ type: 'string', format: 'date' }, { formatAssertion: true });
 
     it('accepts valid dates', () => {
       expect(DateSchema.validate('2024-01-15').error).toBeUndefined();
@@ -294,7 +294,7 @@ describe('format validators', () => {
   });
 
   describe('time', () => {
-    const TimeSchema = schema({ type: 'string', format: 'time' });
+    const TimeSchema = schema({ type: 'string', format: 'time' }, { formatAssertion: true });
 
     it('accepts valid times', () => {
       expect(TimeSchema.validate('14:30:00Z').error).toBeUndefined();
@@ -311,7 +311,10 @@ describe('format validators', () => {
   });
 
   describe('duration', () => {
-    const DurationSchema = schema({ type: 'string', format: 'duration' });
+    const DurationSchema = schema(
+      { type: 'string', format: 'duration' },
+      { formatAssertion: true }
+    );
 
     it('accepts valid durations', () => {
       expect(DurationSchema.validate('P1Y').error).toBeUndefined();
@@ -331,7 +334,10 @@ describe('format validators', () => {
   });
 
   describe('hostname', () => {
-    const HostnameSchema = schema({ type: 'string', format: 'hostname' });
+    const HostnameSchema = schema(
+      { type: 'string', format: 'hostname' },
+      { formatAssertion: true }
+    );
 
     it('accepts valid hostnames', () => {
       expect(HostnameSchema.validate('example.com').error).toBeUndefined();
@@ -348,7 +354,10 @@ describe('format validators', () => {
   });
 
   describe('json-pointer', () => {
-    const JsonPointerSchema = schema({ type: 'string', format: 'json-pointer' });
+    const JsonPointerSchema = schema(
+      { type: 'string', format: 'json-pointer' },
+      { formatAssertion: true }
+    );
 
     it('accepts valid JSON pointers', () => {
       expect(JsonPointerSchema.validate('').error).toBeUndefined(); // root
@@ -366,7 +375,7 @@ describe('format validators', () => {
   });
 
   describe('regex', () => {
-    const RegexSchema = schema({ type: 'string', format: 'regex' });
+    const RegexSchema = schema({ type: 'string', format: 'regex' }, { formatAssertion: true });
 
     it('accepts valid regex patterns', () => {
       expect(RegexSchema.validate('^[a-z]+$').error).toBeUndefined();
