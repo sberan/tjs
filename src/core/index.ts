@@ -263,9 +263,7 @@ export function createValidator<T>(schema: JsonSchema, options: CompileOptions =
   };
 
   // Create the callable validator function
-  const validator = ((data: unknown): boolean => {
-    return validateFn(data);
-  }) as Validator<T>;
+  const validator = validateFn as Validator<T>;
 
   // Attach validate method
   validator.validate = function (data: unknown): ValidationResult<T> {
