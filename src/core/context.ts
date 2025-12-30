@@ -62,6 +62,51 @@ export const VOCABULARIES = {
 } as const;
 
 /**
+ * Check if a schema dialect supports a specific feature.
+ * This is based on the $schema URI of the schema.
+ *
+ * @param schemaUri - The $schema URI (or undefined if not specified)
+ * @param feature - The feature to check for
+ * @returns true if the feature is supported
+ */
+export function supportsFeature(
+  schemaUri: string | undefined,
+  feature: 'prefixItems' | 'modernRef' | 'unevaluated'
+): boolean {
+  // If no $schema specified, assume latest draft (supports all features)
+  if (!schemaUri) return true;
+
+  // Check for draft 2020-12 and later
+  const isModernDraft =
+    schemaUri.includes('2020-12') ||
+    schemaUri.includes('2021') ||
+    schemaUri.includes('2022') ||
+    schemaUri.includes('2023') ||
+    schemaUri.includes('2024') ||
+    schemaUri.includes('2025');
+
+  // Check for draft 2019-09
+  const is2019 = schemaUri.includes('2019-09');
+
+  switch (feature) {
+    case 'prefixItems':
+      // prefixItems was introduced in draft 2020-12
+      return isModernDraft;
+
+    case 'modernRef':
+      // $ref can have siblings starting from draft 2019-09
+      return isModernDraft || is2019;
+
+    case 'unevaluated':
+      // unevaluatedProperties/unevaluatedItems introduced in draft 2019-09
+      return isModernDraft || is2019;
+
+    default:
+      return true;
+  }
+}
+
+/**
  * A compiled sub-schema function
  */
 export type CompiledValidator = (data: unknown) => boolean;
