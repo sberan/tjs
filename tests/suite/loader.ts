@@ -61,8 +61,9 @@ function loadDirectory(dir: string, filter?: (filename: string) => boolean): Tes
   return files;
 }
 
-export function loadSingleFile(keyword: string): TestFile | null {
-  const filepath = path.join(SUITE_PATH, `${keyword}.json`);
+export function loadSingleFile(keyword: string, draft: Draft = 'draft2020-12'): TestFile | null {
+  const suitePath = path.join(SUITE_BASE, draft);
+  const filepath = path.join(suitePath, `${keyword}.json`);
   if (!fs.existsSync(filepath)) return null;
 
   const content = fs.readFileSync(filepath, 'utf-8');

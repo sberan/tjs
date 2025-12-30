@@ -130,11 +130,28 @@ export class CompileContext {
       }
     }
 
+    // Auto-detect legacyRef from $schema if not explicitly set
+    // In draft 2020-12 and 2019-09, $ref can have sibling keywords
+    // In draft-07 and earlier, $ref overrides all siblings (legacy behavior)
+    let legacyRef = options.legacyRef;
+    if (legacyRef === undefined) {
+      const schemaUri =
+        typeof rootSchema === 'object' && rootSchema !== null ? rootSchema.$schema : undefined;
+      if (
+        schemaUri === 'https://json-schema.org/draft/2020-12/schema' ||
+        schemaUri === 'https://json-schema.org/draft/2019-09/schema'
+      ) {
+        legacyRef = false;
+      } else {
+        legacyRef = true;
+      }
+    }
+
     this.options = {
       formatAssertion,
       contentAssertion: options.contentAssertion ?? false,
       remotes: options.remotes ?? {},
-      legacyRef: options.legacyRef ?? true,
+      legacyRef,
       coerce: options.coerce ?? false,
     };
 
