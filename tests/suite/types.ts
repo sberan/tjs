@@ -14,6 +14,7 @@ export interface TestFile {
   name: string;
   path: string;
   groups: TestGroup[];
+  isFormatTest?: boolean;
 }
 
 export interface TestResult {

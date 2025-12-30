@@ -27,10 +27,14 @@ export function loadTestFiles(options?: {
       files.push(...loadDirectory(optionalDir, options?.filter));
     }
 
-    // Load format tests
+    // Load format tests (marked as format tests for special handling)
     const formatDir = path.join(optionalDir, 'format');
     if (fs.existsSync(formatDir)) {
-      files.push(...loadDirectory(formatDir, options?.filter));
+      const formatFiles = loadDirectory(formatDir, options?.filter);
+      for (const file of formatFiles) {
+        file.isFormatTest = true;
+      }
+      files.push(...formatFiles);
     }
   }
 
