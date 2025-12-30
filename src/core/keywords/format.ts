@@ -54,133 +54,70 @@ const FORMAT_REGEX = {
     /^(?:[^\x00-\x20"'<>\\^`{|}]|\{[+#./;?&=,!@|]?(?:[a-z0-9_]|%[0-9a-f]{2})(?::[1-9]\d{0,3}|\*)?(?:,(?:[a-z0-9_]|%[0-9a-f]{2})(?::[1-9]\d{0,3}|\*)?)*\})*$/i,
 };
 
-// Days in each month (0-indexed, index 0 unused)
-const DAYS_IN_MONTH = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+// Days in each month (1-indexed) - exported for inlining
+export const DAYS = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+// Optimized date/time regexes - simpler patterns for faster matching
+// Exported for inlining in generated code
+export const DATE_REGEX = /^(\d\d\d\d)-(\d\d)-(\d\d)$/;
+export const TIME_REGEX = /^(\d\d):(\d\d):(\d\d)(?:\.\d+)?(z|([+-])(\d\d):(\d\d))$/i;
+export const DATE_TIME_SEPARATOR = /t|\s/i;
+
+// Fast mode regexes (like ajv) - less accurate but much faster
+// These don't validate actual date validity (Feb 30 passes) or leap second rules
+export const FAST_DATE_REGEX = /^\d\d\d\d-[0-1]\d-[0-3]\d$/;
+export const FAST_TIME_REGEX =
+  /^(?:[0-2]\d:[0-5]\d:[0-5]\d|23:59:60)(?:\.\d+)?(?:z|[+-]\d\d(?::?\d\d)?)$/i;
+export const FAST_DATE_TIME_REGEX =
+  /^\d\d\d\d-[0-1]\d-[0-3]\d[t\s](?:[0-2]\d:[0-5]\d:[0-5]\d|23:59:60)(?:\.\d+)?(?:z|[+-]\d\d(?::?\d\d)?)$/i;
 
 function isLeapYear(year: number): boolean {
   return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
 }
 
-function isValidDate(year: number, month: number, day: number): boolean {
-  if (month < 1 || month > 12) return false;
-  let maxDay = DAYS_IN_MONTH[month];
-  if (month === 2 && isLeapYear(year)) maxDay = 29;
-  return day >= 1 && day <= maxDay;
-}
-
-function isValidTime(hour: number, minute: number, second: number): boolean {
-  if (hour < 0 || hour > 23) return false;
-  if (minute < 0 || minute > 59) return false;
-  // Leap seconds (60) require special handling - checked separately
-  if (second < 0 || second > 60) return false;
-  return true;
-}
-
-/**
- * Check if a leap second (:60) is valid given the offset.
- * Leap seconds only occur at 23:59:60 UTC.
- * For time with offset, we must check that the UTC time would be 23:59:60.
- */
-function isValidLeapSecond(
-  hour: number,
-  minute: number,
-  offsetSign: number,
-  offsetHour: number,
-  offsetMin: number
-): boolean {
-  // localTime = UTC + offset, so UTC = localTime - offset
-  // For a valid leap second, UTC must be 23:59:60
-
-  // Convert offset to total minutes
-  const offsetTotalMins = offsetSign * (offsetHour * 60 + offsetMin);
-
-  // Convert local time to minutes from midnight
-  const localMins = hour * 60 + minute;
-
-  // Calculate UTC time in minutes (may wrap around midnight)
-  let utcMins = localMins - offsetTotalMins;
-
-  // Handle day wraparound
-  while (utcMins < 0) utcMins += 24 * 60;
-  while (utcMins >= 24 * 60) utcMins -= 24 * 60;
-
-  // UTC must be 23:59 (1439 minutes) for leap second
-  return utcMins === 23 * 60 + 59;
-}
-
 function validateDate(s: string): boolean {
-  const m = FORMAT_REGEX.dateBasic.exec(s);
+  const m = DATE_REGEX.exec(s);
   if (!m) return false;
-  const year = parseInt(m[1], 10);
-  const month = parseInt(m[2], 10);
-  const day = parseInt(m[3], 10);
-  return isValidDate(year, month, day);
+  const year = +m[1];
+  const month = +m[2];
+  const day = +m[3];
+  return (
+    month >= 1 &&
+    month <= 12 &&
+    day >= 1 &&
+    day <= (month === 2 && isLeapYear(year) ? 29 : DAYS[month])
+  );
 }
 
 function validateTime(s: string): boolean {
-  const m = FORMAT_REGEX.timeBasic.exec(s);
+  const m = TIME_REGEX.exec(s);
   if (!m) return false;
-  const hour = parseInt(m[1], 10);
-  const minute = parseInt(m[2], 10);
-  const second = parseInt(m[3], 10);
-  if (!isValidTime(hour, minute, second)) return false;
+  const hr = +m[1];
+  const min = +m[2];
+  const sec = +m[3];
+  const tzSign = m[5] === '-' ? -1 : 1;
+  const tzH = +(m[6] || 0);
+  const tzM = +(m[7] || 0);
 
-  // Parse timezone offset
-  let offsetSign = 0;
-  let offsetHour = 0;
-  let offsetMin = 0;
-  if (m[5]) {
-    if (m[5].toLowerCase() === 'z') {
-      offsetSign = 0;
-    } else {
-      offsetSign = m[5][0] === '+' ? 1 : -1;
-      offsetHour = parseInt(m[6], 10);
-      offsetMin = parseInt(m[7], 10);
-      if (offsetHour > 23 || offsetMin > 59) return false;
-    }
-  }
+  // Validate offset
+  if (tzH > 23 || tzM > 59) return false;
 
-  // For leap seconds, validate that UTC time would be 23:59:60
-  if (second === 60) {
-    if (!isValidLeapSecond(hour, minute, offsetSign, offsetHour, offsetMin)) return false;
-  }
+  // Standard time validation (fast path)
+  if (hr <= 23 && min <= 59 && sec < 60) return true;
 
-  return true;
+  // Leap second validation (slow path)
+  if (sec >= 61 || hr > 23 || min > 59) return false;
+
+  // For leap second (sec = 60), UTC time must be 23:59
+  const utcMin = min - tzM * tzSign;
+  const utcHr = hr - tzH * tzSign - (utcMin < 0 ? 1 : 0);
+  return (utcHr === 23 || utcHr === -1) && (utcMin === 59 || utcMin === -1);
 }
 
 function validateDateTime(s: string): boolean {
-  const m = FORMAT_REGEX.dateTimeBasic.exec(s);
-  if (!m) return false;
-  const year = parseInt(m[1], 10);
-  const month = parseInt(m[2], 10);
-  const day = parseInt(m[3], 10);
-  const hour = parseInt(m[4], 10);
-  const minute = parseInt(m[5], 10);
-  const second = parseInt(m[6], 10);
-  if (!isValidDate(year, month, day)) return false;
-  if (!isValidTime(hour, minute, second)) return false;
-
-  // Parse timezone offset
-  let offsetSign = 0;
-  let offsetHour = 0;
-  let offsetMin = 0;
-  if (m[8]) {
-    if (m[8].toLowerCase() === 'z') {
-      offsetSign = 0;
-    } else {
-      offsetSign = m[8][0] === '+' ? 1 : -1;
-      offsetHour = parseInt(m[9], 10);
-      offsetMin = parseInt(m[10], 10);
-      if (offsetHour > 23 || offsetMin > 59) return false;
-    }
-  }
-
-  // For leap seconds, validate that UTC time would be 23:59:60
-  if (second === 60) {
-    if (!isValidLeapSecond(hour, minute, offsetSign, offsetHour, offsetMin)) return false;
-  }
-
-  return true;
+  // Split on 'T' or space (RFC 3339 allows both)
+  const parts = s.split(DATE_TIME_SEPARATOR);
+  return parts.length === 2 && validateDate(parts[0]) && validateTime(parts[1]);
 }
 
 function validateDuration(s: string): boolean {
@@ -656,140 +593,66 @@ function validateIPv6(s: string): boolean {
   return false;
 }
 
-// Fast URI regex for simple cases (from ajv-formats)
-const SIMPLE_URI_REGEX = /^(?:[a-z][a-z0-9+\-.]*:)(?:\/?\/)?[^\s]*$/i;
+// URI regex from ajv-formats (RFC 3986 compliant)
+// This is a pure regex approach - much faster than using new URL()
+const URI_REGEX =
+  /^(?:[a-z][a-z0-9+\-.]*:)(?:\/?\/(?:(?:[a-z0-9\-._~!$&'()*+,;=:]|%[0-9a-f]{2})*@)?(?:\[(?:(?:(?:(?:[0-9a-f]{1,4}:){6}|::(?:[0-9a-f]{1,4}:){5}|(?:[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){4}|(?:(?:[0-9a-f]{1,4}:){0,1}[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){3}|(?:(?:[0-9a-f]{1,4}:){0,2}[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){2}|(?:(?:[0-9a-f]{1,4}:){0,3}[0-9a-f]{1,4})?::[0-9a-f]{1,4}:|(?:(?:[0-9a-f]{1,4}:){0,4}[0-9a-f]{1,4})?::)(?:[0-9a-f]{1,4}:[0-9a-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?))|(?:(?:[0-9a-f]{1,4}:){0,5}[0-9a-f]{1,4})?::[0-9a-f]{1,4}|(?:(?:[0-9a-f]{1,4}:){0,6}[0-9a-f]{1,4})?::)|[Vv][0-9a-f]+\.[a-z0-9\-._~!$&'()*+,;=:]+)\]|(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)|(?:[a-z0-9\-._~!$&'()*+,;=]|%[0-9a-f]{2})*)(?::\d*)?(?:\/(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*|\/(?:(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2})+(?:\/(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*)?|(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2})+(?:\/(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*)(?:\?(?:[a-z0-9\-._~!$&'()*+,;=:@/?]|%[0-9a-f]{2})*)?(?:#(?:[a-z0-9\-._~!$&'()*+,;=:@/?]|%[0-9a-f]{2})*)?$/i;
 
-const NON_ASCII_REGEX = /[^\x00-\x7f]/;
+// URI-reference regex from ajv-formats (RFC 3986 compliant)
+const URI_REFERENCE_REGEX =
+  /^(?:[a-z][a-z0-9+\-.]*:)?(?:\/?\/(?:(?:[a-z0-9\-._~!$&'()*+,;=:]|%[0-9a-f]{2})*@)?(?:\[(?:(?:(?:(?:[0-9a-f]{1,4}:){6}|::(?:[0-9a-f]{1,4}:){5}|(?:[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){4}|(?:(?:[0-9a-f]{1,4}:){0,1}[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){3}|(?:(?:[0-9a-f]{1,4}:){0,2}[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){2}|(?:(?:[0-9a-f]{1,4}:){0,3}[0-9a-f]{1,4})?::[0-9a-f]{1,4}:|(?:(?:[0-9a-f]{1,4}:){0,4}[0-9a-f]{1,4})?::)(?:[0-9a-f]{1,4}:[0-9a-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?))|(?:(?:[0-9a-f]{1,4}:){0,5}[0-9a-f]{1,4})?::[0-9a-f]{1,4}|(?:(?:[0-9a-f]{1,4}:){0,6}[0-9a-f]{1,4})?::)|[Vv][0-9a-f]+\.[a-z0-9\-._~!$&'()*+,;=:]+)\]|(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)|(?:[a-z0-9\-._~!$&'"()*+,;=]|%[0-9a-f]{2})*)(?::\d*)?(?:\/(?:[a-z0-9\-._~!$&'"()*+,;=:@]|%[0-9a-f]{2})*)*|\/(?:(?:[a-z0-9\-._~!$&'"()*+,;=:@]|%[0-9a-f]{2})+(?:\/(?:[a-z0-9\-._~!$&'"()*+,;=:@]|%[0-9a-f]{2})*)*)?|(?:[a-z0-9\-._~!$&'"()*+,;=:@]|%[0-9a-f]{2})+(?:\/(?:[a-z0-9\-._~!$&'"()*+,;=:@]|%[0-9a-f]{2})*)*)?(?:\?(?:[a-z0-9\-._~!$&'"()*+,;=:@/?]|%[0-9a-f]{2})*)?(?:#(?:[a-z0-9\-._~!$&'"()*+,;=:@/?]|%[0-9a-f]{2})*)?$/i;
+
+// NOT_URI_FRAGMENT check - URI must contain / or :
+const NOT_URI_FRAGMENT = /\/|:/;
 
 function validateUri(s: string): boolean {
-  // Quick rejection for bad chars
-  if (FORMAT_REGEX.uriBadChars.test(s)) return false;
-  // Fast path: simple URI regex for most common cases
-  if (!SIMPLE_URI_REGEX.test(s)) return false;
-  // RFC 3986: URIs must only contain ASCII characters
-  if (NON_ASCII_REGEX.test(s)) return false;
-  // Check for invalid userinfo ([ is not allowed in userinfo per RFC 3986)
-  const schemeEnd = s.indexOf(':');
-  const authorityStart = s.indexOf('//');
-  if (authorityStart === schemeEnd + 1) {
-    // Has authority - check for [ in userinfo
-    const authorityEnd = s.indexOf('/', authorityStart + 2);
-    const queryStart = s.indexOf('?', authorityStart + 2);
-    const fragStart = s.indexOf('#', authorityStart + 2);
-    let end = s.length;
-    if (authorityEnd > 0 && authorityEnd < end) end = authorityEnd;
-    if (queryStart > 0 && queryStart < end) end = queryStart;
-    if (fragStart > 0 && fragStart < end) end = fragStart;
-    const authority = s.slice(authorityStart + 2, end);
-    const atIndex = authority.indexOf('@');
-    if (atIndex >= 0) {
-      // [ and ] are not allowed in userinfo
-      const openBracket = authority.indexOf('[');
-      const closeBracket = authority.indexOf(']');
-      if (
-        (openBracket >= 0 && openBracket < atIndex) ||
-        (closeBracket >= 0 && closeBracket < atIndex)
-      ) {
-        return false;
-      }
-    }
-  }
-  // Use URL constructor for final validation (handles edge cases)
-  try {
-    new URL(s);
-    return true;
-  } catch {
-    return false;
-  }
+  // Must contain / or : to not be just a fragment
+  return NOT_URI_FRAGMENT.test(s) && URI_REGEX.test(s);
 }
 
 function validateUriReference(s: string): boolean {
   if (s === '') return true;
-  if (FORMAT_REGEX.uriBadChars.test(s)) return false;
-  // RFC 3986: URIs must only contain ASCII characters
-
-  if (/[^\x00-\x7f]/.test(s)) return false;
-  // Fragment-only is valid
-  if (s.startsWith('#')) return true;
-  // Relative reference or absolute URI
-  try {
-    new URL(s, 'http://x.x/');
-    return true;
-  } catch {
-    return false;
-  }
+  return URI_REFERENCE_REGEX.test(s);
 }
+
+// IRI regex - like URI but allows non-ASCII characters (Unicode)
+// Based on RFC 3987 - IRIs extend URIs with Unicode support
+const IRI_REGEX =
+  /^(?:[a-z][a-z0-9+\-.]*:)(?:\/?\/(?:(?:[a-z0-9\-._~!$&'()*+,;=:]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*@)?(?:\[(?:(?:(?:(?:[0-9a-f]{1,4}:){6}|::(?:[0-9a-f]{1,4}:){5}|(?:[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){4}|(?:(?:[0-9a-f]{1,4}:){0,1}[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){3}|(?:(?:[0-9a-f]{1,4}:){0,2}[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){2}|(?:(?:[0-9a-f]{1,4}:){0,3}[0-9a-f]{1,4})?::[0-9a-f]{1,4}:|(?:(?:[0-9a-f]{1,4}:){0,4}[0-9a-f]{1,4})?::)(?:[0-9a-f]{1,4}:[0-9a-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?))|(?:(?:[0-9a-f]{1,4}:){0,5}[0-9a-f]{1,4})?::[0-9a-f]{1,4}|(?:(?:[0-9a-f]{1,4}:){0,6}[0-9a-f]{1,4})?::)|[Vv][0-9a-f]+\.[a-z0-9\-._~!$&'()*+,;=:]+)\]|(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)|(?:[a-z0-9\-._~!$&'()*+,;=]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*)(?::\d*)?(?:\/(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*)*|\/(?:(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])+(?:\/(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*)*)?|(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])+(?:\/(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*)*)(?:\?(?:[a-z0-9\-._~!$&'()*+,;=:@/?]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*)?(?:#(?:[a-z0-9\-._~!$&'()*+,;=:@/?]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*)?$/i;
+
+// IRI-reference regex - like URI-reference but allows non-ASCII
+const IRI_REFERENCE_REGEX =
+  /^(?:[a-z][a-z0-9+\-.]*:)?(?:\/?\/(?:(?:[a-z0-9\-._~!$&'()*+,;=:]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*@)?(?:\[(?:(?:(?:(?:[0-9a-f]{1,4}:){6}|::(?:[0-9a-f]{1,4}:){5}|(?:[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){4}|(?:(?:[0-9a-f]{1,4}:){0,1}[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){3}|(?:(?:[0-9a-f]{1,4}:){0,2}[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){2}|(?:(?:[0-9a-f]{1,4}:){0,3}[0-9a-f]{1,4})?::[0-9a-f]{1,4}:|(?:(?:[0-9a-f]{1,4}:){0,4}[0-9a-f]{1,4})?::)(?:[0-9a-f]{1,4}:[0-9a-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?))|(?:(?:[0-9a-f]{1,4}:){0,5}[0-9a-f]{1,4})?::[0-9a-f]{1,4}|(?:(?:[0-9a-f]{1,4}:){0,6}[0-9a-f]{1,4})?::)|[Vv][0-9a-f]+\.[a-z0-9\-._~!$&'()*+,;=:]+)\]|(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)|(?:[a-z0-9\-._~!$&'"()*+,;=]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*)(?::\d*)?(?:\/(?:[a-z0-9\-._~!$&'"()*+,;=:@]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*)*|\/(?:(?:[a-z0-9\-._~!$&'"()*+,;=:@]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])+(?:\/(?:[a-z0-9\-._~!$&'"()*+,;=:@]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*)*)?|(?:[a-z0-9\-._~!$&'"()*+,;=:@]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])+(?:\/(?:[a-z0-9\-._~!$&'"()*+,;=:@]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*)*)?(?:\?(?:[a-z0-9\-._~!$&'"()*+,;=:@/?]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*)?(?:#(?:[a-z0-9\-._~!$&'"()*+,;=:@/?]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*)?$/i;
 
 function validateIri(s: string): boolean {
   if (FORMAT_REGEX.uriBadChars.test(s)) return false;
-  if (!FORMAT_REGEX.uriScheme.test(s)) return false;
-  // IRI allows non-ASCII characters (unlike URI)
-  try {
-    new URL(s);
-    return true;
-  } catch {
-    return false;
-  }
+  return NOT_URI_FRAGMENT.test(s) && IRI_REGEX.test(s);
 }
 
 function validateIriReference(s: string): boolean {
   if (s === '') return true;
   if (FORMAT_REGEX.uriBadChars.test(s)) return false;
-  // Fragment-only is valid
-  if (s.startsWith('#')) return true;
-  // Relative reference or absolute IRI
-  try {
-    new URL(s, 'http://x.x/');
-    return true;
-  } catch {
-    return false;
-  }
+  return IRI_REFERENCE_REGEX.test(s);
 }
 
+// URI-template regex from ajv-formats (RFC 6570 compliant)
+const URI_TEMPLATE_REGEX =
+  /^(?:(?:[^\x00-\x20"'<>%\\^`{|}]|%[0-9a-f]{2})|\{[+#./;?&=,!@|]?(?:[a-z0-9_]|%[0-9a-f]{2})+(?::[1-9][0-9]{0,3}|\*)?(?:,(?:[a-z0-9_]|%[0-9a-f]{2})+(?::[1-9][0-9]{0,3}|\*)?)*\})*$/i;
+
 function validateUriTemplate(s: string): boolean {
-  // Check for invalid characters
-  if (/[\x00-\x20]/.test(s)) return false;
-  // Check balanced braces and valid expressions
-  let depth = 0;
-  for (let i = 0; i < s.length; i++) {
-    if (s[i] === '{') {
-      depth++;
-      if (depth > 1) return false; // Nested braces not allowed
-    } else if (s[i] === '}') {
-      if (depth === 0) return false;
-      depth--;
-    }
-  }
-  if (depth !== 0) return false;
-  // Validate expressions
-  const exprs = s.match(/\{[^}]*\}/g) || [];
-  for (const expr of exprs) {
-    const inner = expr.slice(1, -1);
-    if (inner.length === 0) return false;
-    // Check for valid operator and varspec
-    const operatorMatch = /^[+#./;?&=,!@|]?/.exec(inner);
-    const rest = inner.slice(operatorMatch ? operatorMatch[0].length : 0);
-    if (rest.length === 0) return false;
-    // Validate variable names
-    const vars = rest.split(',');
-    for (const v of vars) {
-      const varspec = /^([a-zA-Z0-9_]|%[0-9a-fA-F]{2})+(:([1-9]\d{0,3})|\*)?$/.exec(v);
-      if (!varspec) return false;
-    }
-  }
-  return true;
+  return URI_TEMPLATE_REGEX.test(s);
 }
 
 /**
  * Create format validators for format keyword.
- * Uses comprehensive validation for spec compliance.
+ * @param fast - Use fast regex-only validation (like ajv). Less accurate but faster.
  */
-export function createFormatValidators(): Record<string, (s: string) => boolean> {
+export function createFormatValidators(fast = false): Record<string, (s: string) => boolean> {
   return {
     email: validateEmail,
     'idn-email': (s) => validateEmail(s) || validateIdnHostname(s.split('@')[1] || ''),
     uuid: (s) => FORMAT_REGEX.uuid.test(s),
-    'date-time': validateDateTime,
+    'date-time': fast ? (s) => FAST_DATE_TIME_REGEX.test(s) : validateDateTime,
     uri: validateUri,
     'uri-reference': validateUriReference,
     'uri-template': validateUriTemplate,
@@ -797,8 +660,8 @@ export function createFormatValidators(): Record<string, (s: string) => boolean>
     'iri-reference': validateIriReference,
     ipv4: (s) => FORMAT_REGEX.ipv4.test(s),
     ipv6: validateIPv6,
-    date: validateDate,
-    time: validateTime,
+    date: fast ? (s) => FAST_DATE_REGEX.test(s) : validateDate,
+    time: fast ? (s) => FAST_TIME_REGEX.test(s) : validateTime,
     duration: validateDuration,
     hostname: validateHostname,
     'idn-hostname': validateIdnHostname,
