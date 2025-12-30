@@ -608,23 +608,25 @@ export function generateContentChecks(
         // If there's also base64 encoding, we need to decode first
         if (schema.contentEncoding === 'base64') {
           const decodedVar = code.genVar('decoded');
-          code.block(_``, () => {
-            code.line(_`try {`);
-            code.line(_`  const ${decodedVar} = atob(${dataVar});`);
-            code.line(_`  JSON.parse(${decodedVar});`);
-            code.line(_`} catch (e) {`);
-            genError(code, pathExprCode, 'contentMediaType', 'String must be valid JSON');
-            code.line(_`}`);
-          });
+          code.try(
+            () => {
+              code.line(_`const ${decodedVar} = atob(${dataVar});`);
+              code.line(_`JSON.parse(${decodedVar});`);
+            },
+            () => {
+              genError(code, pathExprCode, 'contentMediaType', 'String must be valid JSON');
+            }
+          );
         } else {
           // Validate directly as JSON
-          code.block(_``, () => {
-            code.line(_`try {`);
-            code.line(_`  JSON.parse(${dataVar});`);
-            code.line(_`} catch (e) {`);
-            genError(code, pathExprCode, 'contentMediaType', 'String must be valid JSON');
-            code.line(_`}`);
-          });
+          code.try(
+            () => {
+              code.line(_`JSON.parse(${dataVar});`);
+            },
+            () => {
+              genError(code, pathExprCode, 'contentMediaType', 'String must be valid JSON');
+            }
+          );
         }
       }
     }
@@ -1179,7 +1181,7 @@ export function generateContainsCheck(
     code.line(_`let ${countVar} = 0;`);
 
     const iVar = code.genVar('i');
-    code.for(_`let ${iVar} = 0`, _`${iVar} < ${dataVar}.length`, _`${iVar}++`, () => {
+    code.forArray(iVar, dataVar, () => {
       const itemAccess = indexAccess(dataVar, iVar);
 
       // Call the compiled contains validator (pass null for errors to skip collection)
@@ -1816,10 +1818,9 @@ export function generateItemsChecks(
       } else if (afterTupleSchema !== true) {
         // Validate each item after tuple
         const iVar = code.genVar('i');
-        code.for(
-          _`let ${iVar} = ${startIndex}`,
-          _`${iVar} < ${dataVar}.length`,
-          _`${iVar}++`,
+        code.forArray(
+          iVar,
+          dataVar,
           () => {
             const itemAccess = indexAccess(dataVar, iVar);
             const itemPathExpr = pathExprIndex(pathExprCode, iVar);
@@ -1833,7 +1834,8 @@ export function generateItemsChecks(
               ctx,
               dynamicScopeVar
             );
-          }
+          },
+          startIndex
         );
       }
     }
@@ -2095,7 +2097,7 @@ export function generateUnevaluatedItemsCheck(
   code.if(_`Array.isArray(${dataVar})`, () => {
     // Check each item against the tracker
     const iVar = code.genVar('i');
-    code.for(_`let ${iVar} = 0`, _`${iVar} < ${dataVar}.length`, _`${iVar}++`, () => {
+    code.forArray(iVar, dataVar, () => {
       const condition = evalTracker.isUnevaluatedItem(iVar);
       const itemPathExpr = pathExprIndex(pathExprCode, iVar);
 
