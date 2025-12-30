@@ -18,15 +18,13 @@ const VALIDATORS_FILE = path.join(BENCHMARK_DIR, 'validators.js');
 // Our validator adapter code to inject
 // Uses the refs object already built by the benchmark
 const OUR_VALIDATOR = `
-    {
-      name: "json-schema-ts",
-      setup: function(schema) {
-        const { compile } = require('../dist/jit/compiler.js');
-        return compile(schema, { remotes: refs });
-      },
-      test: function(instance, json, schema) {
-        return instance(json);
-      },
+   name: 'tjs',
+    setup: function (schema) {
+      const { schema: tjs } = require('../dist/index.js');
+      return tjs(schema, { remotes: refs, formatAssertion: false, coerce: false });
+    },
+    test: function (instance, json, schema) {
+      return instance(json);
     },`;
 
 async function main() {
@@ -35,7 +33,10 @@ async function main() {
   // Check if submodule is initialized
   if (!fs.existsSync(path.join(BENCHMARK_DIR, 'package.json'))) {
     console.log('Initializing git submodule...');
-    execSync('git submodule update --init --recursive', { cwd: path.join(__dirname, '..'), stdio: 'inherit' });
+    execSync('git submodule update --init --recursive', {
+      cwd: path.join(__dirname, '..'),
+      stdio: 'inherit',
+    });
   }
 
   // Check if our dist exists
@@ -62,10 +63,10 @@ async function main() {
   let validatorsContent = fs.readFileSync(VALIDATORS_FILE, 'utf8');
 
   // Check if already patched
-  if (validatorsContent.includes('json-schema-ts')) {
-    console.log('validators.js already patched with json-schema-ts');
+  if (validatorsContent.includes('tjs')) {
+    console.log('validators.js already patched with tjs');
   } else {
-    console.log('Patching validators.js to include json-schema-ts...');
+    console.log('Patching validators.js to include tjs...');
 
     // Find the validators array and insert our validator at the beginning
     // Look for the pattern "const validators = [" and insert after it

@@ -13,7 +13,6 @@ export const tjsAdapter: ValidatorAdapter = {
       formatAssertion: false,
       coerce: false,
     });
-    // Use direct callable for fast boolean-only validation
-    return (data: unknown) => !validator.validate(data).error;
+    return validator;
   },
 };

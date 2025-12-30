@@ -41,8 +41,12 @@ describe('coercion', () => {
     });
 
     it('coerces boolean to string', () => {
-      expect(StringSchema.validate(true)).toEqual({ value: 'true', error: undefined });
-      expect(StringSchema.validate(false)).toEqual({ value: 'false', error: undefined });
+      expect(StringSchema.validate(true)).toEqual({ valid: true, value: 'true', error: undefined });
+      expect(StringSchema.validate(false)).toEqual({
+        valid: true,
+        value: 'false',
+        error: undefined,
+      });
     });
 
     it('does not coerce null to string', () => {
@@ -285,8 +289,12 @@ describe('coercion', () => {
     });
 
     it('passes through valid booleans unchanged', () => {
-      expect(BooleanSchema.validate(true)).toEqual({ value: true, error: undefined });
-      expect(BooleanSchema.validate(false)).toEqual({ value: false, error: undefined });
+      expect(BooleanSchema.validate(true)).toEqual({ valid: true, value: true, error: undefined });
+      expect(BooleanSchema.validate(false)).toEqual({
+        valid: true,
+        value: false,
+        error: undefined,
+      });
     });
   });
 
@@ -394,9 +402,13 @@ describe('coercion', () => {
     it('coerces to first matching type in union', () => {
       const UnionSchema = schema({ type: ['string', 'number'] }, { coerce: true });
       // Already a string - no coercion needed
-      expect(UnionSchema.validate('hello')).toEqual({ value: 'hello', error: undefined });
+      expect(UnionSchema.validate('hello')).toEqual({
+        valid: true,
+        value: 'hello',
+        error: undefined,
+      });
       // Already a number - no coercion needed
-      expect(UnionSchema.validate(42)).toEqual({ value: 42, error: undefined });
+      expect(UnionSchema.validate(42)).toEqual({ valid: true, value: 42, error: undefined });
     });
 
     it('handles nullable types', () => {
@@ -448,8 +460,8 @@ describe('coercion', () => {
 
     it('coerces boolean const', () => {
       const TrueConst = schema({ const: true }, { coerce: true });
-      expect(TrueConst.validate('true')).toEqual({ value: true, error: undefined });
-      expect(TrueConst.validate('1')).toEqual({ value: true, error: undefined });
+      expect(TrueConst.validate('true')).toEqual({ valid: true, value: true, error: undefined });
+      expect(TrueConst.validate('1')).toEqual({ valid: true, value: true, error: undefined });
     });
 
     it('coerces string enum', () => {
@@ -849,9 +861,9 @@ describe('coercion', () => {
 
     it('handles zero string edge cases', () => {
       const NumberSchema = schema({ type: 'number' }, { coerce: true });
-      expect(NumberSchema.validate('0')).toEqual({ value: 0, error: undefined });
-      expect(NumberSchema.validate('-0')).toEqual({ value: -0, error: undefined });
-      expect(NumberSchema.validate('+0')).toEqual({ value: 0, error: undefined });
+      expect(NumberSchema.validate('0')).toEqual({ valid: true, value: 0, error: undefined });
+      expect(NumberSchema.validate('-0')).toEqual({ valid: true, value: -0, error: undefined });
+      expect(NumberSchema.validate('+0')).toEqual({ valid: true, value: 0, error: undefined });
     });
 
     it('handles prefixItems tuple coercion', () => {
