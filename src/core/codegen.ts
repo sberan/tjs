@@ -124,6 +124,22 @@ export class CodeBuilder {
   get indentLevel(): number {
     return this.#indent;
   }
+
+  /**
+   * Manually increase indentation
+   */
+  indent(): this {
+    this.#indent++;
+    return this;
+  }
+
+  /**
+   * Manually decrease indentation
+   */
+  dedent(): this {
+    this.#indent--;
+    return this;
+  }
 }
 
 /**
