@@ -47,6 +47,18 @@ export class Code {
   get isEmpty(): boolean {
     return this.#str === '';
   }
+
+  /**
+   * Create Code from a raw compile-time constant value.
+   * Use for numbers and booleans only.
+   * Throws if the value is not actually a number or boolean (defense against injection).
+   */
+  static raw(value: number | boolean): Code {
+    if (typeof value !== 'number' && typeof value !== 'boolean') {
+      throw new Error(`Code.raw() only accepts numbers and booleans, got ${typeof value}`);
+    }
+    return new Code(String(value));
+  }
 }
 
 /**

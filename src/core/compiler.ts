@@ -11,7 +11,6 @@ import {
   Code,
   Name,
   _,
-  escapeString,
   stringify,
   indexAccess,
   pathExpr,
@@ -531,7 +530,7 @@ export function generateStringChecks(
       code.line(_`const ${lenVar} = ucs2length(${dataVar});`);
 
       if (schema.minLength !== undefined) {
-        code.if(_`${lenVar} < ${new Code(String(schema.minLength))}`, () => {
+        code.if(_`${lenVar} < ${Code.raw(schema.minLength)}`, () => {
           genError(
             code,
             pathExprCode,
@@ -542,7 +541,7 @@ export function generateStringChecks(
       }
 
       if (schema.maxLength !== undefined) {
-        code.if(_`${lenVar} > ${new Code(String(schema.maxLength))}`, () => {
+        code.if(_`${lenVar} > ${Code.raw(schema.maxLength)}`, () => {
           genError(
             code,
             pathExprCode,
@@ -663,11 +662,11 @@ export function generateNumberChecks(
     if (schema.minimum !== undefined) {
       // In draft4, exclusiveMinimum is a boolean that modifies minimum
       if (schema.exclusiveMinimum === true) {
-        code.if(_`${dataVar} <= ${new Code(String(schema.minimum))}`, () => {
+        code.if(_`${dataVar} <= ${Code.raw(schema.minimum)}`, () => {
           genError(code, pathExprCode, 'minimum', `Value must be > ${schema.minimum}`);
         });
       } else {
-        code.if(_`${dataVar} < ${new Code(String(schema.minimum))}`, () => {
+        code.if(_`${dataVar} < ${Code.raw(schema.minimum)}`, () => {
           genError(code, pathExprCode, 'minimum', `Value must be >= ${schema.minimum}`);
         });
       }
@@ -677,11 +676,11 @@ export function generateNumberChecks(
     if (schema.maximum !== undefined) {
       // In draft4, exclusiveMaximum is a boolean that modifies maximum
       if (schema.exclusiveMaximum === true) {
-        code.if(_`${dataVar} >= ${new Code(String(schema.maximum))}`, () => {
+        code.if(_`${dataVar} >= ${Code.raw(schema.maximum)}`, () => {
           genError(code, pathExprCode, 'maximum', `Value must be < ${schema.maximum}`);
         });
       } else {
-        code.if(_`${dataVar} > ${new Code(String(schema.maximum))}`, () => {
+        code.if(_`${dataVar} > ${Code.raw(schema.maximum)}`, () => {
           genError(code, pathExprCode, 'maximum', `Value must be <= ${schema.maximum}`);
         });
       }
@@ -689,7 +688,7 @@ export function generateNumberChecks(
 
     // Handle exclusiveMinimum as number (draft 2020-12 form)
     if (typeof schema.exclusiveMinimum === 'number') {
-      code.if(_`${dataVar} <= ${new Code(String(schema.exclusiveMinimum))}`, () => {
+      code.if(_`${dataVar} <= ${Code.raw(schema.exclusiveMinimum)}`, () => {
         genError(
           code,
           pathExprCode,
@@ -701,7 +700,7 @@ export function generateNumberChecks(
 
     // Handle exclusiveMaximum as number (draft 2020-12 form)
     if (typeof schema.exclusiveMaximum === 'number') {
-      code.if(_`${dataVar} >= ${new Code(String(schema.exclusiveMaximum))}`, () => {
+      code.if(_`${dataVar} >= ${Code.raw(schema.exclusiveMaximum)}`, () => {
         genError(
           code,
           pathExprCode,
@@ -717,7 +716,7 @@ export function generateNumberChecks(
       // For integer multipleOf values, can use simpler modulo check
       if (Number.isInteger(multipleOf) && multipleOf >= 1) {
         // Fast path for integer multipleOf: simple modulo
-        code.if(_`${dataVar} % ${new Code(String(multipleOf))} !== 0`, () => {
+        code.if(_`${dataVar} % ${Code.raw(multipleOf)} !== 0`, () => {
           genError(
             code,
             pathExprCode,
@@ -727,7 +726,7 @@ export function generateNumberChecks(
         });
       } else {
         const divVar = code.genVar('div');
-        code.line(_`const ${divVar} = ${dataVar} / ${new Code(String(multipleOf))};`);
+        code.line(_`const ${divVar} = ${dataVar} / ${Code.raw(multipleOf)};`);
         code.if(_`!Number.isInteger(${divVar})`, () => {
           genError(
             code,
@@ -765,7 +764,7 @@ export function generateArrayChecks(
 
   const genChecks = () => {
     if (schema.minItems !== undefined) {
-      code.if(_`${dataVar}.length < ${new Code(String(schema.minItems))}`, () => {
+      code.if(_`${dataVar}.length < ${Code.raw(schema.minItems)}`, () => {
         genError(
           code,
           pathExprCode,
@@ -776,7 +775,7 @@ export function generateArrayChecks(
     }
 
     if (schema.maxItems !== undefined) {
-      code.if(_`${dataVar}.length > ${new Code(String(schema.maxItems))}`, () => {
+      code.if(_`${dataVar}.length > ${Code.raw(schema.maxItems)}`, () => {
         genError(
           code,
           pathExprCode,
@@ -865,7 +864,7 @@ export function generateObjectChecks(
       code.line(_`const propCount = Object.keys(${dataVar}).length;`);
 
       if (schema.minProperties !== undefined) {
-        code.if(_`propCount < ${new Code(String(schema.minProperties))}`, () => {
+        code.if(_`propCount < ${Code.raw(schema.minProperties)}`, () => {
           genError(
             code,
             pathExprCode,
@@ -876,7 +875,7 @@ export function generateObjectChecks(
       }
 
       if (schema.maxProperties !== undefined) {
-        code.if(_`propCount > ${new Code(String(schema.maxProperties))}`, () => {
+        code.if(_`propCount > ${Code.raw(schema.maxProperties)}`, () => {
           genError(
             code,
             pathExprCode,
@@ -1128,7 +1127,7 @@ export function generateContainsCheck(
       // All items match, so mark all as evaluated
       evalTracker?.markAllItems();
 
-      code.if(_`${dataVar}.length < ${new Code(String(minContains))}`, () => {
+      code.if(_`${dataVar}.length < ${Code.raw(minContains)}`, () => {
         genError(
           code,
           pathExprCode,
@@ -1137,7 +1136,7 @@ export function generateContainsCheck(
         );
       });
       if (maxContains !== undefined) {
-        code.if(_`${dataVar}.length > ${new Code(String(maxContains))}`, () => {
+        code.if(_`${dataVar}.length > ${Code.raw(maxContains)}`, () => {
           genError(
             code,
             pathExprCode,
@@ -1193,13 +1192,13 @@ export function generateContainsCheck(
       // Early exit if we've found enough and no maxContains
       // But only if we're not tracking items (need to find all matches for tracking)
       if (maxContains === undefined && !evalTracker?.trackingItems) {
-        code.if(_`${countVar} >= ${new Code(String(minContains))}`, () => {
+        code.if(_`${countVar} >= ${Code.raw(minContains)}`, () => {
           code.line(_`break;`);
         });
       }
     });
 
-    code.if(_`${countVar} < ${new Code(String(minContains))}`, () => {
+    code.if(_`${countVar} < ${Code.raw(minContains)}`, () => {
       genError(
         code,
         pathExprCode,
@@ -1209,7 +1208,7 @@ export function generateContainsCheck(
     });
 
     if (maxContains !== undefined) {
-      code.if(_`${countVar} > ${new Code(String(maxContains))}`, () => {
+      code.if(_`${countVar} > ${Code.raw(maxContains)}`, () => {
         genError(
           code,
           pathExprCode,
@@ -1241,17 +1240,15 @@ export function generateDependentRequiredCheck(
     _`typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
     () => {
       for (const [prop, requiredProps] of deps) {
-        const propStr = escapeString(prop);
-        code.if(_`'${new Code(propStr)}' in ${dataVar}`, () => {
+        code.if(_`${prop} in ${dataVar}`, () => {
           for (const reqProp of requiredProps) {
-            const reqPropStr = escapeString(reqProp);
             const reqPathExpr = pathExpr(pathExprCode, reqProp);
-            code.if(_`!('${new Code(reqPropStr)}' in ${dataVar})`, () => {
+            code.if(_`!(${reqProp} in ${dataVar})`, () => {
               genError(
                 code,
                 reqPathExpr,
                 'dependentRequired',
-                `Property required when ${propStr} is present`
+                `Property required when ${prop} is present`
               );
             });
           }
@@ -1279,8 +1276,7 @@ export function generateDependentSchemasCheck(
     _`typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
     () => {
       for (const [prop, depSchema] of Object.entries(schema.dependentSchemas!)) {
-        const propStr = escapeString(prop);
-        code.if(_`'${new Code(propStr)}' in ${dataVar}`, () => {
+        code.if(_`${prop} in ${dataVar}`, () => {
           generateSchemaValidator(
             code,
             depSchema,
@@ -1330,19 +1326,17 @@ export function generateDependenciesCheck(
     _`typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar})`,
     () => {
       for (const [prop, dep] of nonTrivialDeps) {
-        const propStr = escapeString(prop);
-        code.if(_`'${new Code(propStr)}' in ${dataVar}`, () => {
+        code.if(_`${prop} in ${dataVar}`, () => {
           if (Array.isArray(dep)) {
             // Array of required property names
             for (const reqProp of dep) {
-              const reqPropStr = escapeString(reqProp);
               const reqPathExpr = pathExpr(pathExprCode, reqProp);
-              code.if(_`!('${new Code(reqPropStr)}' in ${dataVar})`, () => {
+              code.if(_`!(${reqProp} in ${dataVar})`, () => {
                 genError(
                   code,
                   reqPathExpr,
                   'dependencies',
-                  `Property required when ${propStr} is present`
+                  `Property required when ${prop} is present`
                 );
               });
             }
@@ -1791,7 +1785,7 @@ export function generateItemsChecks(
     // Only validate non-trivial schemas
     for (const { schema: itemSchema, index: i } of nonTrivialTupleSchemas) {
       const itemPathExpr = pathExpr(pathExprCode, i);
-      code.if(_`${dataVar}.length > ${new Code(String(i))}`, () => {
+      code.if(_`${dataVar}.length > ${Code.raw(i)}`, () => {
         const itemAccess = indexAccess(dataVar, i);
         const itemVar = code.genVar('item');
         code.line(_`const ${itemVar} = ${itemAccess};`);
@@ -1806,7 +1800,7 @@ export function generateItemsChecks(
       if (afterTupleSchema === false) {
         // No additional items allowed
         if (startIndex > 0) {
-          code.if(_`${dataVar}.length > ${new Code(String(startIndex))}`, () => {
+          code.if(_`${dataVar}.length > ${Code.raw(startIndex)}`, () => {
             genError(
               code,
               pathExprCode,
@@ -1823,7 +1817,7 @@ export function generateItemsChecks(
         // Validate each item after tuple
         const iVar = code.genVar('i');
         code.for(
-          _`let ${iVar} = ${new Code(String(startIndex))}`,
+          _`let ${iVar} = ${Code.raw(startIndex)}`,
           _`${iVar} < ${dataVar}.length`,
           _`${iVar}++`,
           () => {
@@ -1888,7 +1882,6 @@ export function generateFormatCheck(
   if (!ctx.options.formatAssertion) return;
 
   const format = schema.format;
-  const escapedFormat = escapeString(format);
 
   // Check if schema already has type: 'string' (no need to re-check type)
   const hasStringType = schema.type === 'string';
@@ -1897,8 +1890,8 @@ export function generateFormatCheck(
   const isKnownFormat = KNOWN_FORMATS.has(format);
 
   const formatCheck = isKnownFormat
-    ? _`!formatValidators['${new Code(escapedFormat)}'](${dataVar})`
-    : _`formatValidators['${new Code(escapedFormat)}'] && !formatValidators['${new Code(escapedFormat)}'](${dataVar})`;
+    ? _`!formatValidators[${format}](${dataVar})`
+    : _`formatValidators[${format}] && !formatValidators[${format}](${dataVar})`;
 
   const genFormatCheck = () => {
     code.if(formatCheck, () => {
