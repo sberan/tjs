@@ -22,13 +22,13 @@ export type CoercionOptions =
  * Options for schema compilation
  */
 export interface CompileOptions {
-  /** Whether format validation is an assertion (default: true) */
+  /** Whether format validation is an assertion (default: auto-detected from dialect) */
   formatAssertion?: boolean;
   /**
    * Whether content validation (contentMediaType, contentEncoding) is an assertion.
    * In draft-07, content is optionally validating.
    * In draft 2020-12, content is annotation-only by default.
-   * Default: auto-detected from $schema (true for draft-07 and earlier, false for 2020-12+)
+   * Default: false
    */
   contentAssertion?: boolean;
   /** Remote schemas for $ref resolution */
@@ -36,7 +36,7 @@ export interface CompileOptions {
   /**
    * Legacy $ref behavior (draft-07 and earlier): $ref overrides all sibling keywords.
    * When true, sibling keywords like maxItems are ignored when $ref is present.
-   * Default: true (for backwards compatibility with older drafts)
+   * Default: auto-detected from dialect
    */
   legacyRef?: boolean;
   /**
@@ -45,6 +45,12 @@ export interface CompileOptions {
    * Default: false
    */
   coerce?: CoercionOptions;
+  /**
+   * Default meta-schema URI to use when schema doesn't have $schema.
+   * This determines dialect-specific behavior (prefixItems, $ref siblings, etc.)
+   * Default: 'https://json-schema.org/draft/2020-12/schema'
+   */
+  defaultMeta?: string;
 }
 
 /**
@@ -62,20 +68,24 @@ export const VOCABULARIES = {
 } as const;
 
 /**
+ * Feature flags for JSON Schema dialect capabilities.
+ */
+export type SchemaFeature =
+  | 'prefixItems' // prefixItems keyword (2020-12+)
+  | 'modernRef' // $ref can have siblings (2019-09+)
+  | 'unevaluated' // unevaluatedProperties/Items (2019-09+)
+  | 'formatAssertion' // format validates by default (draft-07 and earlier)
+  | 'legacyRef'; // $ref overrides siblings (draft-07 and earlier)
+
+/**
  * Check if a schema dialect supports a specific feature.
  * This is based on the $schema URI of the schema.
  *
- * @param schemaUri - The $schema URI (or undefined if not specified)
+ * @param schemaUri - The $schema URI
  * @param feature - The feature to check for
- * @returns true if the feature is supported
+ * @returns true if the feature is supported/enabled by default for this dialect
  */
-export function supportsFeature(
-  schemaUri: string | undefined,
-  feature: 'prefixItems' | 'modernRef' | 'unevaluated'
-): boolean {
-  // If no $schema specified, assume latest draft (supports all features)
-  if (!schemaUri) return true;
-
+export function supportsFeature(schemaUri: string, feature: SchemaFeature): boolean {
   // Check for draft 2020-12 and later
   const isModernDraft =
     schemaUri.includes('2020-12') ||
@@ -87,6 +97,9 @@ export function supportsFeature(
 
   // Check for draft 2019-09
   const is2019 = schemaUri.includes('2019-09');
+
+  // Legacy drafts: draft-07 and earlier
+  const isLegacy = !isModernDraft && !is2019;
 
   switch (feature) {
     case 'prefixItems':
@@ -100,6 +113,16 @@ export function supportsFeature(
     case 'unevaluated':
       // unevaluatedProperties/unevaluatedItems introduced in draft 2019-09
       return isModernDraft || is2019;
+
+    case 'formatAssertion':
+      // In draft 2020-12 and 2019-09, format is annotation-only by default
+      // In draft-07 and earlier, format validates by default
+      return isLegacy;
+
+    case 'legacyRef':
+      // In draft-07 and earlier, $ref overrides all sibling keywords
+      // In 2019-09+, $ref can coexist with siblings
+      return isLegacy;
 
     default:
       return true;
@@ -159,45 +182,20 @@ export class CompileContext {
   constructor(rootSchema: JsonSchema, options: CompileOptions = {}) {
     this.#rootSchema = rootSchema;
 
-    // Auto-detect formatAssertion from $schema if not explicitly set
-    // In draft 2020-12 and 2019-09, format is annotation-only by default
-    let formatAssertion = options.formatAssertion;
-    if (formatAssertion === undefined) {
-      const schemaUri =
-        typeof rootSchema === 'object' && rootSchema !== null ? rootSchema.$schema : undefined;
-      if (
-        schemaUri === 'https://json-schema.org/draft/2020-12/schema' ||
-        schemaUri === 'https://json-schema.org/draft/2019-09/schema'
-      ) {
-        formatAssertion = false;
-      } else {
-        formatAssertion = true;
-      }
-    }
-
-    // Auto-detect legacyRef from $schema if not explicitly set
-    // In draft 2020-12 and 2019-09, $ref can have sibling keywords
-    // In draft-07 and earlier, $ref overrides all siblings (legacy behavior)
-    let legacyRef = options.legacyRef;
-    if (legacyRef === undefined) {
-      const schemaUri =
-        typeof rootSchema === 'object' && rootSchema !== null ? rootSchema.$schema : undefined;
-      if (
-        schemaUri === 'https://json-schema.org/draft/2020-12/schema' ||
-        schemaUri === 'https://json-schema.org/draft/2019-09/schema'
-      ) {
-        legacyRef = false;
-      } else {
-        legacyRef = true;
-      }
-    }
+    // Get $schema URI for auto-detection, falling back to defaultMeta
+    const defaultMeta = options.defaultMeta ?? 'https://json-schema.org/draft/2020-12/schema';
+    const schemaUri =
+      (typeof rootSchema === 'object' && rootSchema !== null ? rootSchema.$schema : undefined) ??
+      defaultMeta;
 
     this.options = {
-      formatAssertion,
+      // Auto-detect from dialect if not explicitly set
+      formatAssertion: options.formatAssertion ?? supportsFeature(schemaUri, 'formatAssertion'),
       contentAssertion: options.contentAssertion ?? false,
       remotes: options.remotes ?? {},
-      legacyRef,
+      legacyRef: options.legacyRef ?? supportsFeature(schemaUri, 'legacyRef'),
       coerce: options.coerce ?? false,
+      defaultMeta,
     };
 
     // Register remote schemas

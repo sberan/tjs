@@ -23,7 +23,8 @@ export interface LoadRemotesOptions {
 }
 
 /**
- * Collect all external $ref URIs from a schema
+ * Collect all external $ref URIs from a schema.
+ * Recursively walks all nested objects and arrays to find $ref properties.
  */
 function collectExternalRefs(
   schema: JsonSchema,
@@ -73,36 +74,18 @@ function collectExternalRefs(
     }
   }
 
-  // Recurse into subschemas
-  const subschemas: (JsonSchema | undefined)[] = [
-    ...(schema.$defs ? Object.values(schema.$defs) : []),
-    ...(schema.definitions ? Object.values(schema.definitions) : []),
-    ...(schema.properties ? Object.values(schema.properties) : []),
-    ...(schema.prefixItems ?? []),
-    ...(schema.anyOf ?? []),
-    ...(schema.oneOf ?? []),
-    ...(schema.allOf ?? []),
-    ...(Array.isArray(schema.items) ? schema.items : schema.items ? [schema.items] : []),
-    schema.additionalItems,
-    schema.additionalProperties,
-    schema.unevaluatedProperties,
-    schema.unevaluatedItems,
-    schema.not,
-    schema.if,
-    schema.then,
-    schema.else,
-    schema.contains,
-    schema.propertyNames,
-    ...(schema.dependentSchemas ? Object.values(schema.dependentSchemas) : []),
-    ...(schema.dependencies
-      ? Object.values(schema.dependencies).filter((v): v is JsonSchema => !Array.isArray(v))
-      : []),
-    ...(schema.patternProperties ? Object.values(schema.patternProperties) : []),
-  ];
-
-  for (const sub of subschemas) {
-    if (sub !== undefined) {
-      collectExternalRefs(sub, currentBase, collected, visited);
+  // Recursively walk all values - no need to enumerate keywords
+  for (const value of Object.values(schema)) {
+    if (Array.isArray(value)) {
+      // Array of potential schemas (anyOf, oneOf, allOf, prefixItems, etc.)
+      for (const item of value) {
+        if (typeof item === 'object' && item !== null) {
+          collectExternalRefs(item as JsonSchema, currentBase, collected, visited);
+        }
+      }
+    } else if (typeof value === 'object' && value !== null) {
+      // Could be a schema or an object containing schemas (properties, $defs, etc.)
+      collectExternalRefs(value as JsonSchema, currentBase, collected, visited);
     }
   }
 }
