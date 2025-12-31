@@ -121,12 +121,119 @@ function validateDateTime(s: string): boolean {
 }
 
 function validateDuration(s: string): boolean {
-  const m = FORMAT_REGEX.durationBasic.exec(s);
-  if (!m) return false;
+  // ISO 8601 duration: P[n]Y[n]M[n]W[n]DT[n]H[n]M[n]S
+  // Must start with P
+  const len = s.length;
+  if (len === 0 || s.charCodeAt(0) !== 80) return false; // P = 80
+
+  let i = 1;
+  let hasComponent = false;
+  let hasWeek = false;
+  let hasOther = false;
+  let inTime = false;
+  // Track order: Y=0, M=1, W=2, D=3 for date; H=0, M=1, S=2 for time
+  let lastDateOrder = -1;
+  let lastTimeOrder = -1;
+
+  while (i < len) {
+    const c = s.charCodeAt(i);
+
+    // Check for T (time separator)
+    if (c === 84) {
+      // T = 84
+      if (inTime) return false; // Multiple T
+      inTime = true;
+      i++;
+      // Must have at least one digit after T
+      if (i >= len) return false;
+      const next = s.charCodeAt(i);
+      if (next < 48 || next > 57) return false; // Must be digit
+      continue;
+    }
+
+    // Parse number
+    if (c < 48 || c > 57) return false; // Must be digit
+    i++;
+
+    // Skip remaining digits and optional decimal point
+    while (i < len) {
+      const d = s.charCodeAt(i);
+      if (d >= 48 && d <= 57) {
+        // 0-9
+        i++;
+      } else if (d === 46) {
+        // . = 46
+        i++;
+        // After decimal, must have digits
+        if (i >= len) return false;
+        const afterDot = s.charCodeAt(i);
+        if (afterDot < 48 || afterDot > 57) return false;
+        while (i < len && s.charCodeAt(i) >= 48 && s.charCodeAt(i) <= 57) i++;
+        break;
+      } else {
+        break;
+      }
+    }
+
+    // Must have designator
+    if (i >= len) return false;
+    const designator = s.charCodeAt(i);
+
+    if (inTime) {
+      // Time components: H, M, S (must be in order)
+      let order: number;
+      if (designator === 72) {
+        // H=72
+        order = 0;
+      } else if (designator === 77) {
+        // M=77
+        order = 1;
+      } else if (designator === 83) {
+        // S=83
+        order = 2;
+      } else {
+        return false;
+      }
+      // Check order
+      if (order <= lastTimeOrder) return false;
+      lastTimeOrder = order;
+      hasComponent = true;
+      hasOther = true;
+      i++;
+    } else {
+      // Date components: Y, M, W, D (must be in order)
+      let order: number;
+      if (designator === 89) {
+        // Y=89
+        order = 0;
+      } else if (designator === 77) {
+        // M=77
+        order = 1;
+      } else if (designator === 87) {
+        // W=87
+        order = 2;
+        hasWeek = true;
+      } else if (designator === 68) {
+        // D=68
+        order = 3;
+      } else {
+        return false;
+      }
+      // Check order
+      if (order <= lastDateOrder) return false;
+      lastDateOrder = order;
+      hasComponent = true;
+      if (designator !== 87) hasOther = true;
+      i++;
+    }
+  }
+
   // Must have at least one component
-  if (!m[1] && !m[2] && !m[3] && !m[4] && !m[5]) return false;
-  // Weeks cannot be combined with other date/time components
-  if (m[3] && (m[1] || m[2] || m[4] || m[5])) return false;
+  if (!hasComponent) return false;
+
+  // Weeks cannot be combined with other components
+  if (hasWeek && hasOther) return false;
+
   return true;
 }
 
