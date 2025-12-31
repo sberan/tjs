@@ -1505,9 +1505,11 @@ export function generateRefCheck(
 
   // Optimization: inline simple type-only schemas to eliminate function call overhead
   // This is especially beneficial for nested $ref chains that resolve to simple types
+  // Check this first, even before checking $id, because simple types don't need scope management
   const simpleType = getSimpleType(refSchema);
   if (simpleType && !evalTracker) {
-    // Inline the type check directly
+    // Inline the type check directly - safe even if schema has $id
+    // because type checks don't reference other parts of the schema
     const typeCheck = getTypeCheck(dataVar, simpleType);
     code.if(not(typeCheck), () => {
       genError(code, pathExprCode, 'type', `Expected ${simpleType}`);
@@ -1522,6 +1524,7 @@ export function generateRefCheck(
   // 2. No eval tracker (property tracking requires shared state)
   // 3. Schema is not already compiled (avoid duplicate code)
   // 4. Schema doesn't have $id (which would require scope management)
+  // Note: simple type-only schemas are already inlined above, even with $id
   if (
     !dynamicScopeVar &&
     !evalTracker &&
