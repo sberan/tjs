@@ -7,6 +7,14 @@
  * - Uses benchmark.js for statistical accuracy
  * - Tracks compliance (pass/fail) for each validator
  * - Shows top 10 slowest tests by absolute ops/s difference
+ *
+ * Usage:
+ *   npm run bench:compare [drafts...] [--filter <regex>]
+ *
+ * Examples:
+ *   npm run bench:compare draft7 --filter idn       # Only idn-* formats
+ *   npm run bench:compare --filter "hostname|email" # hostname or email
+ *   npm run bench:compare:all --filter uri          # All drafts, uri formats
  */
 
 import * as fs from 'fs';
@@ -273,11 +281,21 @@ function benchmarkIndividualSuites(validSuites: CompiledTestSuite[], draft: stri
 }
 
 // Run benchmark for a draft
-function runBenchmark(draft: Draft, allSuitePerfs: SuitePerf[]): Promise<DraftResult> {
+function runBenchmark(
+  draft: Draft,
+  allSuitePerfs: SuitePerf[],
+  filter: RegExp | null = null
+): Promise<DraftResult> {
   return new Promise((resolve) => {
     console.log(`\nLoading ${draft}...`);
     const remotes = loadRemoteSchemas(draft);
-    const testSuites = loadTestSuites(draft);
+    let testSuites = loadTestSuites(draft);
+
+    // Apply filter if provided
+    if (filter) {
+      testSuites = testSuites.filter((s) => filter.test(s.description));
+      console.log(`Filtered to ${testSuites.length} schemas matching ${filter}`);
+    }
 
     console.log(`Compiling ${testSuites.length} schemas...`);
     const compiled = compileTestSuites(testSuites, draft, remotes);
@@ -400,23 +418,34 @@ function formatOps(n: number): string {
 async function main() {
   const args = process.argv.slice(2);
 
-  // Parse drafts
+  // Parse arguments
   const drafts: Draft[] = [];
-  for (const arg of args) {
-    if (['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'].includes(arg)) {
+  let filter: RegExp | null = null;
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--filter' || arg === '-f') {
+      const pattern = args[++i];
+      if (pattern) {
+        filter = new RegExp(pattern, 'i');
+      }
+    } else if (['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'].includes(arg)) {
       drafts.push(arg as Draft);
     }
   }
   if (drafts.length === 0) drafts.push('draft2020-12');
 
   console.log('tjs vs ajv Benchmark Comparison');
-  console.log('='.repeat(80));
+  if (filter) {
+    console.log(`Filter: ${filter}`);
+  }
+  console.log('='.repeat(100));
 
   const results: DraftResult[] = [];
   const allSuitePerfs: SuitePerf[] = [];
 
   for (const draft of drafts) {
-    const result = await runBenchmark(draft, allSuitePerfs);
+    const result = await runBenchmark(draft, allSuitePerfs, filter);
     results.push(result);
   }
 
