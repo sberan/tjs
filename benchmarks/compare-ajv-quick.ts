@@ -406,7 +406,7 @@ function runBenchmark(
         ajvCompliance = checkCompliance(compiled, (s) => s.ajvValidator);
       } else {
         console.log(`  Filtering to ${jsbTests.size} exact JSB benchmark tests...`);
-        validSuites = [];
+        const jsbFilteredSuites: CompiledTestSuite[] = [];
         for (const suite of compiledSuites) {
           // Filter tests within this suite to only those in the JSB benchmark
           const filteredTests = suite.tests.filter((test) => {
@@ -414,12 +414,44 @@ function runBenchmark(
             return jsbTests.has(testName);
           });
           if (filteredTests.length > 0) {
-            validSuites.push({ ...suite, tests: filteredTests });
+            jsbFilteredSuites.push({ ...suite, tests: filteredTests });
           }
         }
         // Check compliance only on JSB-filtered tests
-        tjsCompliance = checkCompliance(validSuites, (s) => s.tjsValidator, showFailures);
-        ajvCompliance = checkCompliance(validSuites, (s) => s.ajvValidator);
+        tjsCompliance = checkCompliance(jsbFilteredSuites, (s) => s.tjsValidator, showFailures);
+        ajvCompliance = checkCompliance(jsbFilteredSuites, (s) => s.ajvValidator);
+
+        // Exclude entire suites where EITHER validator fails ANY test
+        // This ensures we only compare apples-to-apples (both doing real work)
+        validSuites = [];
+        let excludedSuites = 0;
+        for (const suite of jsbFilteredSuites) {
+          let suiteValid = true;
+          for (const test of suite.tests) {
+            try {
+              const tjsResult = suite.tjsValidator!(test.data);
+              const ajvResult = suite.ajvValidator!(test.data);
+              // Exclude if either validator gets wrong result
+              if (tjsResult !== test.valid || ajvResult !== test.valid) {
+                suiteValid = false;
+                break;
+              }
+            } catch {
+              suiteValid = false;
+              break;
+            }
+          }
+          if (suiteValid) {
+            validSuites.push(suite);
+          } else {
+            excludedSuites++;
+          }
+        }
+        if (excludedSuites > 0) {
+          console.log(
+            `  Excluded ${excludedSuites} suites where either validator fails (comparing only fair tests)`
+          );
+        }
       }
     } else {
       // Check compliance on all tests first
