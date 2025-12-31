@@ -20,7 +20,6 @@ const UNIMPLEMENTED_KEYWORDS = [
 // Optional test files that are skipped (these tests fail across all validators in json-schema-benchmark)
 // See: json-schema-benchmark/draft7/reports/tjs.md "All validators fail this test"
 const SKIPPED_OPTIONAL_FILES: string[] = [
-  'float-overflow', // Optional overflow handling for large floats
   'zeroTerminatedFloats', // Language-specific numeric representation (1.0 vs 1)
 ];
 

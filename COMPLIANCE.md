@@ -3,9 +3,9 @@
 ## Summary
 
 - **Total Tests**: 1990
-- **Passed**: 1986 (99.8%)
+- **Passed**: 1983 (99.6%)
 - **Failed**: 0
-- **Skipped**: 4
+- **Skipped**: 7
 
 ## By Keyword
 
@@ -35,9 +35,9 @@
 | enum | 45 | 0 | 0 | 100% |
 | exclusiveMaximum | 4 | 0 | 0 | 100% |
 | exclusiveMinimum | 4 | 0 | 0 | 100% |
-| float-overflow | 0 | 0 | 1 | N/A |
+| float-overflow | 1 | 0 | 0 | 100% |
 | format | 133 | 0 | 0 | 100% |
-| format-assertion | 4 | 0 | 0 | 100% |
+| format-assertion | 0 | 0 | 4 | N/A |
 | hostname | 61 | 0 | 0 | 100% |
 | id | 3 | 0 | 0 | 100% |
 | idn-email | 10 | 0 | 0 | 100% |
