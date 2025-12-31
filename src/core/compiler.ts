@@ -21,7 +21,6 @@ import {
   not,
 } from './codegen.js';
 import { CompileContext, VOCABULARIES, supportsFeature, type CompileOptions } from './context.js';
-import { EvalTracker } from './eval-tracker.js';
 import { createFormatValidators } from './keywords/format.js';
 import {
   genError,
@@ -33,8 +32,6 @@ import {
   isNoOpSchema,
   getSimpleType,
 } from './keywords/utils.js';
-
-export type { RuntimeTracker } from './eval-tracker.js';
 
 /**
  * Compile error type for internal use (AJV-compatible format)
@@ -98,41 +95,27 @@ export function compile(schema: JsonSchema, options: CompileOptions = {}): Valid
   generateSchemaValidator(code, schema, dataVar, pathVar, ctx, dynamicScopeVar);
 
   // Process any queued schemas (from $ref)
-  // Each compiled function takes an optional tracker parameter for eval tracking
-  // The tracker parameter is used to mark evaluated properties/items
   let queued: { schema: JsonSchema; funcName: Name } | undefined;
   while ((queued = ctx.nextToCompile())) {
     const q = queued; // Capture for closure
     const qFuncName = q.funcName;
     code.blank();
     if (hasDynamicFeatures) {
-      // Function signature: (data, errors, path, dynamicScope, tracker?)
-      code.block(_`function ${qFuncName}(data, errors, path, dynamicScope, tracker)`, () => {
-        // Create a "runtime" tracker that generates conditional marking code
-        // The code checks `if (tracker)` before each mark operation
-        const trackerObj = new EvalTracker(code, 'tracker', {
-          trackProps: true,
-          trackItems: true,
-          isRuntimeOptional: true,
-        });
+      // Function signature: (data, errors, path, dynamicScope)
+      code.block(_`function ${qFuncName}(data, errors, path, dynamicScope)`, () => {
         const qDataVar = new Name('data');
         const qPathVar = new Name('path');
         const qDynamicScope = new Name('dynamicScope');
-        generateSchemaValidator(code, q.schema, qDataVar, qPathVar, ctx, qDynamicScope, trackerObj);
+        generateSchemaValidator(code, q.schema, qDataVar, qPathVar, ctx, qDynamicScope);
         code.line(_`return true;`);
       });
     } else {
       // In legacy mode, skip dynamicScope parameter for faster function calls
-      // Function signature: (data, errors, path, tracker?)
-      code.block(_`function ${qFuncName}(data, errors, path, tracker)`, () => {
-        const trackerObj = new EvalTracker(code, 'tracker', {
-          trackProps: true,
-          trackItems: true,
-          isRuntimeOptional: true,
-        });
+      // Function signature: (data, errors, path)
+      code.block(_`function ${qFuncName}(data, errors, path)`, () => {
         const qDataVar = new Name('data');
         const qPathVar = new Name('path');
-        generateSchemaValidator(code, q.schema, qDataVar, qPathVar, ctx, undefined, trackerObj);
+        generateSchemaValidator(code, q.schema, qDataVar, qPathVar, ctx);
         code.line(_`return true;`);
       });
     }
@@ -171,295 +154,9 @@ return true;
 }
 
 /**
- * Check if a schema (or any of its subschemas) has a contains keyword.
- * Used to determine if we need Set-based item tracking for unevaluatedItems.
- */
-function schemaHasContains(
-  schema: JsonSchema,
-  ctx: CompileContext,
-  visited = new Set<JsonSchema>()
-): boolean {
-  if (typeof schema !== 'object' || schema === null) return false;
-  if (visited.has(schema)) return false;
-  visited.add(schema);
-
-  if (schema.contains !== undefined) return true;
-
-  // Check all subschemas
-  if (schema.allOf) {
-    for (const sub of schema.allOf) {
-      if (schemaHasContains(sub, ctx, visited)) return true;
-    }
-  }
-  if (schema.anyOf) {
-    for (const sub of schema.anyOf) {
-      if (schemaHasContains(sub, ctx, visited)) return true;
-    }
-  }
-  if (schema.oneOf) {
-    for (const sub of schema.oneOf) {
-      if (schemaHasContains(sub, ctx, visited)) return true;
-    }
-  }
-  if (schema.if && typeof schema.if === 'object' && schemaHasContains(schema.if, ctx, visited))
-    return true;
-  if (
-    schema.then &&
-    typeof schema.then === 'object' &&
-    schemaHasContains(schema.then, ctx, visited)
-  )
-    return true;
-  if (
-    schema.else &&
-    typeof schema.else === 'object' &&
-    schemaHasContains(schema.else, ctx, visited)
-  )
-    return true;
-
-  // Follow $ref
-  if (schema.$ref) {
-    const refSchema = ctx.resolveRef(schema.$ref, schema);
-    if (refSchema && schemaHasContains(refSchema, ctx, visited)) return true;
-  }
-
-  return false;
-}
-
-/**
- * Check if a schema tree contains patternProperties anywhere.
- * Used to optimize tracker initialization - if no patterns exist, we can skip pattern tracking.
- */
-function schemaHasPatternProperties(
-  schema: JsonSchema,
-  ctx: CompileContext,
-  visited = new Set<JsonSchema>()
-): boolean {
-  if (typeof schema !== 'object' || schema === null) return false;
-  if (visited.has(schema)) return false;
-  visited.add(schema);
-
-  // Direct check
-  if (schema.patternProperties !== undefined) return true;
-
-  // Check composition keywords (these all execute their branches)
-  if (schema.allOf) {
-    for (const sub of schema.allOf) {
-      if (schemaHasPatternProperties(sub, ctx, visited)) return true;
-    }
-  }
-  if (schema.anyOf) {
-    for (const sub of schema.anyOf) {
-      if (schemaHasPatternProperties(sub, ctx, visited)) return true;
-    }
-  }
-  if (schema.oneOf) {
-    for (const sub of schema.oneOf) {
-      if (schemaHasPatternProperties(sub, ctx, visited)) return true;
-    }
-  }
-  if (schema.not && schemaHasPatternProperties(schema.not, ctx, visited)) return true;
-  if (schema.if && schemaHasPatternProperties(schema.if, ctx, visited)) return true;
-  if (schema.then && schemaHasPatternProperties(schema.then, ctx, visited)) return true;
-  if (schema.else && schemaHasPatternProperties(schema.else, ctx, visited)) return true;
-
-  // Check properties (object validation keywords)
-  if (schema.properties) {
-    for (const propSchema of Object.values(schema.properties)) {
-      if (schemaHasPatternProperties(propSchema, ctx, visited)) return true;
-    }
-  }
-  if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
-    if (schemaHasPatternProperties(schema.additionalProperties, ctx, visited)) return true;
-  }
-  if (schema.unevaluatedProperties && typeof schema.unevaluatedProperties === 'object') {
-    if (schemaHasPatternProperties(schema.unevaluatedProperties, ctx, visited)) return true;
-  }
-  if (schema.dependentSchemas) {
-    for (const depSchema of Object.values(schema.dependentSchemas)) {
-      if (schemaHasPatternProperties(depSchema, ctx, visited)) return true;
-    }
-  }
-
-  // Check array keywords
-  if (schema.prefixItems) {
-    for (const itemSchema of schema.prefixItems) {
-      if (schemaHasPatternProperties(itemSchema, ctx, visited)) return true;
-    }
-  }
-  if (schema.items && typeof schema.items === 'object' && !Array.isArray(schema.items)) {
-    if (schemaHasPatternProperties(schema.items as JsonSchema, ctx, visited)) return true;
-  }
-  if (schema.contains && typeof schema.contains === 'object') {
-    if (schemaHasPatternProperties(schema.contains, ctx, visited)) return true;
-  }
-  if (schema.unevaluatedItems && typeof schema.unevaluatedItems === 'object') {
-    if (schemaHasPatternProperties(schema.unevaluatedItems, ctx, visited)) return true;
-  }
-
-  // Follow $ref
-  if (schema.$ref) {
-    const refSchema = ctx.resolveRef(schema.$ref, schema);
-    if (refSchema && schemaHasPatternProperties(refSchema, ctx, visited)) return true;
-  }
-
-  return false;
-}
-
-/**
- * Check if a schema will mark all properties as evaluated.
- * This happens when:
- * - additionalProperties is present (any value)
- * - unevaluatedProperties: true is present
- * - allOf contains a schema that marks all properties
- */
-function schemaMarksAllPropsEvaluated(
-  schema: JsonSchema,
-  ctx: CompileContext,
-  visited = new Set<JsonSchema>()
-): boolean {
-  if (typeof schema !== 'object' || schema === null) return false;
-  if (visited.has(schema)) return false;
-  visited.add(schema);
-
-  // Direct markers
-  if (schema.additionalProperties !== undefined) return true;
-  if (schema.unevaluatedProperties === true) return true;
-
-  // Check allOf - ALL branches execute, so if ANY marks all props, all props are marked
-  if (schema.allOf) {
-    for (const sub of schema.allOf) {
-      if (schemaMarksAllPropsEvaluated(sub, ctx, visited)) return true;
-    }
-  }
-
-  // Follow $ref
-  if (schema.$ref) {
-    const refSchema = ctx.resolveRef(schema.$ref, schema);
-    if (refSchema && schemaMarksAllPropsEvaluated(refSchema, ctx, visited)) return true;
-  }
-
-  return false;
-}
-
-/**
- * Check if a schema can use static property checking for unevaluatedProperties.
- * Returns the list of statically known property names if optimization is possible,
- * or undefined if we need dynamic runtime tracking.
- *
- * Static optimization is possible when:
- * - All evaluated properties are known at compile time (no dynamic branching)
- * - No patternProperties (would require regex matching)
- * - No oneOf/anyOf (would have dynamic property sets based on which branch matches)
- * - No if/then/else (conditional property evaluation)
- * - No dependentSchemas (conditional property evaluation based on presence)
- * - No nested unevaluatedProperties (would require bubbling)
- * - No $dynamicRef (dynamic resolution)
- * - No additionalProperties (already marks all props as evaluated, but caller handles this)
- */
-function collectStaticEvaluatedProps(
-  schema: JsonSchema,
-  ctx: CompileContext,
-  visited = new Set<JsonSchema>()
-): Set<string> | undefined {
-  if (typeof schema !== 'object' || schema === null) return new Set();
-  if (visited.has(schema)) return new Set();
-  visited.add(schema);
-
-  // Dynamic branching keywords - can't use static optimization
-  if (schema.oneOf || schema.anyOf || schema.if) {
-    return undefined;
-  }
-
-  // dependentSchemas - conditional property evaluation
-  if (schema.dependentSchemas && Object.keys(schema.dependentSchemas).length > 0) {
-    return undefined;
-  }
-
-  // dependencies (draft-07) - may contain conditional schemas
-  if (schema.dependencies) {
-    for (const dep of Object.values(schema.dependencies)) {
-      if (typeof dep === 'object' && dep !== null && !Array.isArray(dep)) {
-        return undefined; // Schema dependency, not just property dependency
-      }
-    }
-  }
-
-  // patternProperties - requires runtime regex matching
-  if (schema.patternProperties && Object.keys(schema.patternProperties).length > 0) {
-    return undefined;
-  }
-
-  // $dynamicRef - dynamic resolution
-  if (schema.$dynamicRef) {
-    return undefined;
-  }
-
-  // Nested unevaluatedProperties - would require bubbling
-  // We only optimize the outermost unevaluatedProperties
-  // (This is checked by recursing into subschemas)
-
-  // Collect static properties
-  const props = new Set<string>();
-
-  // Direct properties
-  if (schema.properties) {
-    for (const key of Object.keys(schema.properties)) {
-      props.add(key);
-    }
-  }
-
-  // allOf - all branches execute, so collect from all
-  if (schema.allOf) {
-    for (const sub of schema.allOf) {
-      // Check if sub has nested unevaluatedProperties
-      if (typeof sub === 'object' && sub !== null && sub.unevaluatedProperties !== undefined) {
-        return undefined; // Nested unevaluatedProperties needs bubbling
-      }
-      // Check if sub has additionalProperties - this marks ALL props as evaluated
-      // Can't use static optimization because we'd need to check every key
-      if (typeof sub === 'object' && sub !== null && sub.additionalProperties !== undefined) {
-        return undefined; // additionalProperties evaluates all props dynamically
-      }
-      const subProps = collectStaticEvaluatedProps(sub, ctx, visited);
-      if (subProps === undefined) return undefined; // One branch is dynamic
-      for (const p of subProps) props.add(p);
-    }
-  }
-
-  // Follow $ref
-  if (schema.$ref) {
-    const refSchema = ctx.resolveRef(schema.$ref, schema);
-    if (refSchema) {
-      // Check if ref target has nested unevaluatedProperties
-      if (
-        typeof refSchema === 'object' &&
-        refSchema !== null &&
-        refSchema.unevaluatedProperties !== undefined
-      ) {
-        return undefined; // Nested unevaluatedProperties needs bubbling
-      }
-      // Check if ref target has additionalProperties
-      if (
-        typeof refSchema === 'object' &&
-        refSchema !== null &&
-        refSchema.additionalProperties !== undefined
-      ) {
-        return undefined; // additionalProperties evaluates all props dynamically
-      }
-      const refProps = collectStaticEvaluatedProps(refSchema, ctx, visited);
-      if (refProps === undefined) return undefined;
-      for (const p of refProps) props.add(p);
-    }
-  }
-
-  return props;
-}
-
-/**
  * Generate validation code for a schema
  * @param pathExprCode - Code expression that evaluates to the current path string
  * @param dynamicScopeVar - Variable name for the dynamic scope array (for $dynamicRef)
- * @param evalTracker - Tracker for evaluated properties/items (for unevaluated* keywords)
  */
 function generateSchemaValidator(
   code: CodeBuilder,
@@ -467,8 +164,7 @@ function generateSchemaValidator(
   dataVar: Name,
   pathExprCode: Code,
   ctx: CompileContext,
-  dynamicScopeVar?: Name,
-  evalTracker?: EvalTracker
+  dynamicScopeVar?: Name
 ): void {
   // In legacy mode, never use dynamic scope
   const scopeVar = ctx.options.legacyRef ? undefined : dynamicScopeVar;
@@ -518,93 +214,9 @@ function generateSchemaValidator(
   }
 
   // In legacy mode (draft-07 and earlier), $ref overrides all sibling keywords
-  // Only generate $ref check and skip everything else
-  // BUT if we have an eval tracker, we still need to inline for property tracking
-  if (schema.$ref && ctx.options.legacyRef && !evalTracker) {
+  if (schema.$ref && ctx.options.legacyRef) {
     generateRefCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
   } else {
-    // Set up evaluation tracking if this schema has unevaluatedProperties/unevaluatedItems
-    // IMPORTANT: Each schema with unevaluatedProperties/unevaluatedItems needs its OWN tracker
-    // because it only sees properties evaluated by its own adjacent keywords, not parent's.
-    // However, if we have a parent tracker and this schema doesn't have unevalProps/unevalItems,
-    // we pass the parent tracker so properties evaluated here are visible to the parent.
-    let tracker = evalTracker;
-    const hasUnevalProps = schema.unevaluatedProperties !== undefined;
-    const hasUnevalItems = schema.unevaluatedItems !== undefined;
-
-    if (hasUnevalProps || hasUnevalItems) {
-      // Optimization: Skip tracker entirely if additionalProperties makes it redundant
-      // When additionalProperties is present with unevaluatedProperties, all properties
-      // are marked as evaluated, making the tracker unnecessary except for parent bubbling
-      const skipPropsTracking =
-        hasUnevalProps && schema.additionalProperties !== undefined && !evalTracker;
-
-      // Optimization: When outer unevaluatedProperties: false and inner schemas mark all props,
-      // we can skip the unevaluatedProperties check entirely since it will always pass
-      const willMarkAllProps = hasUnevalProps && schemaMarksAllPropsEvaluated(schema, ctx);
-      const canSkipUnevalPropsCheck =
-        hasUnevalProps &&
-        schema.unevaluatedProperties === false &&
-        willMarkAllProps &&
-        !evalTracker;
-
-      // Optimization: When unevaluatedProperties: true and no parent tracker,
-      // we don't need to track anything since we accept all properties
-      const skipTrueUnevalProps =
-        hasUnevalProps && schema.unevaluatedProperties === true && !evalTracker;
-
-      // AJV-style optimization: When all properties are statically known and
-      // unevaluatedProperties: false, we can use static string comparison
-      // instead of runtime tracker - skip creating the tracker entirely
-      const canUseStaticProps =
-        hasUnevalProps &&
-        schema.unevaluatedProperties === false &&
-        !evalTracker &&
-        collectStaticEvaluatedProps(schema, ctx) !== undefined;
-
-      // Optimization: When unevaluatedItems: true and no parent tracker,
-      // we don't need to track anything since we accept all items
-      const skipTrueUnevalItems =
-        hasUnevalItems && schema.unevaluatedItems === true && !evalTracker;
-
-      // Check if contains is present anywhere - requires Set-based item tracking
-      const needsItemSet = hasUnevalItems && schemaHasContains(schema, ctx);
-
-      // Skip creating tracker if it would be unused
-      const shouldSkipProps =
-        skipPropsTracking || canSkipUnevalPropsCheck || skipTrueUnevalProps || canUseStaticProps;
-      const shouldSkipItems = skipTrueUnevalItems;
-
-      if ((shouldSkipProps || !hasUnevalProps) && (shouldSkipItems || !hasUnevalItems)) {
-        // No need for tracker - skip it entirely
-        tracker = undefined;
-      } else {
-        // This schema has its own unevaluatedProperties/Items - create a NEW tracker
-        // The tracker is a local variable that gets passed to sub-validators
-        // Keep reference to parent so we can bubble up after our unevaluated* check runs
-        const trackerVar = code.genVar('tracker');
-
-        // Optimization: Check if schema tree has patternProperties
-        // If not, we can skip pattern tracking entirely for better performance
-        const hasPatterns = hasUnevalProps && schemaHasPatternProperties(schema, ctx);
-
-        tracker = new EvalTracker(code, trackerVar, {
-          trackProps:
-            hasUnevalProps &&
-            !skipPropsTracking &&
-            !canSkipUnevalPropsCheck &&
-            !skipTrueUnevalProps,
-          trackItems: hasUnevalItems && !skipTrueUnevalItems,
-          parentTracker: evalTracker,
-          useItemSet: needsItemSet,
-          hasPatterns,
-        });
-        tracker.init();
-      }
-    }
-    // If no unevalProps/Items here but parent has tracker, keep using parent's tracker
-    // so that properties evaluated here are visible to the parent's unevaluatedProperties check
-
     // Generate code for each keyword (draft-2020-12 behavior)
     generateTypeCheck(code, schema, dataVar, pathExprCode, ctx);
     generateConstCheck(code, schema, dataVar, pathExprCode, ctx);
@@ -613,26 +225,19 @@ function generateSchemaValidator(
     generateFormatCheck(code, schema, dataVar, pathExprCode, ctx);
     generateContentChecks(code, schema, dataVar, pathExprCode, ctx);
     generateNumberChecks(code, schema, dataVar, pathExprCode, ctx);
-    generateItemsChecks(code, schema, dataVar, pathExprCode, ctx, scopeVar, tracker);
+    generateItemsChecks(code, schema, dataVar, pathExprCode, ctx, scopeVar);
     generateArrayChecks(code, schema, dataVar, pathExprCode, ctx);
     generateObjectChecks(code, schema, dataVar, pathExprCode, ctx);
-    generatePropertiesChecks(code, schema, dataVar, pathExprCode, ctx, scopeVar, tracker);
-    generateCompositionChecks(code, schema, dataVar, pathExprCode, ctx, scopeVar, tracker);
-    generateRefCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar, tracker);
-    generateDynamicRefCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar, tracker);
-    generateContainsCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar, tracker);
+    generatePropertiesChecks(code, schema, dataVar, pathExprCode, ctx, scopeVar);
+    generateCompositionChecks(code, schema, dataVar, pathExprCode, ctx, scopeVar);
+    generateRefCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
+    generateDynamicRefCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
+    generateContainsCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
     generateDependentRequiredCheck(code, schema, dataVar, pathExprCode, ctx);
     generatePropertyNamesCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
-    generateDependentSchemasCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar, tracker);
-    generateDependenciesCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar, tracker);
-    generateUnevaluatedPropertiesCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar, tracker);
-    generateUnevaluatedItemsCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar, tracker);
-
-    // After unevaluatedProperties/Items checks, bubble up evaluated props to parent
-    // This ensures nested unevaluatedProperties: true marks props for parent too
-    if (tracker && tracker !== evalTracker) {
-      tracker.bubbleUpToParent();
-    }
+    generateDependentSchemasCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
+    generateDependenciesCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
+    // Note: unevaluatedProperties and unevaluatedItems are not supported
   }
 
   // Pop dynamic anchors after validation (if we pushed any)
@@ -1545,8 +1150,7 @@ export function generatePropertiesChecks(
   dataVar: Name,
   pathExprCode: Code,
   ctx: CompileContext,
-  dynamicScopeVar?: Name,
-  evalTracker?: EvalTracker
+  dynamicScopeVar?: Name
 ): void {
   // Check for non-trivial property schemas
   const nonTrivialProps = schema.properties
@@ -1561,35 +1165,11 @@ export function generatePropertiesChecks(
   // For validation: only non-trivial additionalProperties needs checking
   const hasAdditionalProps =
     schema.additionalProperties !== undefined && !isNoOpSchema(schema.additionalProperties);
-  // For tracking: ANY additionalProperties (including true/{}) evaluates all remaining props
-  const hasAnyAdditionalProps = schema.additionalProperties !== undefined;
 
-  // For tracking: we also need to enter if there are ANY properties (even trivial ones)
-  const hasAnyProps = schema.properties && Object.keys(schema.properties).length > 0;
-  // For tracking: ANY patternProperties (even trivial) marks matching properties as evaluated
-  const hasAnyPatternProps =
-    schema.patternProperties && Object.keys(schema.patternProperties).length > 0;
-
-  // Early return optimization: skip entirely if nothing to validate or track
-  // Only check hasAnyProps/hasAnyPatternProps if we have an evalTracker that needs them
-  if (
-    !hasProps &&
-    !hasPatternProps &&
-    !hasAdditionalProps &&
-    !hasAnyAdditionalProps &&
-    !(hasAnyProps && evalTracker) &&
-    !(hasAnyPatternProps && evalTracker)
-  )
-    return;
+  // Early return optimization: skip entirely if nothing to validate
+  if (!hasProps && !hasPatternProps && !hasAdditionalProps) return;
 
   const genChecks = () => {
-    // Mark all properties from 'properties' as evaluated (even trivial ones count as evaluated)
-    if (evalTracker && schema.properties) {
-      const propNames = Object.keys(schema.properties);
-      // Use batch marking for better performance
-      evalTracker.markProps(propNames);
-    }
-
     // Validate defined properties (only non-trivial ones)
     for (const [propName, propSchema] of nonTrivialProps) {
       const propPathExpr = pathExpr(pathExprCode, propName);
@@ -1609,14 +1189,8 @@ export function generatePropertiesChecks(
       });
     }
 
-    // If additionalProperties is present (even true/{}), all properties are evaluated
-    if (hasAnyAdditionalProps && evalTracker) {
-      evalTracker.markAllProps();
-    }
-
     // Handle patternProperties and additionalProperties validation in a single loop
-    // Also enter when tracking with ANY patternProperties (even trivial ones)
-    if (hasPatternProps || hasAdditionalProps || (hasAnyPatternProps && evalTracker)) {
+    if (hasPatternProps || hasAdditionalProps) {
       const definedProps = schema.properties ? Object.keys(schema.properties) : [];
       // For additionalProperties, we need ALL patternProperties patterns (even no-ops)
       // because they affect which properties are considered "additional"
@@ -1630,10 +1204,6 @@ export function generatePropertiesChecks(
         const regexName = new Name(ctx.genRuntimeName('patternRe'));
         ctx.addRuntimeFunction(regexName.str, new RegExp(pattern, flags));
         patternRegexNames.push(regexName);
-        // Register pattern with tracker for unevaluatedProperties check
-        if (evalTracker) {
-          evalTracker.addPattern(regexName);
-        }
       }
 
       // Only generate the for-in loop if there's something to do inside
@@ -1763,8 +1333,7 @@ export function generateContainsCheck(
   dataVar: Name,
   pathExprCode: Code,
   ctx: CompileContext,
-  _dynamicScopeVar?: Name,
-  evalTracker?: EvalTracker
+  _dynamicScopeVar?: Name
 ): void {
   if (schema.contains === undefined) return;
 
@@ -1774,11 +1343,8 @@ export function generateContainsCheck(
 
   // Handle boolean schemas directly
   if (containsSchema === true) {
-    // Every item matches - mark all items as evaluated and check array length
+    // Every item matches - check array length
     code.if(_`Array.isArray(${dataVar})`, () => {
-      // All items match, so mark all as evaluated
-      evalTracker?.markAllItems();
-
       code.if(_`${dataVar}.length < ${minContains}`, () => {
         genError(
           code,
@@ -1821,14 +1387,12 @@ export function generateContainsCheck(
           ctx.getMainFuncName()
         );
       }
-      // maxContains is always satisfied since count is 0, no items evaluated
     });
     return;
   }
 
   // If minContains is 0 and no maxContains, contains is always satisfied
-  // But we still need to track which items match for unevaluatedItems
-  if (minContains === 0 && maxContains === undefined && !evalTracker?.trackingItems) {
+  if (minContains === 0 && maxContains === undefined) {
     return;
   }
 
@@ -1880,13 +1444,10 @@ export function generateContainsCheck(
 
         code.if(inlineCheck, () => {
           code.line(_`${countVar}++;`);
-          // Mark this item as evaluated (for unevaluatedItems)
-          evalTracker?.markSingleItem(iVar);
         });
 
         // Early exit if we've found enough and no maxContains
-        // But only if we're not tracking items (need to find all matches for tracking)
-        if (maxContains === undefined && !evalTracker?.trackingItems) {
+        if (maxContains === undefined) {
           code.if(_`${countVar} >= ${minContains}`, () => {
             code.line(_`break;`);
           });
@@ -1902,13 +1463,10 @@ export function generateContainsCheck(
         // Call the compiled contains validator (pass null for errors to skip collection)
         code.if(_`${containsFuncName}(${itemAccess}, null, '')`, () => {
           code.line(_`${countVar}++;`);
-          // Mark this item as evaluated (for unevaluatedItems)
-          evalTracker?.markSingleItem(iVar);
         });
 
         // Early exit if we've found enough and no maxContains
-        // But only if we're not tracking items (need to find all matches for tracking)
-        if (maxContains === undefined && !evalTracker?.trackingItems) {
+        if (maxContains === undefined) {
           code.if(_`${countVar} >= ${minContains}`, () => {
             code.line(_`break;`);
           });
@@ -1999,8 +1557,7 @@ export function generateDependentSchemasCheck(
   dataVar: Name,
   pathExprCode: Code,
   ctx: CompileContext,
-  dynamicScopeVar?: Name,
-  evalTracker?: EvalTracker
+  dynamicScopeVar?: Name
 ): void {
   if (!schema.dependentSchemas) return;
 
@@ -2012,15 +1569,7 @@ export function generateDependentSchemasCheck(
   code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
     for (const [prop, depSchema] of Object.entries(schema.dependentSchemas!)) {
       code.if(_`${prop} in ${dataVar}`, () => {
-        generateSchemaValidator(
-          code,
-          depSchema,
-          dataVar,
-          pathExprCode,
-          ctx,
-          dynamicScopeVar,
-          evalTracker
-        );
+        generateSchemaValidator(code, depSchema, dataVar, pathExprCode, ctx, dynamicScopeVar);
       });
     }
   });
@@ -2038,8 +1587,7 @@ export function generateDependenciesCheck(
   dataVar: Name,
   pathExprCode: Code,
   ctx: CompileContext,
-  dynamicScopeVar?: Name,
-  evalTracker?: EvalTracker
+  dynamicScopeVar?: Name
 ): void {
   if (!schema.dependencies) return;
 
@@ -2083,8 +1631,7 @@ export function generateDependenciesCheck(
             dataVar,
             pathExprCode,
             ctx,
-            dynamicScopeVar,
-            evalTracker
+            dynamicScopeVar
           );
         }
       });
@@ -2147,13 +1694,9 @@ export function generatePropertyNamesCheck(
  */
 function shouldInlineRef(
   refSchema: JsonSchema,
-  ctx: CompileContext,
-  dynamicScopeVar?: Name,
-  evalTracker?: EvalTracker
+  _ctx: CompileContext,
+  _dynamicScopeVar?: Name
 ): boolean {
-  // Don't inline if we have eval tracker that's actively tracking (need to pass as param)
-  if (evalTracker && evalTracker.enabled) return false;
-
   // Only inline object schemas (not boolean or string)
   if (typeof refSchema !== 'object' || refSchema === null) return false;
 
@@ -2206,8 +1749,7 @@ export function generateRefCheck(
   dataVar: Name,
   pathExprCode: Code,
   ctx: CompileContext,
-  dynamicScopeVar?: Name,
-  evalTracker?: EvalTracker
+  dynamicScopeVar?: Name
 ): void {
   if (!schema.$ref) return;
 
@@ -2267,7 +1809,7 @@ export function generateRefCheck(
     const crossDraftName = new Name(ctx.genRuntimeName('crossDraftValidator'));
 
     // Create a wrapper that adapts the top-level validator to the internal validator signature
-    // Internal validators take (data, errors, path, [dynamicScope], [tracker])
+    // Internal validators take (data, errors, path, [dynamicScope])
     // Top-level validators take (data, errors)
     const crossDraftOptions: CompileOptions = {
       ...ctx.options,
@@ -2306,17 +1848,9 @@ export function generateRefCheck(
 
   // NEW OPTIMIZATION: Inline simple schemas to avoid function call overhead
   // But don't inline remote refs - they need their own compilation context
-  if (!isRemoteRef && shouldInlineRef(refSchema, ctx, dynamicScopeVar, evalTracker)) {
+  if (!isRemoteRef && shouldInlineRef(refSchema, ctx, dynamicScopeVar)) {
     // Inline the schema validation directly
-    generateSchemaValidator(
-      code,
-      refSchema,
-      dataVar,
-      pathExprCode,
-      ctx,
-      dynamicScopeVar,
-      evalTracker
-    );
+    generateSchemaValidator(code, refSchema, dataVar, pathExprCode, ctx, dynamicScopeVar);
     return;
   }
 
@@ -2328,9 +1862,7 @@ export function generateRefCheck(
     // Optimization: only compute path when errors array is present (deferred path construction)
     // Most validators run without error tracking, so this avoids string concatenation overhead
     const pathArg = pathExprCode.toString() === "''" ? _`''` : _`errors ? ${pathExprCode} : ''`;
-    // Pass tracker if we have one (for runtime-optional tracking)
-    const trackerArg = evalTracker ? _`, ${evalTracker.trackerVar}` : _``;
-    code.if(_`!${funcName}(${dataVar}, errors, ${pathArg}${trackerArg})`, () => {
+    code.if(_`!${funcName}(${dataVar}, errors, ${pathArg})`, () => {
       code.line(_`return false;`);
     });
     return;
@@ -2361,8 +1893,6 @@ export function generateRefCheck(
     const resourceAnchors = ctx.getResourceDynamicAnchors(refResourceId);
     if (resourceAnchors.length > 0) {
       // Push dynamic anchors for this resource, call validator, then pop
-      // Pass tracker if we have one (for runtime-optional tracking)
-      const trackerArg = evalTracker ? _`, ${evalTracker.trackerVar}` : _``;
       // Optimization: defer path construction when errors is not present
       const pathArg = pathExprCode.toString() === "''" ? _`''` : _`errors ? ${pathExprCode} : ''`;
       code.block(_``, () => {
@@ -2374,16 +1904,13 @@ export function generateRefCheck(
             _`${dynamicScopeVar}.push({ anchor: ${stringify(anchor)}, validate: ${anchorFuncName} });`
           );
         }
-        code.if(
-          _`!${funcName}(${dataVar}, errors, ${pathArg}, ${dynamicScopeVar}${trackerArg})`,
-          () => {
-            // Pop before returning
-            for (let i = 0; i < pushCount; i++) {
-              code.line(_`${dynamicScopeVar}.pop();`);
-            }
-            code.line(_`return false;`);
+        code.if(_`!${funcName}(${dataVar}, errors, ${pathArg}, ${dynamicScopeVar})`, () => {
+          // Pop before returning
+          for (let i = 0; i < pushCount; i++) {
+            code.line(_`${dynamicScopeVar}.pop();`);
           }
-        );
+          code.line(_`return false;`);
+        });
         // Pop after successful validation
         for (let i = 0; i < pushCount; i++) {
           code.line(_`${dynamicScopeVar}.pop();`);
@@ -2394,21 +1921,15 @@ export function generateRefCheck(
   }
 
   // No dynamic anchors to push - simple call
-  // Pass tracker if we have one (for runtime-optional tracking)
-  const trackerArg = evalTracker ? _`, ${evalTracker.trackerVar}` : _``;
   // Optimization: defer path construction when errors is not present
   const pathArg = pathExprCode.toString() === "''" ? _`''` : _`errors ? ${pathExprCode} : ''`;
-  code.if(_`!${funcName}(${dataVar}, errors, ${pathArg}, ${dynamicScopeVar}${trackerArg})`, () => {
+  code.if(_`!${funcName}(${dataVar}, errors, ${pathArg}, ${dynamicScopeVar})`, () => {
     code.line(_`return false;`);
   });
 }
 
 /**
  * Generate composition checks (allOf, anyOf, oneOf, not, if-then-else)
- *
- * When evalTracker is provided, subschema validation is inlined so that
- * evaluated properties can be tracked. Without a tracker, subschemas may
- * be compiled as separate functions for efficiency.
  */
 export function generateCompositionChecks(
   code: CodeBuilder,
@@ -2416,162 +1937,36 @@ export function generateCompositionChecks(
   dataVar: Name,
   pathExprCode: Code,
   ctx: CompileContext,
-  dynamicScopeVar?: Name,
-  evalTracker?: EvalTracker
+  dynamicScopeVar?: Name
 ): void {
   // allOf - all subschemas must validate
-  // Always inline with tracker since all branches execute
   if (schema.allOf && schema.allOf.length > 0) {
     for (const subSchema of schema.allOf) {
-      generateSchemaValidator(
-        code,
-        subSchema,
-        dataVar,
-        pathExprCode,
-        ctx,
-        dynamicScopeVar,
-        evalTracker
-      );
+      generateSchemaValidator(code, subSchema, dataVar, pathExprCode, ctx, dynamicScopeVar);
     }
   }
 
   // anyOf - at least one subschema must validate
   if (schema.anyOf && schema.anyOf.length > 0) {
     // If any schema is a no-op (true, {}), anyOf always passes
-    // NOTE: no-op schemas (true/{}) match everything but DON'T mark any properties as evaluated
-    // So we still need to check other branches for property tracking
     const hasNoOpBranch = schema.anyOf.some((s) => isNoOpSchema(s));
 
-    if (hasNoOpBranch && !evalTracker?.enabled) {
-      // Skip generating anyOf check entirely when not tracking
-    } else if (hasNoOpBranch && evalTracker?.enabled) {
-      // Optimization: anyOf will definitely pass, just collect annotations from other branches
-      // No need for result variable or validation checks
-
-      // Optimization: reuse a single temp tracker to avoid allocations
-      const sharedTempVar = code.genVar('anyOfTracker');
-      const parts: Code[] = [];
-      if (evalTracker.trackingProps) {
-        parts.push(_`props: {}`);
-        if (evalTracker.hasPatterns) {
-          parts.push(_`patterns: []`);
-        }
-      }
-      if (evalTracker.trackingItems) {
-        parts.push(_`maxItem: -1`);
-        if (evalTracker.useItemSet) {
-          parts.push(_`items: new Set()`);
-        }
-      }
-      code.line(_`const ${sharedTempVar} = { ${Code.join(parts, ', ')} };`);
-
-      let isFirstNonNoOpBranch = true;
-      schema.anyOf.forEach((subSchema) => {
-        if (isNoOpSchema(subSchema)) {
-          // Skip no-op branches - they don't contribute annotations
-          return;
-        }
-        if (subSchema === false) {
-          // Skip false branches - they can't match
-          return;
-        }
-
-        // Reset shared tracker before each branch check (except first - it's already initialized)
-        if (!isFirstNonNoOpBranch) {
-          if (evalTracker.trackingProps) {
-            code.line(_`${sharedTempVar}.props = {};`);
-            if (evalTracker.hasPatterns) {
-              code.line(_`${sharedTempVar}.patterns.length = 0;`);
-            }
-          }
-          if (evalTracker.trackingItems) {
-            code.line(_`${sharedTempVar}.maxItem = -1;`);
-            if (evalTracker.useItemSet) {
-              code.line(_`${sharedTempVar}.items.clear();`);
-            }
-          }
-        }
-        isFirstNonNoOpBranch = false;
-
-        // Just collect annotations from this branch by calling it with a temp tracker
-        const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx, sharedTempVar);
-        // Only merge if branch matches (to follow spec - only matching branches contribute annotations)
-        // Optimization: skip the conditional if the check always returns true
-        if (checkExpr.toString() === 'true') {
-          evalTracker.mergeFrom(sharedTempVar);
-        } else {
-          code.if(checkExpr, () => {
-            evalTracker.mergeFrom(sharedTempVar);
-          });
-        }
-      });
+    if (hasNoOpBranch) {
+      // Skip generating anyOf check entirely - it always passes
     } else {
       const resultVar = code.genVar('anyOfResult');
       code.line(_`let ${resultVar} = false;`);
 
-      // Optimization: reuse a single temp tracker across all branches to avoid allocations
-      // We reset the tracker before each branch and only merge when a branch matches
-      const needsAnyTracker =
-        evalTracker?.enabled && schema.anyOf.some((s) => !isNoOpSchema(s) && s !== false);
-      const sharedTempVar = needsAnyTracker ? code.genVar('anyOfTracker') : undefined;
-
-      if (sharedTempVar && evalTracker) {
-        const parts: Code[] = [];
-        if (evalTracker.trackingProps) {
-          parts.push(_`props: {}`);
-          if (evalTracker.hasPatterns) {
-            parts.push(_`patterns: []`);
-          }
-        }
-        if (evalTracker.trackingItems) {
-          parts.push(_`maxItem: -1`);
-          if (evalTracker.useItemSet) {
-            parts.push(_`items: new Set()`);
-          }
-        }
-        code.line(_`const ${sharedTempVar} = { ${Code.join(parts, ', ')} };`);
-      }
-
-      // Use a shared temp tracker for branches, merge into parent only if valid
-      let isFirstTrackedBranch = true;
       schema.anyOf.forEach((subSchema, index) => {
-        // Optimization: skip temp tracker for no-op schemas (true, {})
-        // They match everything but don't contribute any annotations
-        const needsTracker = !isNoOpSchema(subSchema) && subSchema !== false;
-
         const generateBranchCheck = () => {
-          // Reset shared tracker before each branch check (except first - it's already initialized)
-          if (sharedTempVar && needsTracker && evalTracker) {
-            if (!isFirstTrackedBranch) {
-              if (evalTracker.trackingProps) {
-                code.line(_`${sharedTempVar}.props = {};`);
-                if (evalTracker.hasPatterns) {
-                  code.line(_`${sharedTempVar}.patterns.length = 0;`);
-                }
-              }
-              if (evalTracker.trackingItems) {
-                code.line(_`${sharedTempVar}.maxItem = -1;`);
-                if (evalTracker.useItemSet) {
-                  code.line(_`${sharedTempVar}.items.clear();`);
-                }
-              }
-            }
-            isFirstTrackedBranch = false;
-          }
-
-          const tempVar = needsTracker ? sharedTempVar : undefined;
-          const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx, tempVar);
+          const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx);
           code.if(checkExpr, () => {
             code.line(_`${resultVar} = true;`);
-            if (needsTracker) {
-              evalTracker?.mergeFrom(tempVar);
-            }
           });
         };
 
-        // Optimization: short-circuit if no tracking needed and we already found a match
-        // When tracking is disabled, we can stop as soon as one branch succeeds
-        if (!needsAnyTracker && index > 0) {
+        // Optimization: short-circuit if we already found a match
+        if (index > 0) {
           code.if(_`!${resultVar}`, generateBranchCheck);
         } else {
           generateBranchCheck();
@@ -2597,77 +1992,23 @@ export function generateCompositionChecks(
     const countVar = code.genVar('oneOfCount');
     code.line(_`let ${countVar} = 0;`);
 
-    // Optimization: reuse a single temp tracker across all oneOf branches to avoid allocations
-    // This is safe because only ONE branch can match, so we just reset and reuse
-    const needsAnyTracker =
-      evalTracker?.enabled && schema.oneOf.some((s) => !isNoOpSchema(s) && s !== false);
-    const sharedTempVar = needsAnyTracker ? code.genVar('oneOfTracker') : undefined;
-
-    if (sharedTempVar && evalTracker) {
-      const parts: Code[] = [];
-      if (evalTracker.trackingProps) {
-        parts.push(_`props: {}`);
-        if (evalTracker.hasPatterns) {
-          parts.push(_`patterns: []`);
-        }
-      }
-      if (evalTracker.trackingItems) {
-        parts.push(_`maxItem: -1`);
-        if (evalTracker.useItemSet) {
-          parts.push(_`items: new Set()`);
-        }
-      }
-      code.line(_`const ${sharedTempVar} = { ${Code.join(parts, ', ')} };`);
-    }
-
-    // Use a temp tracker for each branch, merge into parent only if valid
-    let isFirstBranch = true;
     schema.oneOf.forEach((subSchema) => {
-      // Optimization: skip temp tracker for no-op schemas (true, {})
-      // They match everything but don't contribute any annotations
-      const needsTracker = !isNoOpSchema(subSchema) && subSchema !== false;
-
-      // Reset shared tracker before each branch check (skip first since just initialized)
-      if (sharedTempVar && needsTracker && evalTracker && !isFirstBranch) {
-        if (evalTracker.trackingProps) {
-          code.line(_`${sharedTempVar}.props = {};`);
-          if (evalTracker.hasPatterns) {
-            code.line(_`${sharedTempVar}.patterns = [];`);
-          }
-        }
-        if (evalTracker.trackingItems) {
-          code.line(_`${sharedTempVar}.maxItem = -1;`);
-          if (evalTracker.useItemSet) {
-            code.line(_`${sharedTempVar}.items.clear();`);
-          }
-        }
-      }
-      if (needsTracker) {
-        isFirstBranch = false;
-      }
-
-      const tempVar = needsTracker ? sharedTempVar : undefined;
-      const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx, tempVar);
+      const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx);
       code.if(checkExpr, () => {
         code.line(_`${countVar}++;`);
-        if (needsTracker) {
-          evalTracker?.mergeFrom(tempVar);
-        }
       });
-      // Early exit if more than one matches (only when not tracking)
-      if (!evalTracker?.enabled) {
-        code.if(_`${countVar} > 1`, () => {
-          genError(
-            code,
-            pathExprCode,
-            '#/oneOf',
-            'oneOf',
-            'must match exactly one schema in oneOf',
-            {},
-            ctx.getMainFuncName()
-          );
-        });
-      }
+      // Early exit if more than one matches
+      code.if(_`${countVar} > 1`, () => {
+        genError(
+          code,
+          pathExprCode,
+          '#/oneOf',
+          'oneOf',
+          'must match exactly one schema in oneOf',
+          {},
+          ctx.getMainFuncName()
+        );
+      });
     });
 
     code.if(_`${countVar} !== 1`, () => {
@@ -2684,7 +2025,6 @@ export function generateCompositionChecks(
   }
 
   // not - subschema must NOT validate
-  // Note: 'not' doesn't evaluate properties - it just checks they DON'T match
   if (schema.not !== undefined) {
     const notSchema = schema.not;
 
@@ -2757,35 +2097,20 @@ export function generateCompositionChecks(
     const thenSchema = schema.then;
     const elseSchema = schema.else;
 
-    // Skip if there's no then or else AND we're not tracking
-    // (when tracking, we need to evaluate if's properties even without then/else)
-    if (thenSchema === undefined && elseSchema === undefined && !evalTracker?.enabled) {
+    // Skip if there's no then or else
+    if (thenSchema === undefined && elseSchema === undefined) {
       return;
     }
 
     // OPTIMIZATION: Try to inline the if schema check for better performance
-    // This avoids function call overhead and temp tracker creation/merging
-    const inlinedCheck = tryInlineIfCondition(
-      code,
-      ifSchema,
-      dataVar,
-      pathExprCode,
-      ctx,
-      evalTracker
-    );
+    const inlinedCheck = tryInlineIfCondition(code, ifSchema, dataVar, pathExprCode, ctx);
 
     if (inlinedCheck) {
       // Successfully inlined - use the inlined condition variable
       const condVar = inlinedCheck.conditionVar;
-      const propsToMark = inlinedCheck.evaluatedProps;
 
-      // When if matches, mark evaluated properties and apply then schema
+      // When if matches, apply then schema
       code.if(condVar, () => {
-        // Mark properties that were evaluated during the if condition check
-        if (evalTracker?.trackingProps && propsToMark && propsToMark.length > 0) {
-          evalTracker.markProps(propsToMark);
-        }
-
         if (thenSchema !== undefined) {
           if (thenSchema === false) {
             genError(
@@ -2798,15 +2123,7 @@ export function generateCompositionChecks(
               ctx.getMainFuncName()
             );
           } else if (thenSchema !== true) {
-            generateSchemaValidator(
-              code,
-              thenSchema,
-              dataVar,
-              pathExprCode,
-              ctx,
-              dynamicScopeVar,
-              evalTracker
-            );
+            generateSchemaValidator(code, thenSchema, dataVar, pathExprCode, ctx, dynamicScopeVar);
           }
         }
       });
@@ -2825,32 +2142,15 @@ export function generateCompositionChecks(
               ctx.getMainFuncName()
             );
           } else if (elseSchema !== true) {
-            generateSchemaValidator(
-              code,
-              elseSchema,
-              dataVar,
-              pathExprCode,
-              ctx,
-              dynamicScopeVar,
-              evalTracker
-            );
+            generateSchemaValidator(code, elseSchema, dataVar, pathExprCode, ctx, dynamicScopeVar);
           }
         });
       }
     } else {
-      // Fallback to original approach with temp tracker
+      // Fallback to original approach
       const condVar = code.genVar('ifCond');
-      const needsTracker = !isNoOpSchema(ifSchema) && ifSchema !== false;
-      const tempVar = needsTracker ? evalTracker?.createTempTracker('ifTracker') : undefined;
-      const checkExpr = generateSubschemaCheck(code, ifSchema, dataVar, ctx, tempVar);
+      const checkExpr = generateSubschemaCheck(code, ifSchema, dataVar, ctx);
       code.line(_`const ${condVar} = ${checkExpr};`);
-
-      // Merge temp tracker into parent only if condition matched
-      if (tempVar) {
-        code.if(condVar, () => {
-          evalTracker?.mergeFrom(tempVar);
-        });
-      }
 
       // When if matches, apply then schema if present
       code.if(condVar, () => {
@@ -2866,15 +2166,7 @@ export function generateCompositionChecks(
               ctx.getMainFuncName()
             );
           } else if (thenSchema !== true) {
-            generateSchemaValidator(
-              code,
-              thenSchema,
-              dataVar,
-              pathExprCode,
-              ctx,
-              dynamicScopeVar,
-              evalTracker
-            );
+            generateSchemaValidator(code, thenSchema, dataVar, pathExprCode, ctx, dynamicScopeVar);
           }
         }
       });
@@ -2893,15 +2185,7 @@ export function generateCompositionChecks(
               ctx.getMainFuncName()
             );
           } else if (elseSchema !== true) {
-            generateSchemaValidator(
-              code,
-              elseSchema,
-              dataVar,
-              pathExprCode,
-              ctx,
-              dynamicScopeVar,
-              evalTracker
-            );
+            generateSchemaValidator(code, elseSchema, dataVar, pathExprCode, ctx, dynamicScopeVar);
           }
         });
       }
@@ -2911,7 +2195,6 @@ export function generateCompositionChecks(
 
 /**
  * Try to inline an if condition check instead of calling a separate function.
- * This is a major optimization for unevaluatedProperties with if/then/else.
  * Returns { conditionVar, evaluatedProps } if successful, undefined if we need to fall back to function call.
  */
 function tryInlineIfCondition(
@@ -2919,8 +2202,7 @@ function tryInlineIfCondition(
   ifSchema: JsonSchema,
   dataVar: Name,
   _pathExprCode: Code,
-  _ctx: CompileContext,
-  _evalTracker?: EvalTracker
+  _ctx: CompileContext
 ): { conditionVar: Name; evaluatedProps: string[] } | undefined {
   // Handle no-op schemas
   if (isNoOpSchema(ifSchema)) {
@@ -2947,11 +2229,6 @@ function tryInlineIfCondition(
     ifSchema.not ||
     ifSchema.if
   ) {
-    return undefined;
-  }
-
-  // Don't inline if it has unevaluated keywords (need complex tracking)
-  if (ifSchema.unevaluatedProperties !== undefined || ifSchema.unevaluatedItems !== undefined) {
     return undefined;
   }
 
@@ -3144,17 +2421,15 @@ function generateTypeCheckInline(valueVar: Name, type: unknown): Code | undefine
 
 /**
  * Generate a subschema check expression.
- * Compiles the schema to a separate function and returns a call expression (without tracker).
+ * Compiles the schema to a separate function and returns a call expression.
  *
- * This is used for checking if a subschema matches without marking properties.
- * For anyOf/oneOf, we first check with this, then call again with tracker if matched.
+ * This is used for checking if a subschema matches.
  */
 function generateSubschemaCheck(
   _code: CodeBuilder,
   schema: JsonSchema,
   dataVar: Name,
-  ctx: CompileContext,
-  trackerVar?: Name
+  ctx: CompileContext
 ): Code {
   // Handle no-op schemas (true, {}) - always pass
   if (schema === true) return _`true`;
@@ -3197,7 +2472,6 @@ function generateSubschemaCheck(
   }
 
   // Try to inline simple schemas for better performance
-  // Simple type/const/enum checks don't affect property tracking, so we can inline even with tracker
   if (
     typeof resolvedSchema === 'object' &&
     resolvedSchema !== null &&
@@ -3281,54 +2555,6 @@ function generateSubschemaCheck(
     }
   }
 
-  // OPTIMIZATION: Inline properties-only schemas with all true values
-  // These always match and just mark properties as evaluated
-  // Pattern: { properties: { foo: true, bar: true } } - always valid, marks props
-  if (
-    typeof resolvedSchema === 'object' &&
-    resolvedSchema !== null &&
-    trackerVar &&
-    resolvedSchema.properties &&
-    !resolvedSchema.required &&
-    !resolvedSchema.$ref &&
-    !resolvedSchema.$id &&
-    !resolvedSchema.allOf &&
-    !resolvedSchema.anyOf &&
-    !resolvedSchema.oneOf &&
-    !resolvedSchema.not &&
-    !resolvedSchema.if &&
-    !resolvedSchema.patternProperties &&
-    !resolvedSchema.additionalProperties &&
-    !resolvedSchema.unevaluatedProperties &&
-    !resolvedSchema.unevaluatedItems &&
-    !resolvedSchema.dependentSchemas &&
-    !resolvedSchema.dependencies &&
-    !resolvedSchema.prefixItems &&
-    !resolvedSchema.items &&
-    !resolvedSchema.contains &&
-    !resolvedSchema.$dynamicRef &&
-    !resolvedSchema.$dynamicAnchor
-  ) {
-    // Check if all properties are true (no validation, just mark as evaluated)
-    const props = resolvedSchema.properties;
-    const propNames = Object.keys(props);
-    const allPropsTrue = propNames.every((k) => props[k] === true);
-
-    if (allPropsTrue && propNames.length > 0) {
-      // Emit code to mark properties as evaluated, then return true
-      _code.if(
-        _`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`,
-        () => {
-          // Mark each property as evaluated
-          for (const propName of propNames) {
-            _code.line(_`${trackerVar}.props[${stringify(propName)}] = true;`);
-          }
-        }
-      );
-      return _`true`; // Always matches
-    }
-  }
-
   // Fall back to function call for complex schemas
   // OPTIMIZATION: If the original schema was JUST a $ref (no other keywords),
   // and we've resolved it, queue the resolved schema directly to avoid wrapper functions.
@@ -3342,12 +2568,11 @@ function generateSubschemaCheck(
   const schemaToCompile = isRefOnly && resolvedSchema !== schema ? resolvedSchema : schema;
 
   const funcName = ctx.queueCompile(schemaToCompile);
-  const trackerArg = trackerVar ? _`, ${trackerVar}` : _``;
   // Skip dynamicScope in legacy mode OR when there are no dynamic anchors
   if (ctx.options.legacyRef || !ctx.hasAnyDynamicAnchors()) {
-    return _`${funcName}(${dataVar}, null, ''${trackerArg})`;
+    return _`${funcName}(${dataVar}, null, '')`;
   }
-  return _`${funcName}(${dataVar}, null, '', dynamicScope${trackerArg})`;
+  return _`${funcName}(${dataVar}, null, '', dynamicScope)`;
 }
 
 /**
@@ -3360,8 +2585,7 @@ export function generateItemsChecks(
   dataVar: Name,
   pathExprCode: Code,
   ctx: CompileContext,
-  dynamicScopeVar?: Name,
-  evalTracker?: EvalTracker
+  dynamicScopeVar?: Name
 ): void {
   // Draft-07 compatibility: items can be an array (acts like prefixItems)
   const itemsIsArray = Array.isArray(schema.items);
@@ -3394,16 +2618,6 @@ export function generateItemsChecks(
     .map((s, i) => ({ schema: s, index: i }))
     .filter(({ schema: s }) => !isNoOpSchema(s));
   const hasNonTrivialTuples = nonTrivialTupleSchemas.length > 0;
-
-  // Mark tuple items as evaluated (even trivial ones count for unevaluatedItems)
-  if (tupleSchemas.length > 0) {
-    evalTracker?.markItem(tupleSchemas.length - 1);
-  }
-
-  // Mark all items as evaluated if items schema covers them
-  if (afterTupleSchema !== undefined && afterTupleSchema !== false) {
-    evalTracker?.markAllItems();
-  }
 
   if (!hasNonTrivialTuples && !hasAfterTupleSchema) return;
 
@@ -3627,8 +2841,7 @@ export function generateDynamicRefCheck(
   dataVar: Name,
   pathExprCode: Code,
   ctx: CompileContext,
-  dynamicScopeVar?: Name,
-  evalTracker?: EvalTracker
+  dynamicScopeVar?: Name
 ): void {
   if (!schema.$dynamicRef) return;
 
@@ -3681,7 +2894,6 @@ export function generateDynamicRefCheck(
     } else {
       // Has matching $dynamicAnchor - search dynamic scope at runtime
       // The dynamic scope is searched from the BEGINNING (outermost/first) to find the first match
-      const trackerArg = evalTracker ? _`, ${evalTracker.trackerVar}` : _``;
       code.block(_``, () => {
         code.line(_`let dynamicValidator = null;`);
         code.line(_`for (let i = 0; i < ${dynamicScopeVar}.length; i++) {`);
@@ -3691,14 +2903,10 @@ export function generateDynamicRefCheck(
         code.line(_`  }`);
         code.line(_`}`);
         // Use dynamic validator if found, otherwise use static fallback
-        // Pass tracker so properties are marked at runtime
         code.line(_`const validator = dynamicValidator || ${staticFuncName};`);
-        code.if(
-          _`!validator(${dataVar}, errors, ${pathExprCode}, ${dynamicScopeVar}${trackerArg})`,
-          () => {
-            code.line(_`return false;`);
-          }
-        );
+        code.if(_`!validator(${dataVar}, errors, ${pathExprCode}, ${dynamicScopeVar})`, () => {
+          code.line(_`return false;`);
+        });
       });
     }
   } else {
@@ -3721,208 +2929,8 @@ export function generateDynamicRefCheck(
 
     const funcName = ctx.queueCompile(refSchema);
     const scopeArg = dynamicScopeVar || _`[]`;
-    const trackerArg = evalTracker ? _`, ${evalTracker.trackerVar}` : _``;
-    code.if(_`!${funcName}(${dataVar}, errors, ${pathExprCode}, ${scopeArg}${trackerArg})`, () => {
+    code.if(_`!${funcName}(${dataVar}, errors, ${pathExprCode}, ${scopeArg})`, () => {
       code.line(_`return false;`);
     });
   }
-}
-
-/**
- * Generate unevaluatedProperties check code
- *
- * This function simply checks each property against the tracker.
- * All property marking is done by the validators themselves (properties,
- * patternProperties, additionalProperties, allOf, $ref, etc.) as they execute.
- */
-export function generateUnevaluatedPropertiesCheck(
-  code: CodeBuilder,
-  schema: JsonSchemaBase,
-  dataVar: Name,
-  pathExprCode: Code,
-  ctx: CompileContext,
-  dynamicScopeVar?: Name,
-  evalTracker?: EvalTracker
-): void {
-  if (schema.unevaluatedProperties === undefined) return;
-
-  // Optimization: If additionalProperties is present (even boolean true or {}),
-  // ALL properties are marked as evaluated via markAllProps().
-  // In this case, unevaluatedProperties check will never find unevaluated properties,
-  // so we can skip generating the check entirely.
-  if (schema.additionalProperties !== undefined) {
-    return; // Skip check - additionalProperties handles all props
-  }
-
-  // Optimization: when unevaluatedProperties is true, just mark all props as evaluated
-  // without iterating through them. This is much faster than checking each property.
-  if (schema.unevaluatedProperties === true) {
-    if (evalTracker) evalTracker.markAllProps();
-    return;
-  }
-
-  // AJV-style optimization: When all evaluated properties are known at compile time,
-  // use static string comparison instead of runtime object lookup.
-  // This generates: `key !== "foo" && key !== "bar"` instead of `!tracker.props[key]`
-  const staticProps = collectStaticEvaluatedProps(schema, ctx);
-
-  // Only check if data is an object
-  code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
-    if (staticProps !== undefined && schema.unevaluatedProperties === false) {
-      // Static optimization: generate direct string comparisons
-      // No need for tracker object at all - just compare against known property names
-      const keyVar = new Name('key');
-      code.forIn(keyVar, dataVar, () => {
-        const keyPathExpr = pathExprDynamic(pathExprCode, keyVar);
-
-        if (staticProps.size === 0) {
-          // No properties evaluated - any property is unevaluated
-          genError(
-            code,
-            keyPathExpr,
-            '#/unevaluatedProperties',
-            'unevaluatedProperties',
-            'must NOT have unevaluated properties',
-            {},
-            ctx.getMainFuncName()
-          );
-        } else {
-          // Generate: key !== "foo" && key !== "bar" && ...
-          const conditions: Code[] = [];
-          for (const prop of staticProps) {
-            conditions.push(_`${keyVar} !== ${stringify(prop)}`);
-          }
-          const condition = conditions.length === 1 ? conditions[0] : and(...conditions);
-
-          code.if(condition, () => {
-            genError(
-              code,
-              keyPathExpr,
-              '#/unevaluatedProperties',
-              'unevaluatedProperties',
-              'must NOT have unevaluated properties',
-              {},
-              ctx.getMainFuncName()
-            );
-          });
-        }
-      });
-    } else if (evalTracker && evalTracker.trackingProps) {
-      // Dynamic tracking: use runtime tracker object
-      // Optimization: hoist the __all__ check outside the loop for better performance
-      // This avoids checking __all__ for every single property in the for-in loop
-      code.if(_`!${evalTracker.trackerVar}.props.__all__`, () => {
-        // Check each property against the tracker
-        const keyVar = new Name('key');
-        code.forIn(keyVar, dataVar, () => {
-          // skipAllCheck=true since we already checked __all__ above
-          const condition = evalTracker.isUnevaluatedProp(keyVar, true);
-          const keyPathExpr = pathExprDynamic(pathExprCode, keyVar);
-
-          code.if(condition, () => {
-            if (schema.unevaluatedProperties === false) {
-              genError(
-                code,
-                keyPathExpr,
-                '#/unevaluatedProperties',
-                'unevaluatedProperties',
-                'must NOT have unevaluated properties',
-                {},
-                ctx.getMainFuncName()
-              );
-            } else if (schema.unevaluatedProperties !== undefined) {
-              // unevaluatedProperties: <schema> - validate and mark as evaluated
-              const propVar = code.genVar('up');
-              code.line(_`const ${propVar} = ${dataVar}[${keyVar}];`);
-              generateSchemaValidator(
-                code,
-                schema.unevaluatedProperties,
-                propVar,
-                keyPathExpr,
-                ctx,
-                dynamicScopeVar
-              );
-              evalTracker.markPropDynamic(keyVar);
-            }
-          });
-        });
-      });
-    }
-    // If no tracker and static props not available, we can't generate the check
-    // This shouldn't happen in normal use - generateSchemaValidator creates tracker when needed
-  });
-}
-
-/**
- * Generate unevaluatedItems check code
- *
- * This uses the runtime evalTracker to check which items have been evaluated.
- * Items are marked as evaluated by generateItemsChecks (prefixItems, items)
- * and generateContainsCheck (contains).
- */
-export function generateUnevaluatedItemsCheck(
-  code: CodeBuilder,
-  schema: JsonSchemaBase,
-  dataVar: Name,
-  pathExprCode: Code,
-  ctx: CompileContext,
-  dynamicScopeVar?: Name,
-  evalTracker?: EvalTracker
-): void {
-  if (schema.unevaluatedItems === undefined) return;
-
-  // If no tracker, we can't track evaluated items - this shouldn't happen
-  // since generateSchemaValidator creates one when unevaluatedItems exists
-  if (!evalTracker || !evalTracker.trackingItems) {
-    return;
-  }
-
-  // Optimization: when unevaluatedItems is true, just mark all items without iterating
-  if (schema.unevaluatedItems === true) {
-    code.if(_`Array.isArray(${dataVar})`, () => {
-      evalTracker.markAllItems();
-    });
-    return;
-  }
-
-  // Only check if data is an array
-  code.if(_`Array.isArray(${dataVar})`, () => {
-    // Optimization: skip the entire loop if all items are already marked as evaluated
-    // This happens when a nested schema has unevaluatedItems: true
-    code.if(_`${evalTracker.trackerVar}.maxItem !== Infinity`, () => {
-      // Check each item against the tracker
-      const iVar = code.genVar('i');
-      code.forArray(iVar, dataVar, () => {
-        const condition = evalTracker.isUnevaluatedItem(iVar);
-        const itemPathExpr = pathExprIndex(pathExprCode, iVar);
-
-        code.if(condition, () => {
-          if (schema.unevaluatedItems === false) {
-            genError(
-              code,
-              itemPathExpr,
-              '#/unevaluatedItems',
-              'unevaluatedItems',
-              'must NOT have unevaluated items',
-              {},
-              ctx.getMainFuncName()
-            );
-          } else {
-            // unevaluatedItems: <schema> - validate and mark as evaluated
-            const itemVar = code.genVar('ui');
-            code.line(_`const ${itemVar} = ${dataVar}[${iVar}];`);
-            generateSchemaValidator(
-              code,
-              schema.unevaluatedItems as JsonSchema,
-              itemVar,
-              itemPathExpr,
-              ctx,
-              dynamicScopeVar
-            );
-            evalTracker.markItemsDynamic(iVar);
-          }
-        });
-      });
-    });
-  });
 }
