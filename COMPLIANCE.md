@@ -3,9 +3,9 @@
 ## Summary
 
 - **Total Tests**: 1990
-- **Passed**: 1983 (99.6%)
+- **Passed**: 1990 (100.0%)
 - **Failed**: 0
-- **Skipped**: 7
+- **Skipped**: 0
 
 ## By Keyword
 
@@ -37,7 +37,7 @@
 | exclusiveMinimum | 4 | 0 | 0 | 100% |
 | float-overflow | 1 | 0 | 0 | 100% |
 | format | 133 | 0 | 0 | 100% |
-| format-assertion | 0 | 0 | 4 | N/A |
+| format-assertion | 4 | 0 | 0 | 100% |
 | hostname | 61 | 0 | 0 | 100% |
 | id | 3 | 0 | 0 | 100% |
 | idn-email | 10 | 0 | 0 | 100% |
@@ -82,7 +82,7 @@
 | unevaluatedProperties | 125 | 0 | 0 | 100% |
 | uniqueItems | 69 | 0 | 0 | 100% |
 | unknown | 7 | 0 | 0 | 100% |
-| unknownKeyword | 0 | 0 | 3 | N/A |
+| unknownKeyword | 3 | 0 | 0 | 100% |
 | uri | 36 | 0 | 0 | 100% |
 | uri-reference | 15 | 0 | 0 | 100% |
 | uri-template | 10 | 0 | 0 | 100% |
