@@ -2259,8 +2259,19 @@ export function generateFormatCheck(
 ): void {
   if (schema.format === undefined) return;
 
-  // Skip if formatAssertion is disabled
-  if (!ctx.options.formatAssertion) return;
+  // Determine if format validation should be enabled:
+  // 1. If there's a custom metaschema with $vocabulary, check if format-assertion is enabled
+  // 2. Otherwise, use the global formatAssertion option (auto-detected from dialect)
+  let enableFormatAssertion: boolean;
+  if (ctx.hasCustomVocabulary()) {
+    // Custom metaschema: use vocabulary to determine format validation
+    enableFormatAssertion = ctx.isVocabularyEnabled(VOCABULARIES.format_assertion);
+  } else {
+    // No custom metaschema: use the global option (respects user's explicit setting or auto-detection)
+    enableFormatAssertion = ctx.options.formatAssertion;
+  }
+
+  if (!enableFormatAssertion) return;
 
   const format = schema.format;
 
