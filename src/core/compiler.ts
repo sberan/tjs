@@ -1783,7 +1783,10 @@ export function generateRefCheck(
 
   // In legacy mode, dynamicScopeVar is undefined - simpler function call
   if (!dynamicScopeVar) {
-    code.if(_`!${funcName}(${dataVar}, errors, ${pathExprCode})`, () => {
+    // Optimization: only compute path when errors array is present (deferred path construction)
+    // Most validators run without error tracking, so this avoids string concatenation overhead
+    const pathArg = pathExprCode.toString() === "''" ? _`''` : _`errors ? ${pathExprCode} : ''`;
+    code.if(_`!${funcName}(${dataVar}, errors, ${pathArg})`, () => {
       code.line(_`return false;`);
     });
     return;
@@ -1816,6 +1819,8 @@ export function generateRefCheck(
       // Push dynamic anchors for this resource, call validator, then pop
       // Pass tracker if we have one (for runtime-optional tracking)
       const trackerArg = evalTracker ? _`, ${evalTracker.trackerVar}` : _``;
+      // Optimization: defer path construction when errors is not present
+      const pathArg = pathExprCode.toString() === "''" ? _`''` : _`errors ? ${pathExprCode} : ''`;
       code.block(_``, () => {
         const pushCount = resourceAnchors.length;
         for (const { anchor, schema: anchorSchema } of resourceAnchors) {
@@ -1827,7 +1832,7 @@ export function generateRefCheck(
           );
         }
         code.if(
-          _`!${funcName}(${dataVar}, errors, ${pathExprCode}, ${dynamicScopeVar}${trackerArg})`,
+          _`!${funcName}(${dataVar}, errors, ${pathArg}, ${dynamicScopeVar}${trackerArg})`,
           () => {
             // Pop before returning
             for (let i = 0; i < pushCount; i++) {
@@ -1848,12 +1853,11 @@ export function generateRefCheck(
   // No dynamic anchors to push - simple call
   // Pass tracker if we have one (for runtime-optional tracking)
   const trackerArg = evalTracker ? _`, ${evalTracker.trackerVar}` : _``;
-  code.if(
-    _`!${funcName}(${dataVar}, errors, ${pathExprCode}, ${dynamicScopeVar}${trackerArg})`,
-    () => {
-      code.line(_`return false;`);
-    }
-  );
+  // Optimization: defer path construction when errors is not present
+  const pathArg = pathExprCode.toString() === "''" ? _`''` : _`errors ? ${pathExprCode} : ''`;
+  code.if(_`!${funcName}(${dataVar}, errors, ${pathArg}, ${dynamicScopeVar}${trackerArg})`, () => {
+    code.line(_`return false;`);
+  });
 }
 
 /**
