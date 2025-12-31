@@ -1068,13 +1068,15 @@ export function generatePropertiesChecks(
   const hasAnyPatternProps =
     schema.patternProperties && Object.keys(schema.patternProperties).length > 0;
 
+  // Early return optimization: skip entirely if nothing to validate or track
+  // Only check hasAnyProps/hasAnyPatternProps if we have an evalTracker that needs them
   if (
     !hasProps &&
     !hasPatternProps &&
     !hasAdditionalProps &&
     !hasAnyAdditionalProps &&
-    !hasAnyProps &&
-    !hasAnyPatternProps
+    !(hasAnyProps && evalTracker) &&
+    !(hasAnyPatternProps && evalTracker)
   )
     return;
 
