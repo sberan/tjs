@@ -1943,12 +1943,32 @@ export function generateCompositionChecks(
     const countVar = code.genVar('oneOfCount');
     code.line(_`let ${countVar} = 0;`);
 
+    // Optimization: when only tracking items (not properties) and not using item sets,
+    // we can reuse a single temp tracker across all oneOf branches.
+    // This saves object allocation since we only need the maxItem from the winning branch.
+    const onlyTrackingItems =
+      evalTracker?.trackingItems && !evalTracker?.trackingProps && !evalTracker?.useItemSet;
+    const sharedTempVar = onlyTrackingItems ? code.genVar('oneOfTracker') : undefined;
+    if (sharedTempVar) {
+      code.line(_`const ${sharedTempVar} = { maxItem: -1 };`);
+    }
+
     // Use a temp tracker for each branch, merge into parent only if valid
     schema.oneOf.forEach((subSchema) => {
       // Optimization: skip temp tracker for no-op schemas (true, {})
       // They match everything but don't contribute any annotations
       const needsTracker = !isNoOpSchema(subSchema) && subSchema !== false;
-      const tempVar = needsTracker ? evalTracker?.createTempTracker('oneOfTracker') : undefined;
+
+      // Use shared temp tracker when only tracking items, otherwise create individual trackers
+      const tempVar = needsTracker
+        ? (sharedTempVar ?? evalTracker?.createTempTracker('oneOfTracker'))
+        : undefined;
+
+      // Reset shared tracker maxItem before each branch check
+      if (sharedTempVar && needsTracker) {
+        code.line(_`${sharedTempVar}.maxItem = -1;`);
+      }
+
       const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx, tempVar);
       code.if(checkExpr, () => {
         code.line(_`${countVar}++;`);
