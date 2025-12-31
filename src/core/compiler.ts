@@ -2184,34 +2184,41 @@ export function generateUnevaluatedPropertiesCheck(
 
   // Only check if data is an object
   code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
-    // Check each property against the tracker
-    const keyVar = new Name('key');
-    code.forIn(keyVar, dataVar, () => {
-      const condition = evalTracker.isUnevaluatedProp(keyVar);
-      const keyPathExpr = pathExprDynamic(pathExprCode, keyVar);
+    // Optimize: if unevaluatedProperties is true, just mark all props without looping
+    if (schema.unevaluatedProperties === true) {
+      evalTracker.markAllProps();
+    } else {
+      // Check each property against the tracker
+      const keyVar = new Name('key');
+      code.forIn(keyVar, dataVar, () => {
+        const condition = evalTracker.isUnevaluatedProp(keyVar);
+        const keyPathExpr = pathExprDynamic(pathExprCode, keyVar);
 
-      code.if(condition, () => {
-        if (schema.unevaluatedProperties === false) {
-          genError(code, keyPathExpr, 'unevaluatedProperties', 'Unevaluated property not allowed');
-        } else if (schema.unevaluatedProperties === true) {
-          // unevaluatedProperties: true - mark as evaluated (for bubbling to parent)
-          evalTracker.markPropDynamic(keyVar);
-        } else if (schema.unevaluatedProperties !== undefined) {
-          // unevaluatedProperties: <schema> - validate and mark as evaluated
-          const propVar = code.genVar('up');
-          code.line(_`const ${propVar} = ${dataVar}[${keyVar}];`);
-          generateSchemaValidator(
-            code,
-            schema.unevaluatedProperties,
-            propVar,
-            keyPathExpr,
-            ctx,
-            dynamicScopeVar
-          );
-          evalTracker.markPropDynamic(keyVar);
-        }
+        code.if(condition, () => {
+          if (schema.unevaluatedProperties === false) {
+            genError(
+              code,
+              keyPathExpr,
+              'unevaluatedProperties',
+              'Unevaluated property not allowed'
+            );
+          } else if (schema.unevaluatedProperties !== undefined) {
+            // unevaluatedProperties: <schema> - validate and mark as evaluated
+            const propVar = code.genVar('up');
+            code.line(_`const ${propVar} = ${dataVar}[${keyVar}];`);
+            generateSchemaValidator(
+              code,
+              schema.unevaluatedProperties,
+              propVar,
+              keyPathExpr,
+              ctx,
+              dynamicScopeVar
+            );
+            evalTracker.markPropDynamic(keyVar);
+          }
+        });
       });
-    });
+    }
   });
 }
 

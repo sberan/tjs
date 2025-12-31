@@ -245,13 +245,9 @@ export class EvalTracker {
     // Check: not marked as all evaluated, not in evaluated props object, not matching any pattern
     // We check both compile-time patternVars (local) and runtime tracker.patterns (from called functions)
 
-    // Optimization: Check __all__ flag first and short-circuit immediately if true
-    // When additionalProperties: true is present, __all__ is set and we can skip all other checks
-    // This dramatically improves performance when __all__ is true (common with additionalProperties: true)
-    let expr = `!${this.trackerVar}.props.__all__`;
-
-    // Only check individual properties and patterns if __all__ is false
-    expr += ` && !${this.trackerVar}.props[${keyName}]`;
+    // Build base condition efficiently with early exits
+    // Order: cheapest checks first (property lookups), then regex tests
+    let expr = `!${this.trackerVar}.props.__all__ && !${this.trackerVar}.props[${keyName}]`;
 
     // Check compile-time patterns inline for better JIT optimization
     for (const patternVar of this.patternVars) {
@@ -259,11 +255,10 @@ export class EvalTracker {
     }
 
     // Check runtime patterns (from nested function calls)
-    // Optimize: inline the pattern check to avoid function call overhead
-    // The V8 JIT can optimize this better than .some() or an IIFE
-    const trackerPatternsCheck = `${this.trackerVar}.patterns`;
-    expr += ` && (${trackerPatternsCheck}.length === 0 || `;
-    expr += `${trackerPatternsCheck}.every(p => !p.test(${keyName})))`;
+    // Optimize: use !.some() instead of .every() - benchmarks show .some() is faster
+    // Also check length === 0 first to short-circuit in the common case
+    const patternsVar = `${this.trackerVar}.patterns`;
+    expr += ` && (${patternsVar}.length === 0 || !${patternsVar}.some(p => p.test(${keyName})))`;
 
     return new Code(expr);
   }
