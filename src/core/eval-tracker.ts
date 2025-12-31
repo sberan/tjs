@@ -285,14 +285,21 @@ export class EvalTracker {
   }
 
   /** Check if a property is unevaluated (returns Code expression) */
-  isUnevaluatedProp(keyVar: Name | string): Code {
+  isUnevaluatedProp(keyVar: Name | string, skipAllCheck: boolean = false): Code {
     const keyName = typeof keyVar === 'string' ? new Name(keyVar) : keyVar;
     // Check: not marked as all evaluated, not in evaluated props object, not matching any pattern
     // We check both compile-time patternVars (local) and runtime tracker.patterns (from called functions)
 
     // Build base condition efficiently with early exits
     // Order: cheapest checks first (property lookups), then regex tests
-    let expr = _`!${this.trackerVar}.props.__all__ && !${this.trackerVar}.props[${keyName}]`;
+    let expr: Code;
+
+    if (skipAllCheck) {
+      // When __all__ check is hoisted outside the loop, skip it here
+      expr = _`!${this.trackerVar}.props[${keyName}]`;
+    } else {
+      expr = _`!${this.trackerVar}.props.__all__ && !${this.trackerVar}.props[${keyName}]`;
+    }
 
     // Check compile-time patterns inline for better JIT optimization
     for (const patternVar of this.patternVars) {
@@ -304,8 +311,8 @@ export class EvalTracker {
     // (i.e., no patternProperties in the schema tree), we can skip the patterns check entirely.
     // This is determined by the hasPatterns flag set during tracker initialization.
     if (this.hasPatterns) {
-      // Optimize: use !.some() instead of .every() - benchmarks show .some() is faster
-      // Also check length === 0 first to short-circuit in the common case
+      // Optimize: when patterns array is likely empty (common case), avoid .some() overhead
+      // by checking length first. Only call .some() if there are patterns to check.
       const patternsVar = _`${this.trackerVar}.patterns`;
       expr = _`${expr} && (${patternsVar}.length === 0 || !${patternsVar}.some(p => p.test(${keyName})))`;
     }
