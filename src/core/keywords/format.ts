@@ -606,6 +606,121 @@ function validateEmail(s: string): boolean {
   return false;
 }
 
+/**
+ * Validate internationalized email (idn-email format).
+ * Supports Unicode in both local part and domain.
+ * Optimized for performance with early exits and minimal allocations.
+ */
+function validateIdnEmail(s: string): boolean {
+  const len = s.length;
+
+  // Find @ position and check for exactly one
+  let atIndex = -1;
+  let hasNonAscii = false;
+  for (let i = 0; i < len; i++) {
+    const c = s.charCodeAt(i);
+    if (c === 64) {
+      // '@' char
+      if (atIndex >= 0) return false; // Multiple @
+      atIndex = i;
+    }
+    if (c > 127) hasNonAscii = true;
+  }
+
+  // Must have @ and not at start or end
+  if (atIndex <= 0 || atIndex >= len - 1) return false;
+
+  // Fast path: pure ASCII email (most common case)
+  if (!hasNonAscii) return validateEmail(s);
+
+  // Internationalized email - split and validate parts
+  // Domain validation
+  const domainStart = atIndex + 1;
+  const firstDomainChar = s.charCodeAt(domainStart);
+
+  // Check for IP literal domain
+  if (firstDomainChar === 91 && s.charCodeAt(len - 1) === 93) {
+    // IP literal - local part must be ASCII only
+    // Just validate with regular email since we already know there's non-ASCII
+    // and IP literals don't support IDN in local part
+    return false;
+  }
+
+  // Validate domain with IDN rules (this is the expensive part)
+  const domain = s.slice(domainStart);
+  if (!validateIdnHostname(domain)) return false;
+
+  // Validate local part (lightweight validation for Unicode)
+  // Length check
+  if (atIndex > 64) return false;
+
+  // Check first and last char not dot
+  const firstChar = s.charCodeAt(0);
+  const lastLocalChar = s.charCodeAt(atIndex - 1);
+  if (firstChar === 46 || lastLocalChar === 46) return false;
+
+  // Validate local part characters
+  let prevWasDot = false;
+  for (let i = 0; i < atIndex; i++) {
+    const c = s.charCodeAt(i);
+
+    // Check for consecutive dots
+    if (c === 46) {
+      // dot
+      if (prevWasDot) return false;
+      prevWasDot = true;
+      continue;
+    }
+    prevWasDot = false;
+
+    // Allow ASCII alphanumeric and common email special chars
+    if (c < 128) {
+      // Fast ASCII path
+      if (
+        (c >= 48 && c <= 57) || // 0-9
+        (c >= 65 && c <= 90) || // A-Z
+        (c >= 97 && c <= 122) || // a-z
+        c === 33 || // !
+        c === 35 || // #
+        c === 36 || // $
+        c === 37 || // %
+        c === 38 || // &
+        c === 39 || // '
+        c === 42 || // *
+        c === 43 || // +
+        c === 45 || // -
+        c === 47 || // /
+        c === 61 || // =
+        c === 63 || // ?
+        c === 94 || // ^
+        c === 95 || // _
+        c === 96 || // `
+        c === 123 || // {
+        c === 124 || // |
+        c === 125 || // }
+        c === 126 // ~
+      ) {
+        continue;
+      }
+      // Disallow other ASCII chars (control chars, space, quotes, etc.)
+      return false;
+    }
+
+    // Non-ASCII Unicode char - apply basic rules
+    // Disallow control chars and private use
+    if (
+      c < 0xa0 || // Control chars + non-breaking space boundary
+      (c >= 0xd800 && c <= 0xdfff) || // Surrogates
+      c === 0xfffe ||
+      c === 0xffff // Non-characters
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function validateIPv6(s: string): boolean {
   // Zone identifiers (like %eth1) are NOT allowed per JSON Schema format
   if (s.indexOf('%') >= 0) return false;
@@ -760,7 +875,7 @@ function validateUriTemplate(s: string): boolean {
 export function createFormatValidators(fast = false): Record<string, (s: string) => boolean> {
   return {
     email: validateEmail,
-    'idn-email': (s) => validateEmail(s) || validateIdnHostname(s.split('@')[1] || ''),
+    'idn-email': validateIdnEmail,
     uuid: (s) => FORMAT_REGEX.uuid.test(s),
     'date-time': fast ? (s) => FAST_DATE_TIME_REGEX.test(s) : validateDateTime,
     uri: validateUri,
