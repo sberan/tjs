@@ -548,7 +548,7 @@ export function generateConstCheck(
   schema: JsonSchemaBase,
   dataVar: Name,
   pathExprCode: Code,
-  _ctx: CompileContext
+  ctx: CompileContext
 ): void {
   if (schema.const === undefined) return;
 
@@ -558,8 +558,11 @@ export function generateConstCheck(
       genError(code, pathExprCode, 'const', `Expected constant value`);
     });
   } else {
-    // For objects/arrays, use deepEqual
-    code.if(_`!deepEqual(${dataVar}, ${stringify(schema.const)})`, () => {
+    // For objects/arrays, store as runtime constant and use deepEqual
+    // This avoids JSON parsing overhead of stringify at runtime
+    const constName = new Name(ctx.genRuntimeName('const'));
+    ctx.addRuntimeFunction(constName.str, schema.const);
+    code.if(_`!deepEqual(${dataVar}, ${constName})`, () => {
       genError(code, pathExprCode, 'const', `Expected constant value`);
     });
   }
