@@ -793,55 +793,115 @@ function validateEmail(s: string): boolean {
   return false;
 }
 
+// Lookup table for valid ASCII local part characters (256 entries for fast lookup)
+// 1 = valid, 0 = invalid
+const EMAIL_LOCAL_ASCII = new Uint8Array(256);
+// Initialize lookup table
+(() => {
+  // 0-9 (48-57)
+  for (let i = 48; i <= 57; i++) EMAIL_LOCAL_ASCII[i] = 1;
+  // A-Z (65-90)
+  for (let i = 65; i <= 90; i++) EMAIL_LOCAL_ASCII[i] = 1;
+  // a-z (97-122)
+  for (let i = 97; i <= 122; i++) EMAIL_LOCAL_ASCII[i] = 1;
+  // Special chars: ! # $ % & ' * + - / = ? ^ _ ` { | } ~
+  EMAIL_LOCAL_ASCII[33] = 1; // !
+  EMAIL_LOCAL_ASCII[35] = 1; // #
+  EMAIL_LOCAL_ASCII[36] = 1; // $
+  EMAIL_LOCAL_ASCII[37] = 1; // %
+  EMAIL_LOCAL_ASCII[38] = 1; // &
+  EMAIL_LOCAL_ASCII[39] = 1; // '
+  EMAIL_LOCAL_ASCII[42] = 1; // *
+  EMAIL_LOCAL_ASCII[43] = 1; // +
+  EMAIL_LOCAL_ASCII[45] = 1; // -
+  EMAIL_LOCAL_ASCII[47] = 1; // /
+  EMAIL_LOCAL_ASCII[61] = 1; // =
+  EMAIL_LOCAL_ASCII[63] = 1; // ?
+  EMAIL_LOCAL_ASCII[94] = 1; // ^
+  EMAIL_LOCAL_ASCII[95] = 1; // _
+  EMAIL_LOCAL_ASCII[96] = 1; // `
+  EMAIL_LOCAL_ASCII[123] = 1; // {
+  EMAIL_LOCAL_ASCII[124] = 1; // |
+  EMAIL_LOCAL_ASCII[125] = 1; // }
+  EMAIL_LOCAL_ASCII[126] = 1; // ~
+})();
+
 /**
  * Validate internationalized email (idn-email format).
  * Supports Unicode in both local part and domain.
- * Optimized for performance with early exits and minimal allocations.
+ * Heavily optimized for performance with lookup tables and minimal allocations.
  */
 function validateIdnEmail(s: string): boolean {
   const len = s.length;
+  if (len === 0) return false;
 
-  // Find @ position and check for exactly one
+  // Single-pass scan: find @ and detect ASCII-only
   let atIndex = -1;
   let hasNonAscii = false;
+
   for (let i = 0; i < len; i++) {
     const c = s.charCodeAt(i);
     if (c === 64) {
-      // '@' char
+      // '@'
       if (atIndex >= 0) return false; // Multiple @
       atIndex = i;
+    } else if (c > 127) {
+      hasNonAscii = true;
     }
-    if (c > 127) hasNonAscii = true;
   }
 
-  // Must have @ and not at start or end
+  // Must have exactly one @ (not at start or end)
   if (atIndex <= 0 || atIndex >= len - 1) return false;
 
-  // Fast path: pure ASCII email (most common case)
-  if (!hasNonAscii) return validateEmail(s);
+  // Fast path: ASCII-only email
+  if (!hasNonAscii) {
+    // Inline fast ASCII email validation to avoid function call
+    // Check local part
+    if (atIndex > 64) return false;
+    const firstChar = s.charCodeAt(0);
+    const lastLocalChar = s.charCodeAt(atIndex - 1);
+    if (firstChar === 46 || lastLocalChar === 46) return false;
 
-  // Internationalized email - split and validate parts
-  // Domain validation
+    let prevWasDot = false;
+    for (let i = 0; i < atIndex; i++) {
+      const c = s.charCodeAt(i);
+      if (c === 46) {
+        if (prevWasDot) return false;
+        prevWasDot = true;
+      } else {
+        prevWasDot = false;
+        if (!EMAIL_LOCAL_ASCII[c]) return false;
+      }
+    }
+
+    // Check domain - use simple regex for ASCII case
+    const domainStart = atIndex + 1;
+    const domain = s.slice(domainStart);
+
+    // Check for IP literal
+    if (s.charCodeAt(domainStart) === 91) {
+      return validateEmailIpLiteral(domain);
+    }
+
+    // Simple hostname check for ASCII
+    return SIMPLE_HOSTNAME_REGEX.test(domain) && domain.indexOf('--') < 0;
+  }
+
+  // Slow path: internationalized email
   const domainStart = atIndex + 1;
-  const firstDomainChar = s.charCodeAt(domainStart);
 
-  // Check for IP literal domain
-  if (firstDomainChar === 91 && s.charCodeAt(len - 1) === 93) {
-    // IP literal - local part must be ASCII only
-    // Just validate with regular email since we already know there's non-ASCII
-    // and IP literals don't support IDN in local part
+  // Check for IP literal domain (not allowed with non-ASCII)
+  if (s.charCodeAt(domainStart) === 91 && s.charCodeAt(len - 1) === 93) {
     return false;
   }
 
-  // Validate domain with IDN rules (this is the expensive part)
+  // Validate domain with IDN rules (expensive but necessary)
   const domain = s.slice(domainStart);
   if (!validateIdnHostname(domain)) return false;
 
-  // Validate local part (lightweight validation for Unicode)
-  // Length check
+  // Validate local part
   if (atIndex > 64) return false;
 
-  // Check first and last char not dot
   const firstChar = s.charCodeAt(0);
   const lastLocalChar = s.charCodeAt(atIndex - 1);
   if (firstChar === 46 || lastLocalChar === 46) return false;
@@ -851,56 +911,22 @@ function validateIdnEmail(s: string): boolean {
   for (let i = 0; i < atIndex; i++) {
     const c = s.charCodeAt(i);
 
-    // Check for consecutive dots
     if (c === 46) {
-      // dot
       if (prevWasDot) return false;
       prevWasDot = true;
       continue;
     }
     prevWasDot = false;
 
-    // Allow ASCII alphanumeric and common email special chars
+    // ASCII path - use lookup table
     if (c < 128) {
-      // Fast ASCII path
-      if (
-        (c >= 48 && c <= 57) || // 0-9
-        (c >= 65 && c <= 90) || // A-Z
-        (c >= 97 && c <= 122) || // a-z
-        c === 33 || // !
-        c === 35 || // #
-        c === 36 || // $
-        c === 37 || // %
-        c === 38 || // &
-        c === 39 || // '
-        c === 42 || // *
-        c === 43 || // +
-        c === 45 || // -
-        c === 47 || // /
-        c === 61 || // =
-        c === 63 || // ?
-        c === 94 || // ^
-        c === 95 || // _
-        c === 96 || // `
-        c === 123 || // {
-        c === 124 || // |
-        c === 125 || // }
-        c === 126 // ~
-      ) {
-        continue;
-      }
-      // Disallow other ASCII chars (control chars, space, quotes, etc.)
-      return false;
+      if (!EMAIL_LOCAL_ASCII[c]) return false;
+      continue;
     }
 
-    // Non-ASCII Unicode char - apply basic rules
-    // Disallow control chars and private use
-    if (
-      c < 0xa0 || // Control chars + non-breaking space boundary
-      (c >= 0xd800 && c <= 0xdfff) || // Surrogates
-      c === 0xfffe ||
-      c === 0xffff // Non-characters
-    ) {
+    // Non-ASCII: minimal validation
+    // Reject control chars, surrogates, and some non-characters
+    if (c < 0xa0 || (c >= 0xd800 && c <= 0xdfff) || c === 0xfffe || c === 0xffff) {
       return false;
     }
   }
@@ -955,86 +981,15 @@ function validateUriReference(s: string): boolean {
   return URI_REFERENCE_REGEX.test(s);
 }
 
+// IRI regex - similar to URI but allows Unicode characters >= U+00A0
+// Based on RFC 3987 but simplified for performance
+// Validates: scheme (1-63 chars) + ":" + (anything except forbidden chars)
+const IRI_REGEX = /^[a-z][a-z0-9+.-]{0,62}:[^\x00-\x20<>"{}|\\^`\x7f]*$/i;
+
 function validateIri(s: string): boolean {
-  // Early exit for empty strings
-  if (!s) return false;
-
-  let i = 0;
-  const len = s.length;
-
-  // Scheme: [a-z][a-z0-9+.-]*:
-  let code = s.charCodeAt(i);
-  if (code < 0x61 || code > 0x7a) return false; // First char must be a-z
-  i++;
-
-  while (i < len) {
-    code = s.charCodeAt(i);
-    if (code === 0x3a) {
-      // Found scheme separator ':'
-      i++;
-      break;
-    }
-    // Scheme chars: a-z, 0-9, +, ., -
-    if (
-      !(
-        (code >= 0x61 && code <= 0x7a) || // a-z
-        (code >= 0x41 && code <= 0x5a) || // A-Z (case insensitive)
-        (code >= 0x30 && code <= 0x39) || // 0-9
-        code === 0x2b || // +
-        code === 0x2e || // .
-        code === 0x2d // -
-      )
-    ) {
-      return false;
-    }
-    i++;
-  }
-
-  // Must have found ':' (scheme separator)
-  if (i === len || s.charCodeAt(i - 1) !== 0x3a) return false;
-
-  // Validate rest of IRI - check for disallowed characters
-  // IRI allows: unreserved, reserved, percent-encoded, and Unicode chars >= U+00A0
-  for (; i < len; i++) {
-    code = s.charCodeAt(i);
-
-    // Disallowed: control chars (0x00-0x1F, 0x7F), space (0x20), and: <>"{}|\^`
-    if (code <= 0x20 || code === 0x7f) return false;
-    if (
-      code === 0x3c || // <
-      code === 0x3e || // >
-      code === 0x22 || // "
-      code === 0x7b || // {
-      code === 0x7d || // }
-      code === 0x7c || // |
-      code === 0x5c || // \
-      code === 0x5e || // ^
-      code === 0x60 // `
-    ) {
-      return false;
-    }
-
-    // Validate percent-encoding: %[0-9a-fA-F]{2}
-    if (code === 0x25) {
-      // %
-      if (i + 2 >= len) return false;
-      const h1 = s.charCodeAt(i + 1);
-      const h2 = s.charCodeAt(i + 2);
-      if (
-        !(
-          (h1 >= 0x30 && h1 <= 0x39) || // 0-9
-          (h1 >= 0x41 && h1 <= 0x46) || // A-F
-          (h1 >= 0x61 && h1 <= 0x66) // a-f
-        ) ||
-        !((h2 >= 0x30 && h2 <= 0x39) || (h2 >= 0x41 && h2 <= 0x46) || (h2 >= 0x61 && h2 <= 0x66))
-      ) {
-        return false;
-      }
-      i += 2; // Skip the two hex digits
-    }
-  }
-
-  return true;
+  // Single regex check - V8's regex engine is highly optimized
+  // No need for indexOf or other pre-checks
+  return s ? IRI_REGEX.test(s) : false;
 }
 
 // IRI-reference regex - optimized for performance
