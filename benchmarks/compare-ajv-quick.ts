@@ -630,7 +630,7 @@ async function main() {
       drafts.push(arg as Draft);
     }
   }
-  if (drafts.length === 0) drafts.push('draft2020-12');
+  if (drafts.length === 0) drafts.push('draft4', 'draft6', 'draft7', 'draft2020-12');
 
   console.log('tjs vs ajv Benchmark Comparison');
   if (filter) {

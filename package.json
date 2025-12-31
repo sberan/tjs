@@ -25,10 +25,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky",
-    "bench": "tsx benchmarks/bench.ts",
-    "bench:json": "tsx benchmarks/bench.ts --json",
-    "bench:compare": "tsx benchmarks/compare-ajv-quick.ts",
-    "bench:compare:all": "tsx benchmarks/compare-ajv-quick.ts draft4 draft6 draft7 draft2020-12"
+    "bench": "tsx benchmarks/compare-ajv-quick.ts"
   },
   "keywords": [
     "json-schema",

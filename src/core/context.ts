@@ -3,6 +3,7 @@
  */
 
 import type { JsonSchema, JsonSchemaBase } from '../types.js';
+import { Name } from './codegen.js';
 
 /**
  * Coercion options - can be boolean or object with per-type settings
@@ -153,7 +154,7 @@ export class CompileContext {
   #funcCounter = 0;
 
   /** Map of schema reference -> compiled function name */
-  readonly #compiledRefs = new Map<JsonSchema, string>();
+  readonly #compiledRefs = new Map<JsonSchema, Name>();
 
   /** Map of schema $id -> schema */
   readonly #schemasById = new Map<string, JsonSchema>();
@@ -177,7 +178,7 @@ export class CompileContext {
   readonly #runtimeFunctions: Map<string, unknown> = new Map();
 
   /** Schemas that need to be compiled (queue) */
-  readonly #compileQueue: Array<{ schema: JsonSchema; funcName: string }> = [];
+  readonly #compileQueue: Array<{ schema: JsonSchema; funcName: Name }> = [];
 
   /** Root schema for JSON pointer resolution */
   readonly #rootSchema: JsonSchema;
@@ -189,7 +190,7 @@ export class CompileContext {
   readonly #hasCustomVocabulary: boolean;
 
   /** Main function name for error assignment */
-  #mainFuncName: string | null = null;
+  #mainFuncName: Name | null = null;
 
   constructor(rootSchema: JsonSchema, options: CompileOptions = {}) {
     this.#rootSchema = rootSchema;
@@ -415,8 +416,8 @@ export class CompileContext {
    * Generate a unique function name for a schema.
    * The first call sets the main function name used for error assignment.
    */
-  genFuncName(): string {
-    const name = `validate${this.#funcCounter++}`;
+  genFuncName(): Name {
+    const name = new Name(`validate${this.#funcCounter++}`);
     if (this.#mainFuncName === null) {
       this.#mainFuncName = name;
     }
@@ -426,7 +427,7 @@ export class CompileContext {
   /**
    * Get the main function name for error assignment in generated code.
    */
-  getMainFuncName(): string {
+  getMainFuncName(): Name {
     if (this.#mainFuncName === null) {
       throw new Error('Main function name not yet generated');
     }
@@ -450,21 +451,21 @@ export class CompileContext {
   /**
    * Get the function name for a compiled schema
    */
-  getCompiledName(schema: JsonSchema): string | undefined {
+  getCompiledName(schema: JsonSchema): Name | undefined {
     return this.#compiledRefs.get(schema);
   }
 
   /**
    * Register a schema as compiled with its function name
    */
-  registerCompiled(schema: JsonSchema, funcName: string): void {
+  registerCompiled(schema: JsonSchema, funcName: Name): void {
     this.#compiledRefs.set(schema, funcName);
   }
 
   /**
    * Queue a schema for compilation (used for $ref targets)
    */
-  queueCompile(schema: JsonSchema): string {
+  queueCompile(schema: JsonSchema): Name {
     const existing = this.#compiledRefs.get(schema);
     if (existing) return existing;
 
@@ -477,7 +478,7 @@ export class CompileContext {
   /**
    * Get the next schema to compile from the queue
    */
-  nextToCompile(): { schema: JsonSchema; funcName: string } | undefined {
+  nextToCompile(): { schema: JsonSchema; funcName: Name } | undefined {
     return this.#compileQueue.shift();
   }
 
