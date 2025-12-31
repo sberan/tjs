@@ -495,40 +495,78 @@ function validateHostname(s: string): boolean {
 }
 
 function validateIdnHostname(s: string): boolean {
-  if (s.length === 0 || s.length > 253) return false;
+  const len = s.length;
+  if (len === 0 || len > 253) return false;
 
-  // Replace IDN label separators with regular dots per RFC 3490
-  // U+002E (full stop), U+3002 (ideographic full stop), U+FF0E (fullwidth full stop), U+FF61 (halfwidth ideographic full stop)
-  const normalized = s.replace(/[\u3002\uff0e\uff61]/g, '.');
+  // Trailing dot is NOT allowed - check with charCodeAt for performance
+  const lastChar = s.charCodeAt(len - 1);
+  if (lastChar === 0x002e || lastChar === 0x3002 || lastChar === 0xff0e || lastChar === 0xff61) {
+    return false;
+  }
 
-  // Trailing dot is NOT allowed per test suite
-  if (normalized.endsWith('.')) return false;
+  // Inline label validation to avoid split() allocation
+  let labelStart = 0;
+  let labelLen = 0;
 
-  const labels = normalized.split('.');
-  for (const label of labels) {
-    if (label.length === 0 || label.length > 63) return false;
+  for (let i = 0; i <= len; i++) {
+    const code = i < len ? s.charCodeAt(i) : 0x002e; // Treat end as separator
+    const isSeparator = code === 0x002e || code === 0x3002 || code === 0xff0e || code === 0xff61;
 
-    // Check if it's an A-label (Punycode)
-    const lowerLabel = label.toLowerCase();
-    if (lowerLabel.startsWith('xn--')) {
-      // Validate as Punycode (same as hostname format)
-      const punycode = lowerLabel.slice(4);
-      if (punycode.length === 0) return false;
-      const decoded = decodePunycode(punycode);
-      if (decoded === null) return false;
-      // Validate the decoded U-label
-      if (!validateIdnaLabel(decoded)) return false;
+    if (isSeparator || i === len) {
+      // Process label
+      if (labelLen === 0 || labelLen > 63) return false;
+
+      const label = s.substring(labelStart, labelStart + labelLen);
+
+      // Check if it's an A-label (Punycode) - avoid toLowerCase() allocation
+      if (labelLen >= 4) {
+        const c0 = label.charCodeAt(0) | 0x20; // to lowercase
+        const c1 = label.charCodeAt(1) | 0x20;
+        const c2 = label.charCodeAt(2);
+        const c3 = label.charCodeAt(3);
+
+        if (c0 === 0x78 && c1 === 0x6e && c2 === 0x2d && c3 === 0x2d) {
+          // xn-- prefix (Punycode)
+          const punycode = labelLen > 4 ? label.slice(4) : '';
+          if (punycode.length === 0) return false;
+
+          // Validate Punycode - need lowercase for decoding
+          const punycodeNorm = punycode.toLowerCase();
+          const decoded = decodePunycode(punycodeNorm);
+          if (decoded === null) return false;
+
+          // Validate the decoded U-label
+          if (!validateIdnaLabel(decoded)) return false;
+        } else {
+          // Check for -- in positions 2-3 (not allowed for U-labels)
+          if (c2 === 0x2d && c3 === 0x2d) return false;
+
+          // Check that label doesn't start or end with hyphen
+          if (label.charCodeAt(0) === 0x2d || label.charCodeAt(labelLen - 1) === 0x2d) {
+            return false;
+          }
+
+          // Validate as U-label directly
+          if (!validateIdnaLabel(label)) return false;
+        }
+      } else {
+        // Short labels - still need basic validation
+        // Check that label doesn't start or end with hyphen
+        if (label.charCodeAt(0) === 0x2d || label.charCodeAt(labelLen - 1) === 0x2d) {
+          return false;
+        }
+
+        // Validate as U-label directly
+        if (!validateIdnaLabel(label)) return false;
+      }
+
+      labelStart = i + 1;
+      labelLen = 0;
     } else {
-      // Check for -- in positions 3-4 (not allowed for U-labels)
-      if (label.length >= 4 && label[2] === '-' && label[3] === '-') return false;
-
-      // Check that label doesn't start or end with hyphen
-      if (label.startsWith('-') || label.endsWith('-')) return false;
-
-      // Validate as U-label directly
-      if (!validateIdnaLabel(label)) return false;
+      labelLen++;
     }
   }
+
   return true;
 }
 
