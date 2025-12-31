@@ -1781,11 +1781,16 @@ export function generateCompositionChecks(
 
       // Use a temp tracker for each branch, merge into parent only if valid
       schema.anyOf.forEach((subSchema) => {
-        const tempVar = evalTracker?.createTempTracker('anyOfTracker');
+        // Optimization: skip temp tracker for no-op schemas (true, {})
+        // They match everything but don't contribute any annotations
+        const needsTracker = !isNoOpSchema(subSchema) && subSchema !== false;
+        const tempVar = needsTracker ? evalTracker?.createTempTracker('anyOfTracker') : undefined;
         const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx, tempVar);
         code.if(checkExpr, () => {
           code.line(_`${resultVar} = true;`);
-          evalTracker?.mergeFrom(tempVar);
+          if (needsTracker) {
+            evalTracker?.mergeFrom(tempVar);
+          }
         });
       });
 
@@ -1802,11 +1807,16 @@ export function generateCompositionChecks(
 
     // Use a temp tracker for each branch, merge into parent only if valid
     schema.oneOf.forEach((subSchema) => {
-      const tempVar = evalTracker?.createTempTracker('oneOfTracker');
+      // Optimization: skip temp tracker for no-op schemas (true, {})
+      // They match everything but don't contribute any annotations
+      const needsTracker = !isNoOpSchema(subSchema) && subSchema !== false;
+      const tempVar = needsTracker ? evalTracker?.createTempTracker('oneOfTracker') : undefined;
       const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx, tempVar);
       code.if(checkExpr, () => {
         code.line(_`${countVar}++;`);
-        evalTracker?.mergeFrom(tempVar);
+        if (needsTracker) {
+          evalTracker?.mergeFrom(tempVar);
+        }
       });
       // Early exit if more than one matches (only when not tracking)
       if (!evalTracker?.enabled) {
@@ -1880,7 +1890,9 @@ export function generateCompositionChecks(
     // Check if condition matches
     // Use temp tracker so we only merge if condition matches
     const condVar = code.genVar('ifCond');
-    const tempVar = evalTracker?.createTempTracker('ifTracker');
+    // Optimization: skip temp tracker for no-op schemas (true, {})
+    const needsTracker = !isNoOpSchema(ifSchema) && ifSchema !== false;
+    const tempVar = needsTracker ? evalTracker?.createTempTracker('ifTracker') : undefined;
     const checkExpr = generateSubschemaCheck(code, ifSchema, dataVar, ctx, tempVar);
     code.line(_`const ${condVar} = ${checkExpr};`);
 
