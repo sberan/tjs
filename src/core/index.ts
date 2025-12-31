@@ -3,7 +3,7 @@
  */
 
 import type { JsonSchema } from '../types.js';
-import { compile, type CompileError } from './compiler.js';
+import { compile } from './compiler.js';
 import type { CompileOptions } from './context.js';
 import { coerceValue, createRefResolver } from './coercion.js';
 
@@ -259,34 +259,30 @@ export function createValidator<T>(schema: JsonSchema, options: CompileOptions =
     // Coercion enabled - wrap with coerceValue
     validator.validate = function (data: unknown): ValidationResult<T> {
       const coercedData = coerceValue(data, schema, coerceOptions, refResolver).value;
-      const errors: CompileError[] = [];
-      if (validateFn(coercedData, errors)) {
+      if (validateFn(coercedData)) {
         return { valid: true, value: coercedData as T, error: undefined };
       }
       return {
         valid: false,
         value: undefined,
-        error:
-          errors.length > 0
-            ? errors
-            : [
-                {
-                  instancePath: '',
-                  schemaPath: '#',
-                  keyword: 'schema',
-                  params: {},
-                  message: 'validation failed',
-                },
-              ],
+        error: validateFn.errors ?? [
+          {
+            instancePath: '',
+            schemaPath: '#',
+            keyword: 'schema',
+            params: {},
+            message: 'validation failed',
+          },
+        ],
       };
     };
 
     validator.assert = function (data: unknown): T {
       const coercedData = coerceValue(data, schema, coerceOptions, refResolver).value;
-      const errors: CompileError[] = [];
-      if (!validateFn(coercedData, errors)) {
+      if (!validateFn(coercedData)) {
+        const errors = validateFn.errors;
         const errorMsg =
-          errors.length > 0
+          errors && errors.length > 0
             ? errors.map((e) => `${e.instancePath}: ${e.message}`).join('; ')
             : 'Validation failed';
         throw new Error(errorMsg);
@@ -296,33 +292,29 @@ export function createValidator<T>(schema: JsonSchema, options: CompileOptions =
   } else {
     // Coercion disabled - direct validation without coercion overhead
     validator.validate = function (data: unknown): ValidationResult<T> {
-      const errors: CompileError[] = [];
-      if (validateFn(data, errors)) {
+      if (validateFn(data)) {
         return { valid: true, value: data as T, error: undefined };
       }
       return {
         valid: false,
         value: undefined,
-        error:
-          errors.length > 0
-            ? errors
-            : [
-                {
-                  instancePath: '',
-                  schemaPath: '#',
-                  keyword: 'schema',
-                  params: {},
-                  message: 'validation failed',
-                },
-              ],
+        error: validateFn.errors ?? [
+          {
+            instancePath: '',
+            schemaPath: '#',
+            keyword: 'schema',
+            params: {},
+            message: 'validation failed',
+          },
+        ],
       };
     };
 
     validator.assert = function (data: unknown): T {
-      const errors: CompileError[] = [];
-      if (!validateFn(data, errors)) {
+      if (!validateFn(data)) {
+        const errors = validateFn.errors;
         const errorMsg =
-          errors.length > 0
+          errors && errors.length > 0
             ? errors.map((e) => `${e.instancePath}: ${e.message}`).join('; ')
             : 'Validation failed';
         throw new Error(errorMsg);

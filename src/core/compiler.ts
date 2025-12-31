@@ -48,10 +48,13 @@ export interface CompileError {
 }
 
 /**
- * Compiled validation function type
- * When errors array is provided, errors are collected instead of early return
+ * Compiled validation function type.
+ * The function sets .errors property on itself (AJV-compatible).
  */
-export type ValidateFn = (data: unknown, errors?: CompileError[]) => boolean;
+export interface ValidateFn {
+  (data: unknown): boolean;
+  errors: CompileError[] | null;
+}
 
 /**
  * Compile a JSON Schema into a validation function
@@ -2150,24 +2153,15 @@ export function generateRefCheck(
     const crossDraftValidator = compile(refSchema, crossDraftOptions);
 
     // Create a wrapper function that adjusts error paths
-    const wrapperFn = (data: unknown, errors: CompileError[] | undefined, path: string) => {
-      if (!errors) {
-        // No error tracking - just validate
-        return crossDraftValidator(data);
-      }
+    const wrapperFn = (data: unknown, path: string) => {
+      const result = crossDraftValidator(data);
 
-      // Validate with error tracking
-      const localErrors: CompileError[] = [];
-      const result = crossDraftValidator(data, localErrors);
-
-      // Adjust paths in errors and add to parent errors array
-      if (!result) {
-        for (const err of localErrors) {
-          errors.push({
-            ...err,
-            instancePath: path + err.instancePath,
-          });
-        }
+      // Adjust paths in errors from cross-draft validator
+      if (!result && crossDraftValidator.errors) {
+        crossDraftValidator.errors = crossDraftValidator.errors.map((err) => ({
+          ...err,
+          instancePath: path + err.instancePath,
+        }));
       }
 
       return result;
@@ -2176,7 +2170,7 @@ export function generateRefCheck(
     ctx.addRuntimeFunction(crossDraftName.str, wrapperFn);
 
     // Generate code to call the cross-draft validator wrapper
-    code.if(_`!${crossDraftName}(${dataVar}, errors, ${pathExprCode})`, () => {
+    code.if(_`!${crossDraftName}(${dataVar}, ${pathExprCode})`, () => {
       code.line(_`return false;`);
     });
     return;
