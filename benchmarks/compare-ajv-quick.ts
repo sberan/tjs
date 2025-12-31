@@ -739,14 +739,39 @@ async function main() {
   );
   console.log('─'.repeat(100));
 
-  // Top 10 slowest tests (where tjs is slowest compared to ajv, by absolute ns difference)
+  // Top 10 slowest tests by absolute tjs time
   const slowest = [...allSuitePerfs]
-    .filter((s) => s.tjsNs > s.ajvNs) // tjs is slower (higher ns)
-    .sort((a, b) => b.tjsNs - b.ajvNs - (a.tjsNs - a.ajvNs)) // sort by absolute ns difference
+    .sort((a, b) => b.tjsNs - a.tjsNs) // sort by tjs time descending
     .slice(0, 10);
 
   if (slowest.length > 0) {
-    console.log('\nTop 10 Slowest Tests (tjs vs ajv by absolute ns slower)');
+    console.log('\nTop 10 Slowest Tests (by tjs execution time)');
+    console.log('─'.repeat(100));
+    console.log(
+      'Draft'.padEnd(14) + 'Test'.padEnd(55) + 'tjs ns'.padStart(10) + 'ajv ns'.padStart(10)
+    );
+    console.log('─'.repeat(100));
+
+    for (const s of slowest) {
+      const name = s.description.length > 53 ? s.description.slice(0, 50) + '...' : s.description;
+      console.log(
+        s.draft.padEnd(14) +
+          name.padEnd(55) +
+          Math.round(s.tjsNs).toLocaleString().padStart(10) +
+          Math.round(s.ajvNs).toLocaleString().padStart(10)
+      );
+    }
+    console.log('─'.repeat(100));
+  }
+
+  // Top 10 slowest tests compared to ajv (by absolute ns difference)
+  const slowestVsAjv = [...allSuitePerfs]
+    .filter((s) => s.tjsNs > s.ajvNs) // tjs is slower
+    .sort((a, b) => b.tjsNs - b.ajvNs - (a.tjsNs - a.ajvNs)) // sort by ns difference
+    .slice(0, 10);
+
+  if (slowestVsAjv.length > 0) {
+    console.log('\nTop 10 Slowest vs AJV (by ns slower than ajv)');
     console.log('─'.repeat(100));
     console.log(
       'Draft'.padEnd(14) +
@@ -757,7 +782,7 @@ async function main() {
     );
     console.log('─'.repeat(100));
 
-    for (const s of slowest) {
+    for (const s of slowestVsAjv) {
       const name = s.description.length > 48 ? s.description.slice(0, 45) + '...' : s.description;
       const diffNs = Math.round(s.tjsNs - s.ajvNs);
       console.log(
