@@ -5,7 +5,7 @@
  * which properties/items have been evaluated by other schema keywords.
  */
 
-import { CodeBuilder, Name, Code, _, escapeString } from './codegen.js';
+import { CodeBuilder, Name, Code, _ } from './codegen.js';
 
 /**
  * Runtime tracker for evaluated properties/items.
@@ -84,30 +84,29 @@ export class EvalTracker {
   /** Initialize the tracker (creates the tracker object if tracking is needed) */
   init(): void {
     // Create tracker with props/maxItem/items/patterns based on what we're tracking
-    const parts: string[] = [];
+    const parts: Code[] = [];
     if (this.trackProps) {
-      parts.push('props: {}');
+      parts.push(_`props: {}`);
       // Only include patterns array if needed
       if (this.hasPatterns) {
-        parts.push('patterns: []');
+        parts.push(_`patterns: []`);
       }
     }
     if (this.trackItems) {
-      parts.push('maxItem: -1');
+      parts.push(_`maxItem: -1`);
       if (this.useItemSet) {
-        parts.push('items: new Set()');
+        parts.push(_`items: new Set()`);
       }
     }
     if (parts.length > 0) {
-      this.code.line(_`const ${this.trackerVar} = { ${new Code(parts.join(', '))} };`);
+      this.code.line(_`const ${this.trackerVar} = { ${Code.join(parts, ', ')} };`);
     }
   }
 
   /** Mark a static property name as evaluated */
   markProp(propName: string): void {
     if (this.trackProps) {
-      const escaped = escapeString(propName);
-      const stmt = _`${this.trackerVar}.props["${new Code(escaped)}"] = true;`;
+      const stmt = _`${this.trackerVar}.props[${propName}] = true;`;
       if (this.isRuntimeOptional) {
         this.code.if(this.trackerVar, () => {
           this.code.line(stmt);
@@ -131,8 +130,8 @@ export class EvalTracker {
     }
 
     // For larger numbers, use Object.assign with a literal object for better performance
-    const assignments = propNames.map((name) => `"${escapeString(name)}": true`).join(', ');
-    const stmt = _`Object.assign(${this.trackerVar}.props, { ${new Code(assignments)} });`;
+    const assignments = propNames.map((name) => _`${name}: true`);
+    const stmt = _`Object.assign(${this.trackerVar}.props, { ${Code.join(assignments, ', ')} });`;
 
     if (this.isRuntimeOptional) {
       this.code.if(this.trackerVar, () => {
@@ -399,21 +398,21 @@ export class EvalTracker {
   createTempTracker(prefix: string): Name | undefined {
     if (!this.enabled) return undefined;
     const tempVar = this.code.genVar(prefix);
-    const parts: string[] = [];
+    const parts: Code[] = [];
     if (this.trackProps) {
-      parts.push('props: {}');
+      parts.push(_`props: {}`);
       // Only include patterns array if needed
       if (this.hasPatterns) {
-        parts.push('patterns: []');
+        parts.push(_`patterns: []`);
       }
     }
     if (this.trackItems) {
-      parts.push('maxItem: -1');
+      parts.push(_`maxItem: -1`);
       if (this.useItemSet) {
-        parts.push('items: new Set()');
+        parts.push(_`items: new Set()`);
       }
     }
-    this.code.line(_`const ${tempVar} = { ${new Code(parts.join(', '))} };`);
+    this.code.line(_`const ${tempVar} = { ${Code.join(parts, ', ')} };`);
     return tempVar;
   }
 

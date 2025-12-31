@@ -34,8 +34,8 @@ export class Code {
   /** The actual code string */
   readonly #str: string;
 
-  /** @internal - Use `_` template literal instead */
-  constructor(s: string) {
+  /** @internal - Use static factory methods or `_` template literal instead */
+  protected constructor(s: string) {
     this.#str = s;
   }
 
@@ -46,6 +46,18 @@ export class Code {
   /** Check if this code is empty */
   get isEmpty(): boolean {
     return this.#str === '';
+  }
+
+  /**
+   * Create a Code instance from a raw string.
+   * @internal - Use only within codegen.ts for utility functions
+   */
+  static raw(s: string): Code {
+    return new Code(s);
+  }
+
+  static join(codes: Code[], separator: string): Code {
+    return new Code(codes.map((c) => c.toString()).join(separator));
   }
 }
 
@@ -146,7 +158,7 @@ export function _(strings: TemplateStringsArray, ...values: SafeValue[]): Code {
     result += safeInterpolate(values[i]);
     result += strings[i + 1];
   }
-  return new Code(result);
+  return Code.raw(result);
 }
 
 /**
@@ -180,7 +192,7 @@ export function str(strings: TemplateStringsArray, ...values: SafeValue[]): Code
     }
     result += strings[i + 1];
   }
-  return new Code(result);
+  return Code.raw(result);
 }
 
 // ============================================================================
@@ -202,10 +214,10 @@ export function propAccess(obj: Code | Name, prop: string): Code {
   const objStr = obj.toString();
   // Use dot notation if property is a valid identifier
   if (/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(prop)) {
-    return new Code(`${objStr}.${prop}`);
+    return Code.raw(`${objStr}.${prop}`);
   }
   // Otherwise use bracket notation with escaped string
-  return new Code(`${objStr}["${escapeString(prop)}"]`);
+  return Code.raw(`${objStr}["${escapeString(prop)}"]`);
 }
 
 /**
@@ -215,7 +227,7 @@ export function propAccess(obj: Code | Name, prop: string): Code {
 export function indexAccess(obj: Code | Name, index: Code | Name | number): Code {
   const objStr = obj.toString();
   const indexStr = index instanceof Code ? index.toString() : String(index);
-  return new Code(`${objStr}[${indexStr}]`);
+  return Code.raw(`${objStr}[${indexStr}]`);
 }
 
 /**
@@ -223,7 +235,7 @@ export function indexAccess(obj: Code | Name, index: Code | Name | number): Code
  * Returns Code since it's safe to embed.
  */
 export function stringify(value: unknown): Code {
-  return new Code(JSON.stringify(value));
+  return Code.raw(JSON.stringify(value));
 }
 
 /**
@@ -231,35 +243,35 @@ export function stringify(value: unknown): Code {
  * The string will be quoted and escaped.
  */
 export function strLit(s: string): Code {
-  return new Code(`"${escapeString(s)}"`);
+  return Code.raw(`"${escapeString(s)}"`);
 }
 
 /**
  * Create a single-quoted string literal Code.
  */
 export function strLitSingle(s: string): Code {
-  return new Code(`'${escapeString(s)}'`);
+  return Code.raw(`'${escapeString(s)}'`);
 }
 
 /**
  * Create a number literal Code.
  */
 export function numLit(n: number): Code {
-  return new Code(String(n));
+  return Code.raw(String(n));
 }
 
 /**
  * Concatenate multiple Code fragments.
  */
 export function concat(...codes: Code[]): Code {
-  return new Code(codes.map((c) => c.toString()).join(''));
+  return Code.raw(codes.map((c) => c.toString()).join(''));
 }
 
 /**
  * Join Code fragments with a separator.
  */
 export function join(codes: Code[], separator: string): Code {
-  return new Code(codes.map((c) => c.toString()).join(separator));
+  return Code.raw(codes.map((c) => c.toString()).join(separator));
 }
 
 /**
@@ -268,7 +280,7 @@ export function join(codes: Code[], separator: string): Code {
 export function and(...conditions: Code[]): Code {
   if (conditions.length === 0) return _`true`;
   if (conditions.length === 1) return conditions[0];
-  return new Code(conditions.map((c) => c.toString()).join(' && '));
+  return Code.raw(conditions.map((c) => c.toString()).join(' && '));
 }
 
 /**
@@ -277,7 +289,7 @@ export function and(...conditions: Code[]): Code {
 export function or(...conditions: Code[]): Code {
   if (conditions.length === 0) return _`false`;
   if (conditions.length === 1) return conditions[0];
-  return new Code(conditions.map((c) => c.toString()).join(' || '));
+  return Code.raw(conditions.map((c) => c.toString()).join(' || '));
 }
 
 /**
@@ -297,9 +309,9 @@ export function pathExpr(basePath: Code | Name, segment: string | number): Code 
   const segmentStr = String(segment);
   const escaped = escapeString(segmentStr.replace(/~/g, '~0').replace(/\//g, '~1'));
   if (basePath.toString() === "''") {
-    return new Code(`'/${escaped}'`);
+    return Code.raw(`'/${escaped}'`);
   }
-  return _`${basePath} + '/${new Code(escaped)}'`;
+  return _`${basePath} + '/${Code.raw(escaped)}'`;
 }
 
 /**

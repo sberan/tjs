@@ -19,7 +19,6 @@ import {
   or,
   and,
   not,
-  escapeString,
 } from './codegen.js';
 import { CompileContext, VOCABULARIES, supportsFeature, type CompileOptions } from './context.js';
 import { EvalTracker } from './eval-tracker.js';
@@ -76,7 +75,7 @@ export function compile(schema: JsonSchema, options: CompileOptions = {}): Valid
   const dynamicScopeVar = hasDynamicFeatures ? new Name('dynamicScope') : undefined;
 
   // Collect dynamic anchors from the root resource to add to scope at startup
-  const anchorFuncNames: Array<{ anchor: string; funcName: string }> = [];
+  const anchorFuncNames: Array<{ anchor: string; funcName: Name }> = [];
   if (hasDynamicFeatures) {
     const rootResourceId =
       typeof schema === 'object' && schema !== null && schema.$id ? schema.$id : '__root__';
@@ -98,10 +97,10 @@ export function compile(schema: JsonSchema, options: CompileOptions = {}): Valid
   // Process any queued schemas (from $ref)
   // Each compiled function takes an optional tracker parameter for eval tracking
   // The tracker parameter is used to mark evaluated properties/items
-  let queued: { schema: JsonSchema; funcName: string } | undefined;
+  let queued: { schema: JsonSchema; funcName: Name } | undefined;
   while ((queued = ctx.nextToCompile())) {
     const q = queued; // Capture for closure
-    const qFuncName = new Name(q.funcName);
+    const qFuncName = q.funcName;
     code.blank();
     if (hasDynamicFeatures) {
       // Function signature: (data, errors, path, dynamicScope, tracker?)
@@ -395,7 +394,7 @@ function generateSchemaValidator(
       for (const { anchor, schema: anchorSchema } of resourceAnchors) {
         const anchorFuncName = ctx.getCompiledName(anchorSchema) ?? ctx.queueCompile(anchorSchema);
         code.line(
-          _`${scopeVar}.push({ anchor: ${stringify(anchor)}, validate: ${new Name(anchorFuncName)} });`
+          _`${scopeVar}.push({ anchor: ${stringify(anchor)}, validate: ${anchorFuncName} });`
         );
       }
     }
@@ -1764,7 +1763,7 @@ export function generateContainsCheck(
       });
     } else {
       // Queue the contains schema for compilation (reuses all existing generators)
-      const containsFuncName = new Name(ctx.queueCompile(containsSchema));
+      const containsFuncName = ctx.queueCompile(containsSchema);
 
       code.forArray(iVar, dataVar, () => {
         const itemAccess = indexAccess(dataVar, iVar);
@@ -2200,7 +2199,7 @@ export function generateRefCheck(
   }
 
   // Get the function name (queue for compilation if needed)
-  const funcName = new Name(ctx.getCompiledName(refSchema) ?? ctx.queueCompile(refSchema));
+  const funcName = ctx.getCompiledName(refSchema) ?? ctx.queueCompile(refSchema);
 
   // In legacy mode, dynamicScopeVar is undefined - simpler function call
   if (!dynamicScopeVar) {
@@ -2245,9 +2244,8 @@ export function generateRefCheck(
       code.block(_``, () => {
         const pushCount = resourceAnchors.length;
         for (const { anchor, schema: anchorSchema } of resourceAnchors) {
-          const anchorFuncName = new Name(
-            ctx.getCompiledName(anchorSchema) ?? ctx.queueCompile(anchorSchema)
-          );
+          const anchorFuncName =
+            ctx.getCompiledName(anchorSchema) ?? ctx.queueCompile(anchorSchema);
           code.line(
             _`${dynamicScopeVar}.push({ anchor: ${stringify(anchor)}, validate: ${anchorFuncName} });`
           );
@@ -2328,15 +2326,15 @@ export function generateCompositionChecks(
 
       // Optimization: reuse a single temp tracker to avoid allocations
       const sharedTempVar = code.genVar('anyOfTracker');
-      const parts: string[] = [];
-      if (evalTracker.trackingProps) parts.push('props: {}', 'patterns: []');
+      const parts: Code[] = [];
+      if (evalTracker.trackingProps) parts.push(_`props: {}`, _`patterns: []`);
       if (evalTracker.trackingItems) {
-        parts.push('maxItem: -1');
+        parts.push(_`maxItem: -1`);
         if (evalTracker.useItemSet) {
-          parts.push('items: new Set()');
+          parts.push(_`items: new Set()`);
         }
       }
-      code.line(_`const ${sharedTempVar} = { ${new Code(parts.join(', '))} };`);
+      code.line(_`const ${sharedTempVar} = { ${Code.join(parts, ', ')} };`);
 
       schema.anyOf.forEach((subSchema) => {
         if (isNoOpSchema(subSchema)) {
@@ -2378,15 +2376,15 @@ export function generateCompositionChecks(
       const sharedTempVar = needsAnyTracker ? code.genVar('anyOfTracker') : undefined;
 
       if (sharedTempVar && evalTracker) {
-        const parts: string[] = [];
-        if (evalTracker.trackingProps) parts.push('props: {}', 'patterns: []');
+        const parts: Code[] = [];
+        if (evalTracker.trackingProps) parts.push(_`props: {}`, _`patterns: []`);
         if (evalTracker.trackingItems) {
-          parts.push('maxItem: -1');
+          parts.push(_`maxItem: -1`);
           if (evalTracker.useItemSet) {
-            parts.push('items: new Set()');
+            parts.push(_`items: new Set()`);
           }
         }
-        code.line(_`const ${sharedTempVar} = { ${new Code(parts.join(', '))} };`);
+        code.line(_`const ${sharedTempVar} = { ${Code.join(parts, ', ')} };`);
       }
 
       // Use a shared temp tracker for branches, merge into parent only if valid
@@ -2814,8 +2812,7 @@ function tryInlineIfCondition(
     if (hasRequired && ifSchema.required && ifSchema.required.length > 0) {
       for (const propName of ifSchema.required) {
         if (typeof propName === 'string') {
-          const escaped = escapeString(propName);
-          code.if(_`${tempResultVar} && !("${new Code(escaped)}" in ${dataVar})`, () => {
+          code.if(_`${tempResultVar} && !(${propName} in ${dataVar})`, () => {
             code.line(_`${tempResultVar} = false;`);
           });
         }
@@ -2827,10 +2824,9 @@ function tryInlineIfCondition(
       for (const [propName, propSchema] of Object.entries(ifSchema.properties)) {
         if (typeof propName !== 'string') continue;
 
-        const escaped = escapeString(propName);
         const propVar = code.genVar('prop');
 
-        code.line(_`const ${propVar} = ${dataVar}["${new Code(escaped)}"];`);
+        code.line(_`const ${propVar} = ${dataVar}[${propName}];`);
         code.if(_`${tempResultVar} && ${propVar} !== undefined`, () => {
           // Generate inline validation for simple property schemas
           const inlineValidation = tryInlinePropertyValidation(
@@ -2919,15 +2915,14 @@ function tryInlinePropertyValidation(
 
   // Inline const check
   if (propSchema.const !== undefined) {
-    code.if(_`${propVar} !== ${new Code(JSON.stringify(propSchema.const))}`, () => {
+    code.if(_`${propVar} !== ${stringify(propSchema.const)}`, () => {
       code.line(_`${resultVar} = false;`);
     });
   }
 
   // Inline enum check
   if (propSchema.enum !== undefined && Array.isArray(propSchema.enum)) {
-    const enumValues = propSchema.enum.map((v) => JSON.stringify(v)).join(', ');
-    code.if(_`![${new Code(enumValues)}].includes(${propVar})`, () => {
+    code.if(_`!${stringify(propSchema.enum)}.includes(${propVar})`, () => {
       code.line(_`${resultVar} = false;`);
     });
   }
@@ -3096,7 +3091,7 @@ function generateSubschemaCheck(
   }
 
   // Fall back to function call for complex schemas
-  const funcName = new Name(ctx.queueCompile(schema));
+  const funcName = ctx.queueCompile(schema);
   const trackerArg = trackerVar ? _`, ${trackerVar}` : _``;
   // Skip dynamicScope in legacy mode OR when there are no dynamic anchors
   if (ctx.options.legacyRef || !ctx.hasAnyDynamicAnchors()) {
@@ -3411,7 +3406,7 @@ export function generateDynamicRefCheck(
       );
       return;
     }
-    const staticFuncName = new Name(ctx.queueCompile(staticSchema));
+    const staticFuncName = ctx.queueCompile(staticSchema);
 
     // Check if the statically resolved schema has a matching $dynamicAnchor
     // If not, $dynamicRef behaves like a regular $ref (no dynamic scope search)
@@ -3474,7 +3469,7 @@ export function generateDynamicRefCheck(
       return;
     }
 
-    const funcName = new Name(ctx.queueCompile(refSchema));
+    const funcName = ctx.queueCompile(refSchema);
     const scopeArg = dynamicScopeVar || _`[]`;
     const trackerArg = evalTracker ? _`, ${evalTracker.trackerVar}` : _``;
     code.if(_`!${funcName}(${dataVar}, errors, ${pathExprCode}, ${scopeArg}${trackerArg})`, () => {

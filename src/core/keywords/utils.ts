@@ -8,10 +8,10 @@ import {
   Code,
   Name,
   _,
-  escapeString,
   propAccess,
   pathExpr,
   pathExprDynamic,
+  stringify,
 } from '../codegen.js';
 
 /**
@@ -70,7 +70,7 @@ export function genRequiredCheck(
   dataVar: Name,
   propName: string,
   pathExprCode: Code,
-  mainFuncName: string
+  mainFuncName: Name
 ): void {
   const propPathExpr = pathExpr(pathExprCode, propName);
 
@@ -106,7 +106,7 @@ export function genBatchedRequiredChecks(
   dataVar: Name,
   requiredProps: readonly string[],
   pathExprCode: Code,
-  mainFuncName: string
+  mainFuncName: Name
 ): void {
   if (requiredProps.length === 0) return;
 
@@ -147,7 +147,7 @@ export function genBatchedRequiredChecks(
     // Use the missing variable to create dynamic path (already in JSON Pointer format)
     const propPathExpr = pathExprDynamic(pathExprCode, missingVar);
     // Build error object using template - missingVar is a runtime variable
-    const mainFuncRef = new Name(mainFuncName);
+    const mainFuncRef = mainFuncName;
     code.line(
       _`if (errors) errors.push({ instancePath: ${propPathExpr}, schemaPath: '#/required', keyword: 'required', params: { missingProperty: ${missingVar} }, message: "must have required property '" + ${missingVar} + "'" });`
     );
@@ -177,21 +177,20 @@ export function genError(
   keyword: string,
   message: string,
   params: object,
-  mainFuncName: string
+  mainFuncName: Name
 ): void {
-  const escapedMessage = escapeString(message);
-  const escapedSchemaPath = escapeString(schemaPath);
-  const paramsJson = JSON.stringify(params);
+  // Use stringify() to get a Code object that won't be double-quoted by the _ template
+  const paramsCode = stringify(params);
 
   // Build the error object
-  const errObj = `{ instancePath: ${pathExprCode}, schemaPath: '${new Code(escapedSchemaPath)}', keyword: '${new Code(keyword)}', params: ${new Code(paramsJson)}, message: '${new Code(escapedMessage)}' }`;
+  const errObj = _`{ instancePath: ${pathExprCode}, schemaPath: ${schemaPath}, keyword: ${keyword}, params: ${paramsCode}, message: ${message} }`;
 
   // pathExprCode is already in JSON Pointer format - no conversion needed
-  code.line(_`if (errors) errors.push(${new Code(errObj)});`);
+  code.line(_`if (errors) errors.push(${errObj});`);
 
   // Set .errors on main function directly (AJV-compatible pattern)
   if (mainFuncName) {
-    code.line(_`${new Code(mainFuncName)}.errors = [${new Code(errObj)}];`);
+    code.line(_`${mainFuncName}.errors = [${errObj}];`);
   }
 
   code.line(_`return false;`);
