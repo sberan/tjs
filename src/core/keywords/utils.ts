@@ -168,18 +168,23 @@ export function getSimpleType(schema: unknown): string | undefined {
   if (typeof schema !== 'object' || schema === null) return undefined;
   const s = schema as JsonSchemaBase;
   const keys = Object.keys(s);
+
+  // Single type keyword
   if (keys.length === 1 && keys[0] === 'type' && typeof s.type === 'string') {
     return s.type;
   }
-  // Allow $schema + type
-  if (
-    keys.length === 2 &&
-    keys.includes('type') &&
-    keys.includes('$schema') &&
-    typeof s.type === 'string'
-  ) {
+
+  // Type + non-validating metadata keywords ($schema, $id) which don't affect validation
+  // Only allow $schema and $id because they're structural metadata, not validation constraints
+  // Note: $comment, title, description are excluded because they could be validated properties
+  // when the schema is used as data (e.g., validating against a metaschema)
+  const metadataKeys = new Set(['$schema', '$id']);
+  const validationKeys = keys.filter((k) => !metadataKeys.has(k));
+
+  if (validationKeys.length === 1 && validationKeys[0] === 'type' && typeof s.type === 'string') {
     return s.type;
   }
+
   return undefined;
 }
 
