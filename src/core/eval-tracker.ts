@@ -433,15 +433,22 @@ export class EvalTracker {
     if (!this.enabled || !tempVar) return;
     const doMerge = () => {
       if (this.trackProps) {
-        // Use Object.assign for bulk property copy - faster than for...in loop
-        this.code.line(_`Object.assign(${this.trackerVar}.props, ${tempVar}.props);`);
-        // Only merge patterns if patterns are supported
-        if (this.hasPatterns) {
-          // Optimize: only push patterns if there are any to avoid spread overhead
-          this.code.if(_`${tempVar}.patterns.length > 0`, () => {
-            this.code.line(_`${this.trackerVar}.patterns.push(...${tempVar}.patterns);`);
-          });
-        }
+        // Optimization: If source has __all__ set, just set __all__ on target
+        // This is MUCH faster than Object.assign for the "all props evaluated" case
+        this.code.if(_`${tempVar}.props.__all__`, () => {
+          this.code.line(_`${this.trackerVar}.props.__all__ = true;`);
+        });
+        this.code.else(() => {
+          // Use Object.assign for bulk property copy - faster than for...in loop
+          this.code.line(_`Object.assign(${this.trackerVar}.props, ${tempVar}.props);`);
+          // Only merge patterns if patterns are supported
+          if (this.hasPatterns) {
+            // Optimize: only push patterns if there are any to avoid spread overhead
+            this.code.if(_`${tempVar}.patterns.length > 0`, () => {
+              this.code.line(_`${this.trackerVar}.patterns.push(...${tempVar}.patterns);`);
+            });
+          }
+        });
       }
       if (this.trackItems) {
         this.code.line(

@@ -342,6 +342,120 @@ function schemaMarksAllPropsEvaluated(
 }
 
 /**
+ * Check if a schema can use static property checking for unevaluatedProperties.
+ * Returns the list of statically known property names if optimization is possible,
+ * or undefined if we need dynamic runtime tracking.
+ *
+ * Static optimization is possible when:
+ * - All evaluated properties are known at compile time (no dynamic branching)
+ * - No patternProperties (would require regex matching)
+ * - No oneOf/anyOf (would have dynamic property sets based on which branch matches)
+ * - No if/then/else (conditional property evaluation)
+ * - No dependentSchemas (conditional property evaluation based on presence)
+ * - No nested unevaluatedProperties (would require bubbling)
+ * - No $dynamicRef (dynamic resolution)
+ * - No additionalProperties (already marks all props as evaluated, but caller handles this)
+ */
+function collectStaticEvaluatedProps(
+  schema: JsonSchema,
+  ctx: CompileContext,
+  visited = new Set<JsonSchema>()
+): Set<string> | undefined {
+  if (typeof schema !== 'object' || schema === null) return new Set();
+  if (visited.has(schema)) return new Set();
+  visited.add(schema);
+
+  // Dynamic branching keywords - can't use static optimization
+  if (schema.oneOf || schema.anyOf || schema.if) {
+    return undefined;
+  }
+
+  // dependentSchemas - conditional property evaluation
+  if (schema.dependentSchemas && Object.keys(schema.dependentSchemas).length > 0) {
+    return undefined;
+  }
+
+  // dependencies (draft-07) - may contain conditional schemas
+  if (schema.dependencies) {
+    for (const dep of Object.values(schema.dependencies)) {
+      if (typeof dep === 'object' && dep !== null && !Array.isArray(dep)) {
+        return undefined; // Schema dependency, not just property dependency
+      }
+    }
+  }
+
+  // patternProperties - requires runtime regex matching
+  if (schema.patternProperties && Object.keys(schema.patternProperties).length > 0) {
+    return undefined;
+  }
+
+  // $dynamicRef - dynamic resolution
+  if (schema.$dynamicRef) {
+    return undefined;
+  }
+
+  // Nested unevaluatedProperties - would require bubbling
+  // We only optimize the outermost unevaluatedProperties
+  // (This is checked by recursing into subschemas)
+
+  // Collect static properties
+  const props = new Set<string>();
+
+  // Direct properties
+  if (schema.properties) {
+    for (const key of Object.keys(schema.properties)) {
+      props.add(key);
+    }
+  }
+
+  // allOf - all branches execute, so collect from all
+  if (schema.allOf) {
+    for (const sub of schema.allOf) {
+      // Check if sub has nested unevaluatedProperties
+      if (typeof sub === 'object' && sub !== null && sub.unevaluatedProperties !== undefined) {
+        return undefined; // Nested unevaluatedProperties needs bubbling
+      }
+      // Check if sub has additionalProperties - this marks ALL props as evaluated
+      // Can't use static optimization because we'd need to check every key
+      if (typeof sub === 'object' && sub !== null && sub.additionalProperties !== undefined) {
+        return undefined; // additionalProperties evaluates all props dynamically
+      }
+      const subProps = collectStaticEvaluatedProps(sub, ctx, visited);
+      if (subProps === undefined) return undefined; // One branch is dynamic
+      for (const p of subProps) props.add(p);
+    }
+  }
+
+  // Follow $ref
+  if (schema.$ref) {
+    const refSchema = ctx.resolveRef(schema.$ref, schema);
+    if (refSchema) {
+      // Check if ref target has nested unevaluatedProperties
+      if (
+        typeof refSchema === 'object' &&
+        refSchema !== null &&
+        refSchema.unevaluatedProperties !== undefined
+      ) {
+        return undefined; // Nested unevaluatedProperties needs bubbling
+      }
+      // Check if ref target has additionalProperties
+      if (
+        typeof refSchema === 'object' &&
+        refSchema !== null &&
+        refSchema.additionalProperties !== undefined
+      ) {
+        return undefined; // additionalProperties evaluates all props dynamically
+      }
+      const refProps = collectStaticEvaluatedProps(refSchema, ctx, visited);
+      if (refProps === undefined) return undefined;
+      for (const p of refProps) props.add(p);
+    }
+  }
+
+  return props;
+}
+
+/**
  * Generate validation code for a schema
  * @param pathExprCode - Code expression that evaluates to the current path string
  * @param dynamicScopeVar - Variable name for the dynamic scope array (for $dynamicRef)
@@ -439,6 +553,15 @@ function generateSchemaValidator(
       const skipTrueUnevalProps =
         hasUnevalProps && schema.unevaluatedProperties === true && !evalTracker;
 
+      // AJV-style optimization: When all properties are statically known and
+      // unevaluatedProperties: false, we can use static string comparison
+      // instead of runtime tracker - skip creating the tracker entirely
+      const canUseStaticProps =
+        hasUnevalProps &&
+        schema.unevaluatedProperties === false &&
+        !evalTracker &&
+        collectStaticEvaluatedProps(schema, ctx) !== undefined;
+
       // Optimization: When unevaluatedItems: true and no parent tracker,
       // we don't need to track anything since we accept all items
       const skipTrueUnevalItems =
@@ -448,7 +571,8 @@ function generateSchemaValidator(
       const needsItemSet = hasUnevalItems && schemaHasContains(schema, ctx);
 
       // Skip creating tracker if it would be unused
-      const shouldSkipProps = skipPropsTracking || canSkipUnevalPropsCheck || skipTrueUnevalProps;
+      const shouldSkipProps =
+        skipPropsTracking || canSkipUnevalPropsCheck || skipTrueUnevalProps || canUseStaticProps;
       const shouldSkipItems = skipTrueUnevalItems;
 
       if ((shouldSkipProps || !hasUnevalProps) && (shouldSkipItems || !hasUnevalItems)) {
@@ -3622,12 +3746,6 @@ export function generateUnevaluatedPropertiesCheck(
 ): void {
   if (schema.unevaluatedProperties === undefined) return;
 
-  // If no tracker, we can't track evaluated properties - this shouldn't happen
-  // since generateSchemaValidator creates one when unevaluatedProperties exists
-  if (!evalTracker || !evalTracker.trackingProps) {
-    return;
-  }
-
   // Optimization: If additionalProperties is present (even boolean true or {}),
   // ALL properties are marked as evaluated via markAllProps().
   // In this case, unevaluatedProperties check will never find unevaluated properties,
@@ -3639,16 +3757,58 @@ export function generateUnevaluatedPropertiesCheck(
   // Optimization: when unevaluatedProperties is true, just mark all props as evaluated
   // without iterating through them. This is much faster than checking each property.
   if (schema.unevaluatedProperties === true) {
-    evalTracker.markAllProps();
+    if (evalTracker) evalTracker.markAllProps();
     return;
   }
 
+  // AJV-style optimization: When all evaluated properties are known at compile time,
+  // use static string comparison instead of runtime object lookup.
+  // This generates: `key !== "foo" && key !== "bar"` instead of `!tracker.props[key]`
+  const staticProps = collectStaticEvaluatedProps(schema, ctx);
+
   // Only check if data is an object
   code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
-    // Optimize: if unevaluatedProperties is true, just mark all props without looping
-    if (schema.unevaluatedProperties === true) {
-      evalTracker.markAllProps();
-    } else {
+    if (staticProps !== undefined && schema.unevaluatedProperties === false) {
+      // Static optimization: generate direct string comparisons
+      // No need for tracker object at all - just compare against known property names
+      const keyVar = new Name('key');
+      code.forIn(keyVar, dataVar, () => {
+        const keyPathExpr = pathExprDynamic(pathExprCode, keyVar);
+
+        if (staticProps.size === 0) {
+          // No properties evaluated - any property is unevaluated
+          genError(
+            code,
+            keyPathExpr,
+            '#/unevaluatedProperties',
+            'unevaluatedProperties',
+            'must NOT have unevaluated properties',
+            {},
+            ctx.getMainFuncName()
+          );
+        } else {
+          // Generate: key !== "foo" && key !== "bar" && ...
+          const conditions: Code[] = [];
+          for (const prop of staticProps) {
+            conditions.push(_`${keyVar} !== ${stringify(prop)}`);
+          }
+          const condition = conditions.length === 1 ? conditions[0] : and(...conditions);
+
+          code.if(condition, () => {
+            genError(
+              code,
+              keyPathExpr,
+              '#/unevaluatedProperties',
+              'unevaluatedProperties',
+              'must NOT have unevaluated properties',
+              {},
+              ctx.getMainFuncName()
+            );
+          });
+        }
+      });
+    } else if (evalTracker && evalTracker.trackingProps) {
+      // Dynamic tracking: use runtime tracker object
       // Optimization: hoist the __all__ check outside the loop for better performance
       // This avoids checking __all__ for every single property in the for-in loop
       code.if(_`!${evalTracker.trackerVar}.props.__all__`, () => {
@@ -3688,6 +3848,8 @@ export function generateUnevaluatedPropertiesCheck(
         });
       });
     }
+    // If no tracker and static props not available, we can't generate the check
+    // This shouldn't happen in normal use - generateSchemaValidator creates tracker when needed
   });
 }
 
