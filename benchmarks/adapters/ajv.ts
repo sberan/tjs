@@ -10,10 +10,14 @@ const addedRemotes: Record<string, Set<string>> = {};
 function getAjv(draft: Draft): Ajv {
   if (!ajvInstances[draft]) {
     // Use Ajv2020 for modern drafts, regular Ajv for older drafts
+    // Note: We use strict: true (default) so ajv throws on unknown formats
+    // like iri, iri-reference, idn-email, idn-hostname that ajv-formats
+    // doesn't support. This prevents misleading benchmarks where ajv
+    // appears fast but isn't actually validating.
     if (draft === 'draft2020-12') {
-      ajvInstances[draft] = new Ajv2020({ allErrors: false, strict: false, logger: false });
+      ajvInstances[draft] = new Ajv2020({ allErrors: false, logger: false });
     } else {
-      ajvInstances[draft] = new Ajv({ allErrors: false, strict: false, logger: false });
+      ajvInstances[draft] = new Ajv({ allErrors: false, logger: false });
     }
     addFormats(ajvInstances[draft]);
     addedRemotes[draft] = new Set();
