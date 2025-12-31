@@ -245,8 +245,13 @@ export class EvalTracker {
     // Check: not marked as all evaluated, not in evaluated props object, not matching any pattern
     // We check both compile-time patternVars (local) and runtime tracker.patterns (from called functions)
 
-    // Build base condition efficiently
-    let expr = `!${this.trackerVar}.props.__all__ && !${this.trackerVar}.props[${keyName}]`;
+    // Optimization: Check __all__ flag first and short-circuit immediately if true
+    // When additionalProperties: true is present, __all__ is set and we can skip all other checks
+    // This dramatically improves performance when __all__ is true (common with additionalProperties: true)
+    let expr = `!${this.trackerVar}.props.__all__`;
+
+    // Only check individual properties and patterns if __all__ is false
+    expr += ` && !${this.trackerVar}.props[${keyName}]`;
 
     // Check compile-time patterns inline for better JIT optimization
     for (const patternVar of this.patternVars) {
