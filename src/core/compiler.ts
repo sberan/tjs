@@ -2150,6 +2150,13 @@ export function generateUnevaluatedPropertiesCheck(
     return;
   }
 
+  // Optimization: when unevaluatedProperties is true, just mark all props as evaluated
+  // without iterating through them. This is much faster than checking each property.
+  if (schema.unevaluatedProperties === true) {
+    evalTracker.markAllProps();
+    return;
+  }
+
   // Only check if data is an object
   code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
     // Check each property against the tracker
@@ -2161,9 +2168,6 @@ export function generateUnevaluatedPropertiesCheck(
       code.if(condition, () => {
         if (schema.unevaluatedProperties === false) {
           genError(code, keyPathExpr, 'unevaluatedProperties', 'Unevaluated property not allowed');
-        } else if (schema.unevaluatedProperties === true) {
-          // unevaluatedProperties: true - mark as evaluated (for bubbling to parent)
-          evalTracker.markPropDynamic(keyVar);
         } else if (schema.unevaluatedProperties !== undefined) {
           // unevaluatedProperties: <schema> - validate and mark as evaluated
           const propVar = code.genVar('up');
