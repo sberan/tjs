@@ -1666,10 +1666,44 @@ export function generateCompositionChecks(
   // Note: 'not' doesn't evaluate properties - it just checks they DON'T match
   if (schema.not !== undefined) {
     const notSchema = schema.not;
-    const checkExpr = generateSubschemaCheck(code, notSchema, dataVar, ctx);
-    code.if(checkExpr, () => {
+
+    // Optimization: detect always-pass and always-fail patterns
+    // not: true or not: {} → always fails (since true/{} matches everything)
+    if (isNoOpSchema(notSchema)) {
       genError(code, pathExprCode, 'not', 'Value must not match schema');
-    });
+    } else if (notSchema === false) {
+      // Optimization: not: false → always passes (since false matches nothing)
+      // Skip - always valid
+    } else if (
+      typeof notSchema === 'object' &&
+      notSchema !== null &&
+      notSchema.not !== undefined &&
+      Object.keys(notSchema).length === 1
+    ) {
+      // Optimization: detect double negation patterns
+      // not: { not: {} } or not: { not: true } → simplify to true (always passes)
+      // not: { not: false } → simplify to false (always fails)
+      const innerNotSchema = notSchema.not;
+
+      if (isNoOpSchema(innerNotSchema)) {
+        // not: { not: {} } or not: { not: true } → always passes (skip)
+      } else if (innerNotSchema === false) {
+        // not: { not: false } → always fails
+        genError(code, pathExprCode, 'not', 'Value must not match schema');
+      } else {
+        // Not optimizable - generate normal check
+        const checkExpr = generateSubschemaCheck(code, notSchema, dataVar, ctx);
+        code.if(checkExpr, () => {
+          genError(code, pathExprCode, 'not', 'Value must not match schema');
+        });
+      }
+    } else {
+      // Not optimizable - generate normal check
+      const checkExpr = generateSubschemaCheck(code, notSchema, dataVar, ctx);
+      code.if(checkExpr, () => {
+        genError(code, pathExprCode, 'not', 'Value must not match schema');
+      });
+    }
   }
 
   // if-then-else
