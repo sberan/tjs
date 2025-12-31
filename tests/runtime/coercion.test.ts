@@ -690,8 +690,7 @@ describe('coercion', () => {
   });
 
   describe('$ref', () => {
-    // TODO: $ref coercion requires resolving refs which needs CompileContext
-    it.skip('coerces values through $ref', () => {
+    it('coerces values through $ref', () => {
       const RefSchema = schema(
         {
           $defs: {

@@ -5,7 +5,7 @@
  * Returns the coerced value and whether coercion was successful.
  */
 
-import type { JsonSchema } from '../types.js';
+import type { JsonSchema, JsonSchemaBase } from '../types.js';
 import type { CoercionOptions } from './context.js';
 
 /**
@@ -16,6 +16,90 @@ export interface CoerceResult {
   value: unknown;
   /** Whether the value was coerced (changed) */
   coerced: boolean;
+}
+
+/**
+ * Interface for resolving $ref references during coercion
+ */
+export interface RefResolver {
+  resolveRef(ref: string, fromSchema: JsonSchemaBase): JsonSchema | undefined;
+}
+
+/**
+ * Resolve JSON pointer within a schema
+ */
+function resolveJsonPointer(schema: JsonSchema, pointer: string): JsonSchema | undefined {
+  if (typeof schema !== 'object' || schema === null) return undefined;
+
+  const parts = pointer
+    .split('/')
+    .slice(1)
+    .map((p) => p.replace(/~1/g, '/').replace(/~0/g, '~'));
+
+  let current: unknown = schema;
+  for (const part of parts) {
+    if (typeof current !== 'object' || current === null) return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current as JsonSchema | undefined;
+}
+
+/**
+ * Create a simple ref resolver for a schema and its remotes
+ */
+export function createRefResolver(
+  rootSchema: JsonSchema,
+  remotes?: Record<string, JsonSchema>
+): RefResolver {
+  // Build an index of schemas by $id
+  const schemasById = new Map<string, JsonSchema>();
+
+  // Index remote schemas
+  if (remotes) {
+    for (const [uri, schema] of Object.entries(remotes)) {
+      if (typeof schema === 'object' && schema !== null) {
+        schemasById.set(uri, schema);
+        if (schema.$id) {
+          schemasById.set(schema.$id, schema);
+        }
+      }
+    }
+  }
+
+  // Index root schema
+  if (typeof rootSchema === 'object' && rootSchema !== null && rootSchema.$id) {
+    schemasById.set(rootSchema.$id, rootSchema);
+  }
+
+  return {
+    resolveRef(ref: string, _fromSchema: JsonSchemaBase): JsonSchema | undefined {
+      if (ref === '#') {
+        return rootSchema;
+      }
+
+      if (ref.startsWith('#/')) {
+        // JSON pointer
+        return resolveJsonPointer(rootSchema, ref.slice(1));
+      }
+
+      // Check if it's a URI reference
+      const fragmentIndex = ref.indexOf('#');
+      if (fragmentIndex !== -1) {
+        const baseUri = ref.slice(0, fragmentIndex);
+        const fragment = ref.slice(fragmentIndex);
+        const baseSchema = schemasById.get(baseUri);
+        if (baseSchema) {
+          if (fragment === '#') return baseSchema;
+          if (fragment.startsWith('#/')) {
+            return resolveJsonPointer(baseSchema, fragment.slice(1));
+          }
+        }
+      }
+
+      // Plain URI reference
+      return schemasById.get(ref);
+    },
+  };
 }
 
 /**
@@ -198,11 +282,17 @@ function matchesType(value: unknown, type: string): boolean {
 /**
  * Deep coerce a value according to a schema
  * Recursively coerces nested objects and arrays
+ *
+ * @param value - The value to coerce
+ * @param schema - The JSON Schema to coerce against
+ * @param options - Coercion options (which types to coerce)
+ * @param refResolver - Optional resolver for $ref references
  */
 export function coerceValue(
   value: unknown,
   schema: JsonSchema,
-  options: CoercionOptions
+  options: CoercionOptions,
+  refResolver?: RefResolver
 ): CoerceResult {
   // Boolean schemas don't require coercion
   if (typeof schema === 'boolean') {
@@ -218,8 +308,15 @@ export function coerceValue(
     return result;
   }
 
-  // Handle $ref - we can't resolve refs here, so skip coercion for refs
+  // Handle $ref - resolve the reference and coerce against it
   if (schema.$ref) {
+    if (refResolver) {
+      const refSchema = refResolver.resolveRef(schema.$ref, schema);
+      if (refSchema) {
+        return coerceValue(value, refSchema, options, refResolver);
+      }
+    }
+    // Can't resolve ref - skip coercion
     return { value, coerced: false };
   }
 
@@ -324,7 +421,7 @@ export function coerceValue(
         }
 
         if (itemSchema) {
-          const result = coerceValue(item, itemSchema, options);
+          const result = coerceValue(item, itemSchema, options, refResolver);
           if (result.coerced) {
             arrayChanged = true;
             return result.value;
@@ -376,7 +473,7 @@ export function coerceValue(
       }
 
       if (propSchema) {
-        const result = coerceValue(val, propSchema, options);
+        const result = coerceValue(val, propSchema, options, refResolver);
         if (result.coerced) {
           objectChanged = true;
           newObj[key] = result.value;
@@ -398,7 +495,7 @@ export function coerceValue(
   // For these, we try to coerce to match the subschemas
   if (schema.allOf) {
     for (const subSchema of schema.allOf) {
-      const result = coerceValue(currentValue, subSchema, options);
+      const result = coerceValue(currentValue, subSchema, options, refResolver);
       if (result.coerced) {
         currentValue = result.value;
         wasCoerced = true;
@@ -409,7 +506,7 @@ export function coerceValue(
   if (schema.anyOf) {
     // Try each schema until one successfully coerces
     for (const subSchema of schema.anyOf) {
-      const result = coerceValue(currentValue, subSchema, options);
+      const result = coerceValue(currentValue, subSchema, options, refResolver);
       if (result.coerced) {
         currentValue = result.value;
         wasCoerced = true;
@@ -421,7 +518,7 @@ export function coerceValue(
   if (schema.oneOf) {
     // Try each schema until one successfully coerces
     for (const subSchema of schema.oneOf) {
-      const result = coerceValue(currentValue, subSchema, options);
+      const result = coerceValue(currentValue, subSchema, options, refResolver);
       if (result.coerced) {
         currentValue = result.value;
         wasCoerced = true;
@@ -432,14 +529,14 @@ export function coerceValue(
 
   // Handle if-then-else
   if (schema.then) {
-    const result = coerceValue(currentValue, schema.then, options);
+    const result = coerceValue(currentValue, schema.then, options, refResolver);
     if (result.coerced) {
       currentValue = result.value;
       wasCoerced = true;
     }
   }
   if (schema.else) {
-    const result = coerceValue(currentValue, schema.else, options);
+    const result = coerceValue(currentValue, schema.else, options, refResolver);
     if (result.coerced) {
       currentValue = result.value;
       wasCoerced = true;
@@ -454,10 +551,11 @@ export function coerceValue(
  */
 export function createCoercer(
   schema: JsonSchema,
-  options: CoercionOptions
+  options: CoercionOptions,
+  refResolver?: RefResolver
 ): (value: unknown) => unknown {
   return (value: unknown) => {
-    const result = coerceValue(value, schema, options);
+    const result = coerceValue(value, schema, options, refResolver);
     return result.value;
   };
 }

@@ -5,7 +5,7 @@
 import type { JsonSchema } from '../types.js';
 import { compile, type CompileError } from './compiler.js';
 import type { CompileOptions } from './context.js';
-import { coerceValue } from './coercion.js';
+import { coerceValue, createRefResolver } from './coercion.js';
 
 export type { CompileOptions, CoercionOptions } from './context.js';
 export { compile } from './compiler.js';
@@ -243,9 +243,12 @@ export function createValidator<T>(schema: JsonSchema, options: CompileOptions =
   // Create specialized validate/assert methods based on whether coercion is enabled
   // This eliminates the branch on every call for better performance
   if (coerceOptions) {
+    // Create ref resolver for coercion (allows $ref resolution during coercion)
+    const refResolver = createRefResolver(schema, options.remotes);
+
     // Coercion enabled - wrap with coerceValue
     validator.validate = function (data: unknown): ValidationResult<T> {
-      const coercedData = coerceValue(data, schema, coerceOptions).value;
+      const coercedData = coerceValue(data, schema, coerceOptions, refResolver).value;
       const errors: CompileError[] = [];
       if (validateFn(coercedData, errors)) {
         return { valid: true, value: coercedData as T, error: undefined };
@@ -261,7 +264,7 @@ export function createValidator<T>(schema: JsonSchema, options: CompileOptions =
     };
 
     validator.assert = function (data: unknown): T {
-      const coercedData = coerceValue(data, schema, coerceOptions).value;
+      const coercedData = coerceValue(data, schema, coerceOptions, refResolver).value;
       const errors: CompileError[] = [];
       if (!validateFn(coercedData, errors)) {
         const errorMsg =
