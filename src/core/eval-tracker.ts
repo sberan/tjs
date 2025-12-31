@@ -37,6 +37,8 @@ export class EvalTracker {
   readonly isRuntimeOptional: boolean;
   /** If true, use Set-based item tracking (for contains) instead of just maxItem */
   readonly useItemSet: boolean;
+  /** If true, this tracker expects patterns and should include pattern checks */
+  readonly hasPatterns: boolean;
   /** Track the maximum item index marked at compile time for optimization */
   private compileTimeMaxItem: number = -1;
 
@@ -51,6 +53,7 @@ export class EvalTracker {
       parentTracker?: EvalTracker;
       isRuntimeOptional?: boolean;
       useItemSet?: boolean;
+      hasPatterns?: boolean;
     } = {}
   ) {
     this.code = code;
@@ -60,6 +63,7 @@ export class EvalTracker {
     this.parentTracker = options.parentTracker;
     this.isRuntimeOptional = options.isRuntimeOptional ?? false;
     this.useItemSet = options.useItemSet ?? false;
+    this.hasPatterns = options.hasPatterns ?? true; // default to true for backwards compatibility
   }
 
   /** Check if any tracking is enabled */
@@ -82,7 +86,11 @@ export class EvalTracker {
     // Create tracker with props/maxItem/items/patterns based on what we're tracking
     const parts: string[] = [];
     if (this.trackProps) {
-      parts.push('props: {}', 'patterns: []');
+      parts.push('props: {}');
+      // Only include patterns array if needed
+      if (this.hasPatterns) {
+        parts.push('patterns: []');
+      }
     }
     if (this.trackItems) {
       parts.push('maxItem: -1');
@@ -262,7 +270,7 @@ export class EvalTracker {
 
   /** Register a pattern regex variable for unevaluatedProperties check */
   addPattern(regexVarName: Name): void {
-    if (this.trackProps) {
+    if (this.trackProps && this.hasPatterns) {
       // Add to compile-time list (for local unevaluatedProperties checks)
       this.patternVars.push(regexVarName);
       // Also push to runtime tracker.patterns (for cross-function tracking)
@@ -293,10 +301,15 @@ export class EvalTracker {
     }
 
     // Check runtime patterns (from nested function calls)
-    // Optimize: use !.some() instead of .every() - benchmarks show .some() is faster
-    // Also check length === 0 first to short-circuit in the common case
-    const patternsVar = `${this.trackerVar}.patterns`;
-    expr += ` && (${patternsVar}.length === 0 || !${patternsVar}.some(p => p.test(${keyName})))`;
+    // OPTIMIZATION: When we know at tracker creation time that there will be no patterns
+    // (i.e., no patternProperties in the schema tree), we can skip the patterns check entirely.
+    // This is determined by the hasPatterns flag set during tracker initialization.
+    if (this.hasPatterns) {
+      // Optimize: use !.some() instead of .every() - benchmarks show .some() is faster
+      // Also check length === 0 first to short-circuit in the common case
+      const patternsVar = `${this.trackerVar}.patterns`;
+      expr += ` && (${patternsVar}.length === 0 || !${patternsVar}.some(p => p.test(${keyName})))`;
+    }
 
     return new Code(expr);
   }
@@ -318,6 +331,7 @@ export class EvalTracker {
       trackItems: this.trackItems,
       isRuntimeOptional: this.isRuntimeOptional,
       useItemSet: this.useItemSet,
+      hasPatterns: this.hasPatterns,
     });
     child.patternVars.push(...this.patternVars);
     return child;
@@ -345,10 +359,13 @@ export class EvalTracker {
         this.code.else(() => {
           // Copy individual props using Object.assign - faster than for...in
           this.code.line(_`Object.assign(${parentVar}.props, ${this.trackerVar}.props);`);
-          // Only copy patterns if there are any to avoid spread operator overhead
-          this.code.if(_`${this.trackerVar}.patterns.length > 0`, () => {
-            this.code.line(_`${parentVar}.patterns.push(...${this.trackerVar}.patterns);`);
-          });
+          // Only copy patterns if both trackers have patterns support
+          if (this.hasPatterns && this.parentTracker && this.parentTracker.hasPatterns) {
+            // Only copy patterns if there are any to avoid spread operator overhead
+            this.code.if(_`${this.trackerVar}.patterns.length > 0`, () => {
+              this.code.line(_`${parentVar}.patterns.push(...${this.trackerVar}.patterns);`);
+            });
+          }
         });
       };
 
@@ -383,7 +400,13 @@ export class EvalTracker {
     if (!this.enabled) return undefined;
     const tempVar = this.code.genVar(prefix);
     const parts: string[] = [];
-    if (this.trackProps) parts.push('props: {}', 'patterns: []');
+    if (this.trackProps) {
+      parts.push('props: {}');
+      // Only include patterns array if needed
+      if (this.hasPatterns) {
+        parts.push('patterns: []');
+      }
+    }
     if (this.trackItems) {
       parts.push('maxItem: -1');
       if (this.useItemSet) {
@@ -406,10 +429,13 @@ export class EvalTracker {
       if (this.trackProps) {
         // Use Object.assign for bulk property copy - faster than for...in loop
         this.code.line(_`Object.assign(${this.trackerVar}.props, ${tempVar}.props);`);
-        // Optimize: only push patterns if there are any to avoid spread overhead
-        this.code.if(_`${tempVar}.patterns.length > 0`, () => {
-          this.code.line(_`${this.trackerVar}.patterns.push(...${tempVar}.patterns);`);
-        });
+        // Only merge patterns if patterns are supported
+        if (this.hasPatterns) {
+          // Optimize: only push patterns if there are any to avoid spread overhead
+          this.code.if(_`${tempVar}.patterns.length > 0`, () => {
+            this.code.line(_`${this.trackerVar}.patterns.push(...${tempVar}.patterns);`);
+          });
+        }
       }
       if (this.trackItems) {
         this.code.line(
