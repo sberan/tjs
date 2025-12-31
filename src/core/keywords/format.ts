@@ -501,34 +501,119 @@ function validateIdnaLabel(label: string): boolean {
   return true;
 }
 
-// Fast hostname regex for simple cases (no IDN, no -- at positions 3-4)
-const SIMPLE_HOSTNAME_REGEX =
-  /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/i;
+// Lookup table for hostname characters (256 entries for fast lookup)
+const HOSTNAME_CHARS = new Uint8Array(256);
+(() => {
+  // 0-9 (48-57)
+  for (let i = 48; i <= 57; i++) HOSTNAME_CHARS[i] = 1;
+  // A-Z (65-90)
+  for (let i = 65; i <= 90; i++) HOSTNAME_CHARS[i] = 1;
+  // a-z (97-122)
+  for (let i = 97; i <= 122; i++) HOSTNAME_CHARS[i] = 1;
+  // - (45)
+  HOSTNAME_CHARS[45] = 1;
+  // . (46)
+  HOSTNAME_CHARS[46] = 1;
+})();
 
 function validateHostname(s: string): boolean {
-  // Fast path: simple hostnames without potential Punycode or -- issues
-  if (SIMPLE_HOSTNAME_REGEX.test(s) && s.indexOf('--') < 0) return true;
-  // Slow path: detailed validation
-  if (s.length === 0 || s.length > 253) return false;
-  if (s.charCodeAt(s.length - 1) === 46) return false; // Trailing dot
-  const labels = s.split('.');
-  for (const label of labels) {
-    if (label.length === 0 || label.length > 63) return false;
-    if (!FORMAT_REGEX.hostnameLabel.test(label)) return false;
-    // Check for -- in positions 3-4
-    if (label.length >= 4 && label.charCodeAt(2) === 45 && label.charCodeAt(3) === 45) {
-      // Only xn-- (Punycode) labels are allowed to have -- in positions 3-4
-      const lowerLabel = label.toLowerCase();
-      if (!lowerLabel.startsWith('xn--')) return false;
-      // Validate Punycode
-      const punycode = lowerLabel.slice(4);
-      if (punycode.length === 0) return false;
-      const decoded = decodePunycode(punycode);
-      if (decoded === null) return false;
-      // Validate the decoded U-label
-      if (!validateIdnaLabel(decoded)) return false;
+  const len = s.length;
+  if (len === 0 || len > 253) return false;
+
+  // Single-pass validation with character-by-character checking
+  let labelStart = 0;
+  let needsSlowPath = false;
+
+  for (let i = 0; i <= len; i++) {
+    const code = i < len ? s.charCodeAt(i) : 0x002e; // Use '.' as terminator
+
+    // End of label (dot or end of string)
+    if (code === 0x002e || i === len) {
+      const labelLen = i - labelStart;
+
+      // Empty label or too long
+      if (labelLen === 0 || labelLen > 63) return false;
+
+      const firstCode = s.charCodeAt(labelStart);
+      const lastCode = s.charCodeAt(i - 1);
+
+      // First char must be alphanumeric
+      if (
+        !(
+          (firstCode >= 0x30 && firstCode <= 0x39) || // 0-9
+          (firstCode >= 0x41 && firstCode <= 0x5a) || // A-Z
+          (firstCode >= 0x61 && firstCode <= 0x7a) // a-z
+        )
+      ) {
+        return false;
+      }
+
+      // Last char must be alphanumeric (if label length > 1)
+      if (
+        labelLen > 1 &&
+        !(
+          (lastCode >= 0x30 && lastCode <= 0x39) ||
+          (lastCode >= 0x41 && lastCode <= 0x5a) ||
+          (lastCode >= 0x61 && lastCode <= 0x7a)
+        )
+      ) {
+        return false;
+      }
+
+      // Check for -- in positions 2-3
+      if (labelLen >= 4) {
+        const c2 = s.charCodeAt(labelStart + 2);
+        const c3 = s.charCodeAt(labelStart + 3);
+        if (c2 === 0x2d && c3 === 0x2d) {
+          // Must be xn-- for Punycode
+          const c0 = s.charCodeAt(labelStart) | 0x20; // lowercase
+          const c1 = s.charCodeAt(labelStart + 1) | 0x20; // lowercase
+          if (c0 !== 0x78 || c1 !== 0x6e) return false; // Not 'xn--'
+          needsSlowPath = true;
+        }
+      }
+
+      labelStart = i + 1;
+    } else if (!HOSTNAME_CHARS[code]) {
+      // Invalid character
+      return false;
     }
   }
+
+  // If we need to validate Punycode, do it now (rare case)
+  if (needsSlowPath) {
+    labelStart = 0;
+    for (let i = 0; i <= len; i++) {
+      const code = i < len ? s.charCodeAt(i) : 0x002e;
+
+      if (code === 0x002e || i === len) {
+        const labelLen = i - labelStart;
+
+        // Check for xn-- prefix
+        if (labelLen >= 4) {
+          const c0 = s.charCodeAt(labelStart) | 0x20;
+          const c1 = s.charCodeAt(labelStart + 1) | 0x20;
+          const c2 = s.charCodeAt(labelStart + 2);
+          const c3 = s.charCodeAt(labelStart + 3);
+
+          if (c0 === 0x78 && c1 === 0x6e && c2 === 0x2d && c3 === 0x2d) {
+            // Extract punycode part (skip 'xn--')
+            const punycode = s.substring(labelStart + 4, i).toLowerCase();
+            if (punycode.length === 0) return false;
+
+            const decoded = decodePunycode(punycode);
+            if (decoded === null) return false;
+
+            // Validate the decoded U-label
+            if (!validateIdnaLabel(decoded)) return false;
+          }
+        }
+
+        labelStart = i + 1;
+      }
+    }
+  }
+
   return true;
 }
 
@@ -884,7 +969,7 @@ function validateIdnEmail(s: string): boolean {
     }
 
     // Simple hostname check for ASCII
-    return SIMPLE_HOSTNAME_REGEX.test(domain) && domain.indexOf('--') < 0;
+    return validateHostname(domain);
   }
 
   // Slow path: internationalized email
