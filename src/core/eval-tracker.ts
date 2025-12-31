@@ -324,13 +324,18 @@ export class EvalTracker {
 
     if (this.trackProps && this.parentTracker.trackProps) {
       const copyProps = () => {
-        // Fast path: if child marked all props, parent should too
+        // Fast path: if child marked all props, parent should too - just set the flag
         this.code.if(_`${this.trackerVar}.props.__all__`, () => {
           this.code.line(_`${parentVar}.props.__all__ = true;`);
         });
-        // Copy individual props using Object.assign - faster than for...in
+        // Only copy props if __all__ is NOT set (else branch avoids unnecessary copy when __all__ is true)
         this.code.else(() => {
+          // Copy individual props using Object.assign - faster than for...in
           this.code.line(_`Object.assign(${parentVar}.props, ${this.trackerVar}.props);`);
+          // Only copy patterns if there are any to avoid spread operator overhead
+          this.code.if(_`${this.trackerVar}.patterns.length > 0`, () => {
+            this.code.line(_`${parentVar}.patterns.push(...${this.trackerVar}.patterns);`);
+          });
         });
       };
 
