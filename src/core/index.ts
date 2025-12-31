@@ -237,47 +237,70 @@ export function createValidator<T>(schema: JsonSchema, options: CompileOptions =
   const validateFn = compile(schema, options);
   const coerceOptions = options.coerce;
 
-  // Helper to coerce if enabled
-  const maybeCoerce = (data: unknown): unknown => {
-    if (coerceOptions) {
-      return coerceValue(data, schema, coerceOptions).value;
-    }
-    return data;
-  };
-
   // Create the callable validator function
   const validator = validateFn as Validator<T>;
 
-  // Attach validate method
-  validator.validate = function (data: unknown): ValidationResult<T> {
-    const coercedData = maybeCoerce(data);
-    const errors: CompileError[] = [];
-    if (validateFn(coercedData, errors)) {
-      return { valid: true, value: coercedData as T, error: undefined };
-    }
-    return {
-      valid: false,
-      value: undefined,
-      error:
-        errors.length > 0
-          ? errors
-          : [{ path: '', message: 'Validation failed', keyword: 'schema' }],
+  // Create specialized validate/assert methods based on whether coercion is enabled
+  // This eliminates the branch on every call for better performance
+  if (coerceOptions) {
+    // Coercion enabled - wrap with coerceValue
+    validator.validate = function (data: unknown): ValidationResult<T> {
+      const coercedData = coerceValue(data, schema, coerceOptions).value;
+      const errors: CompileError[] = [];
+      if (validateFn(coercedData, errors)) {
+        return { valid: true, value: coercedData as T, error: undefined };
+      }
+      return {
+        valid: false,
+        value: undefined,
+        error:
+          errors.length > 0
+            ? errors
+            : [{ path: '', message: 'Validation failed', keyword: 'schema' }],
+      };
     };
-  };
 
-  // Attach assert method
-  validator.assert = function (data: unknown): T {
-    const coercedData = maybeCoerce(data);
-    const errors: CompileError[] = [];
-    if (!validateFn(coercedData, errors)) {
-      const errorMsg =
-        errors.length > 0
-          ? errors.map((e) => `${e.path}: ${e.message}`).join('; ')
-          : 'Validation failed';
-      throw new Error(errorMsg);
-    }
-    return coercedData as T;
-  };
+    validator.assert = function (data: unknown): T {
+      const coercedData = coerceValue(data, schema, coerceOptions).value;
+      const errors: CompileError[] = [];
+      if (!validateFn(coercedData, errors)) {
+        const errorMsg =
+          errors.length > 0
+            ? errors.map((e) => `${e.path}: ${e.message}`).join('; ')
+            : 'Validation failed';
+        throw new Error(errorMsg);
+      }
+      return coercedData as T;
+    };
+  } else {
+    // Coercion disabled - direct validation without coercion overhead
+    validator.validate = function (data: unknown): ValidationResult<T> {
+      const errors: CompileError[] = [];
+      if (validateFn(data, errors)) {
+        return { valid: true, value: data as T, error: undefined };
+      }
+      return {
+        valid: false,
+        value: undefined,
+        error:
+          errors.length > 0
+            ? errors
+            : [{ path: '', message: 'Validation failed', keyword: 'schema' }],
+      };
+    };
+
+    validator.assert = function (data: unknown): T {
+      const errors: CompileError[] = [];
+      if (!validateFn(data, errors)) {
+        const errorMsg =
+          errors.length > 0
+            ? errors.map((e) => `${e.path}: ${e.message}`).join('; ')
+            : 'Validation failed';
+        throw new Error(errorMsg);
+      }
+      return data as T;
+    };
+  }
 
   // Define type as a getter
   Object.defineProperty(validator, 'type', {
