@@ -1472,16 +1472,12 @@ export function generateRefCheck(
   if (!ctx.hasAnyDynamicAnchors() && refSchema) {
     let depth = 0;
     const maxDepth = 100; // Prevent infinite loops
-    while (typeof refSchema === 'object' && refSchema.$ref && depth < maxDepth) {
-      // Count only meaningful keys (skip $schema and $id which don't affect validation)
-      const keys = Object.keys(refSchema);
-      const meaningfulKeys = keys.filter((k) => k !== '$schema' && k !== '$id' && k !== '$comment');
-
-      // Only follow if the schema is essentially just a $ref (possibly with metadata)
-      if (meaningfulKeys.length !== 1 || meaningfulKeys[0] !== '$ref') {
-        break;
-      }
-
+    while (
+      typeof refSchema === 'object' &&
+      refSchema.$ref &&
+      Object.keys(refSchema).length === 1 && // Only $ref, nothing else
+      depth < maxDepth
+    ) {
       const nextSchema = ctx.resolveRef(refSchema.$ref, refSchema);
       if (!nextSchema) break;
       refSchema = nextSchema;
@@ -1501,75 +1497,6 @@ export function generateRefCheck(
     (typeof refSchema === 'object' && Object.keys(refSchema).length === 0)
   ) {
     return;
-  }
-
-  // Optimization: inline simple type-only schemas to eliminate function call overhead
-  // This is especially beneficial for nested $ref chains that resolve to simple types
-  // Check this first, even before checking $id, because simple types don't need scope management
-  const simpleType = getSimpleType(refSchema);
-  if (simpleType && !evalTracker) {
-    // Inline the type check directly - safe even if schema has $id
-    // because type checks don't reference other parts of the schema
-    const typeCheck = getTypeCheck(dataVar, simpleType);
-    code.if(not(typeCheck), () => {
-      genError(code, pathExprCode, 'type', `Expected ${simpleType}`);
-    });
-    return;
-  }
-
-  // Optimization: inline the entire resolved schema when it's simple enough
-  // This eliminates function call overhead for commonly nested schemas
-  // Only inline when:
-  // 1. No dynamic scope (legacy mode or no dynamic anchors)
-  // 2. No eval tracker (property tracking requires shared state)
-  // 3. Schema is not already compiled (avoid duplicate code)
-  // 4. Schema doesn't have $id (which would require scope management)
-  // Note: simple type-only schemas are already inlined above, even with $id
-  if (
-    !dynamicScopeVar &&
-    !evalTracker &&
-    !ctx.isCompiled(refSchema) &&
-    typeof refSchema === 'object' &&
-    refSchema !== null &&
-    !refSchema.$id &&
-    !refSchema.$dynamicAnchor
-  ) {
-    // Check if schema is "simple enough" to inline
-    // Simple means: has validation keywords but no complex applicators (allOf, anyOf, oneOf, if/then/else)
-    // and no nested objects/arrays (properties, items, etc.)
-    const hasComplexApplicators =
-      refSchema.allOf !== undefined ||
-      refSchema.anyOf !== undefined ||
-      refSchema.oneOf !== undefined ||
-      refSchema.if !== undefined ||
-      refSchema.not !== undefined;
-
-    const hasNestedSchemas =
-      refSchema.properties !== undefined ||
-      refSchema.patternProperties !== undefined ||
-      refSchema.additionalProperties !== undefined ||
-      refSchema.items !== undefined ||
-      refSchema.prefixItems !== undefined ||
-      refSchema.contains !== undefined ||
-      refSchema.dependentSchemas !== undefined ||
-      (refSchema.dependencies &&
-        Object.values(refSchema.dependencies).some(
-          (d) => typeof d === 'object' && !Array.isArray(d)
-        ));
-
-    if (!hasComplexApplicators && !hasNestedSchemas) {
-      // Inline the schema validation directly
-      generateSchemaValidator(
-        code,
-        refSchema,
-        dataVar,
-        pathExprCode,
-        ctx,
-        dynamicScopeVar,
-        evalTracker
-      );
-      return;
-    }
   }
 
   // Get the function name (queue for compilation if needed)
@@ -1721,14 +1648,13 @@ export function generateCompositionChecks(
       code.if(checkExpr, () => {
         code.line(_`${countVar}++;`);
         evalTracker?.mergeFrom(tempVar);
-        // Early exit optimization: if more than one matches, fail immediately
-        // This avoids checking remaining schemas when we already know validation will fail
-        if (!evalTracker?.enabled) {
-          code.if(_`${countVar} > 1`, () => {
-            genError(code, pathExprCode, 'oneOf', 'Value must match exactly one schema');
-          });
-        }
       });
+      // Early exit if more than one matches (only when not tracking)
+      if (!evalTracker?.enabled) {
+        code.if(_`${countVar} > 1`, () => {
+          genError(code, pathExprCode, 'oneOf', 'Value must match exactly one schema');
+        });
+      }
     });
 
     code.if(_`${countVar} !== 1`, () => {
@@ -1745,43 +1671,39 @@ export function generateCompositionChecks(
     // not: true or not: {} → always fails (since true/{} matches everything)
     if (isNoOpSchema(notSchema)) {
       genError(code, pathExprCode, 'not', 'Value must not match schema');
-      return;
-    }
-
-    // Optimization: not: false → always passes (since false matches nothing)
-    if (notSchema === false) {
+    } else if (notSchema === false) {
+      // Optimization: not: false → always passes (since false matches nothing)
       // Skip - always valid
-      return;
-    }
-
-    // Optimization: detect double negation patterns
-    // not: { not: {} } or not: { not: true } → simplify to true (always passes)
-    // not: { not: false } → simplify to false (always fails)
-    if (
+    } else if (
       typeof notSchema === 'object' &&
       notSchema !== null &&
       notSchema.not !== undefined &&
       Object.keys(notSchema).length === 1
     ) {
+      // Optimization: detect double negation patterns
+      // not: { not: {} } or not: { not: true } → simplify to true (always passes)
+      // not: { not: false } → simplify to false (always fails)
       const innerNotSchema = notSchema.not;
 
-      // not: { not: {} } or not: { not: true } → always passes
       if (isNoOpSchema(innerNotSchema)) {
-        // Skip - always valid (double negation of always-pass)
-        return;
-      }
-
-      // not: { not: false } → always fails
-      if (innerNotSchema === false) {
+        // not: { not: {} } or not: { not: true } → always passes (skip)
+      } else if (innerNotSchema === false) {
+        // not: { not: false } → always fails
         genError(code, pathExprCode, 'not', 'Value must not match schema');
-        return;
+      } else {
+        // Not optimizable - generate normal check
+        const checkExpr = generateSubschemaCheck(code, notSchema, dataVar, ctx);
+        code.if(checkExpr, () => {
+          genError(code, pathExprCode, 'not', 'Value must not match schema');
+        });
       }
+    } else {
+      // Not optimizable - generate normal check
+      const checkExpr = generateSubschemaCheck(code, notSchema, dataVar, ctx);
+      code.if(checkExpr, () => {
+        genError(code, pathExprCode, 'not', 'Value must not match schema');
+      });
     }
-
-    const checkExpr = generateSubschemaCheck(code, notSchema, dataVar, ctx);
-    code.if(checkExpr, () => {
-      genError(code, pathExprCode, 'not', 'Value must not match schema');
-    });
   }
 
   // if-then-else
@@ -1871,15 +1793,6 @@ function generateSubschemaCheck(
   }
   // Handle always-fail schema
   if (schema === false) return _`false`;
-
-  // Optimization: inline simple type-only schemas to avoid function call overhead
-  // This is especially beneficial for nested oneOf with simple type checks
-  if (!trackerVar && typeof schema === 'object' && schema !== null) {
-    const simpleType = getSimpleType(schema);
-    if (simpleType) {
-      return getTypeCheck(dataVar, simpleType);
-    }
-  }
 
   // Compile as a separate function call
   const funcName = new Name(ctx.queueCompile(schema));
@@ -2239,41 +2152,34 @@ export function generateUnevaluatedPropertiesCheck(
 
   // Only check if data is an object
   code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
-    // Optimize: unevaluatedProperties: true can just mark all props without iterating
-    if (schema.unevaluatedProperties === true) {
-      evalTracker.markAllProps();
-    } else {
-      // Check each property against the tracker
-      const keyVar = new Name('key');
-      code.forIn(keyVar, dataVar, () => {
-        const condition = evalTracker.isUnevaluatedProp(keyVar);
-        const keyPathExpr = pathExprDynamic(pathExprCode, keyVar);
+    // Check each property against the tracker
+    const keyVar = new Name('key');
+    code.forIn(keyVar, dataVar, () => {
+      const condition = evalTracker.isUnevaluatedProp(keyVar);
+      const keyPathExpr = pathExprDynamic(pathExprCode, keyVar);
 
-        code.if(condition, () => {
-          if (schema.unevaluatedProperties === false) {
-            genError(
-              code,
-              keyPathExpr,
-              'unevaluatedProperties',
-              'Unevaluated property not allowed'
-            );
-          } else if (schema.unevaluatedProperties !== undefined) {
-            // unevaluatedProperties: <schema> - validate and mark as evaluated
-            const propVar = code.genVar('up');
-            code.line(_`const ${propVar} = ${dataVar}[${keyVar}];`);
-            generateSchemaValidator(
-              code,
-              schema.unevaluatedProperties,
-              propVar,
-              keyPathExpr,
-              ctx,
-              dynamicScopeVar
-            );
-            evalTracker.markPropDynamic(keyVar);
-          }
-        });
+      code.if(condition, () => {
+        if (schema.unevaluatedProperties === false) {
+          genError(code, keyPathExpr, 'unevaluatedProperties', 'Unevaluated property not allowed');
+        } else if (schema.unevaluatedProperties === true) {
+          // unevaluatedProperties: true - mark as evaluated (for bubbling to parent)
+          evalTracker.markPropDynamic(keyVar);
+        } else if (schema.unevaluatedProperties !== undefined) {
+          // unevaluatedProperties: <schema> - validate and mark as evaluated
+          const propVar = code.genVar('up');
+          code.line(_`const ${propVar} = ${dataVar}[${keyVar}];`);
+          generateSchemaValidator(
+            code,
+            schema.unevaluatedProperties,
+            propVar,
+            keyPathExpr,
+            ctx,
+            dynamicScopeVar
+          );
+          evalTracker.markPropDynamic(keyVar);
+        }
       });
-    }
+    });
   });
 }
 

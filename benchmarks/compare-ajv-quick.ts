@@ -314,20 +314,28 @@ function runBenchmark(
     // Filter to test suites where both validators compiled successfully
     const compiledSuites = compiled.filter((s) => s.tjsValidator && s.ajvValidator);
 
-    // Pre-test to filter out schemas that cause stack overflow or runtime errors
+    // Pre-test to filter out schemas where:
+    // 1. Either validator throws errors (stack overflow, etc.)
+    // 2. Either validator produces incorrect results
+    // This ensures we only compare performance on tests BOTH validators pass
     const validSuites: CompiledTestSuite[] = [];
     for (const suite of compiledSuites) {
-      let safe = true;
+      let bothCorrect = true;
       for (const test of suite.tests) {
         try {
-          suite.tjsValidator!(test.data);
-          suite.ajvValidator!(test.data);
+          const tjsResult = suite.tjsValidator!(test.data);
+          const ajvResult = suite.ajvValidator!(test.data);
+          // Both must produce correct results
+          if (tjsResult !== test.valid || ajvResult !== test.valid) {
+            bothCorrect = false;
+            break;
+          }
         } catch {
-          safe = false;
+          bothCorrect = false;
           break;
         }
       }
-      if (safe) {
+      if (bothCorrect) {
         validSuites.push(suite);
       }
     }
