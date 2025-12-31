@@ -81,7 +81,16 @@ export function genRequiredCheck(
     : _`!Object.hasOwn(${dataVar}, '${new Code(propStr)}')`;
 
   code.if(checkExpr, () => {
-    genError(code, propPathExpr, 'required', 'Required property missing');
+    genError(
+      code,
+      propPathExpr,
+      '#/required',
+      'required',
+      `must have required property '${propName}'`,
+      {
+        missingProperty: propName,
+      }
+    );
   });
 }
 
@@ -135,24 +144,42 @@ export function genBatchedRequiredChecks(
 
   // Generate the if statement with error
   code.if(combinedCondition, () => {
-    // Use the missing variable to create dynamic path
+    // Use the missing variable to create dynamic path (already in JSON Pointer format)
     const propPathExpr = pathExprDynamic(pathExprCode, missingVar);
-    genError(code, propPathExpr, 'required', 'Required property missing');
+    // For batched required, we need to pass the missingProperty dynamically
+    code.line(
+      _`if (errors) errors.push({ instancePath: ${propPathExpr}, schemaPath: '#/required', keyword: 'required', params: { missingProperty: ${missingVar} }, message: 'must have required property \\'' + ${missingVar} + '\\'' });`
+    );
+    code.line(_`return false;`);
   });
 }
 
 /**
- * Generate code to push an error and return false
+ * Generate code to push an error and return false.
+ * Errors are in AJV-compatible format with instancePath, schemaPath, keyword, params, message.
+ *
+ * @param code - Code builder
+ * @param pathExprCode - Code expression for the instance path (already in JSON Pointer format)
+ * @param schemaPath - Schema path as JSON pointer (e.g., "#/properties/name/type")
+ * @param keyword - Validation keyword that failed
+ * @param message - Human-readable error message
+ * @param params - Keyword-specific params object (will be stringified)
  */
 export function genError(
   code: CodeBuilder,
   pathExprCode: Code,
+  schemaPath: string,
   keyword: string,
-  message: string
+  message: string,
+  params: object = {}
 ): void {
   const escapedMessage = escapeString(message);
+  const escapedSchemaPath = escapeString(schemaPath);
+  const paramsJson = JSON.stringify(params);
+
+  // pathExprCode is already in JSON Pointer format - no conversion needed
   code.line(
-    _`if (errors) errors.push({ path: ${pathExprCode}, message: '${new Code(escapedMessage)}', keyword: '${new Code(keyword)}' });`
+    _`if (errors) errors.push({ instancePath: ${pathExprCode}, schemaPath: '${new Code(escapedSchemaPath)}', keyword: '${new Code(keyword)}', params: ${new Code(paramsJson)}, message: '${new Code(escapedMessage)}' });`
   );
   code.line(_`return false;`);
 }

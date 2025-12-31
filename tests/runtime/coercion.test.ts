@@ -924,8 +924,8 @@ describe('coercion', () => {
       if (result.error !== undefined) {
         expect(result.error.length).toBeGreaterThan(0);
         expect(result.error[0].keyword).toBe('type');
-        // Error message should indicate coercion was attempted
-        expect(result.error[0].message).toContain('coercion');
+        // Error message uses AJV-compatible format
+        expect(result.error[0].message).toContain('number');
       }
     });
 
@@ -947,7 +947,7 @@ describe('coercion', () => {
       const result = Schema.validate({ user: { age: 'not-a-number' } });
       expect(result.error === undefined).toBe(false);
       if (result.error !== undefined) {
-        expect(result.error[0].path).toBe('user.age');
+        expect(result.error[0].instancePath).toBe('/user/age');
       }
     });
   });

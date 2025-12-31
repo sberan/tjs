@@ -96,7 +96,7 @@ describe('propertyNames', () => {
     if (result.error !== undefined) {
       expect(result.error.length).toBe(1);
       expect(result.error[0].keyword).toBe('pattern');
-      expect(result.error[0].path).toBe('BadKey');
+      expect(result.error[0].instancePath).toBe('/BadKey');
     }
   });
 });

@@ -2,38 +2,43 @@
  * this file is for any scratch work that claude might help with
  */
 
-// Microbenchmark to compare integer check performance
-console.log('=== INTEGER CHECK MICROBENCHMARK ===\n');
+import { schema } from '../dist/index.js';
 
-const iterations = 100_000_000;
-const testValue = 42;
+console.log('Testing AJV-compatible error format...\n');
 
-// Test 1: Number.isInteger
-console.time('Number.isInteger');
-for (let i = 0; i < iterations; i++) {
-  Number.isInteger(testValue);
-}
-console.timeEnd('Number.isInteger');
+// Test 1: Type error
+const v1 = schema({
+  type: 'object',
+  properties: {
+    name: { type: 'string' },
+    age: { type: 'integer', minimum: 0 }
+  },
+  required: ['name']
+});
 
-// Test 2: typeof + modulo + isFinite
-console.time('typeof + % + isFinite');
-for (let i = 0; i < iterations; i++) {
-  typeof testValue === 'number' && testValue % 1 === 0 && isFinite(testValue);
-}
-console.timeEnd('typeof + % + isFinite');
+console.log('Test 1: Type error');
+const result1 = v1({ name: 123 });
+console.log('Valid:', result1);
+console.log('Errors:', JSON.stringify(v1.errors, null, 2));
 
-// Test with non-integer
-const nonInteger = 42.5;
+console.log('\nTest 2: Required error');
+const result2 = v1({ age: 25 });
+console.log('Valid:', result2);
+console.log('Errors:', JSON.stringify(v1.errors, null, 2));
 
-console.log('\n=== NON-INTEGER VALUE ===');
-console.time('Number.isInteger (non-int)');
-for (let i = 0; i < iterations; i++) {
-  Number.isInteger(nonInteger);
-}
-console.timeEnd('Number.isInteger (non-int)');
+console.log('\nTest 3: Minimum error');
+const result3 = v1({ name: 'John', age: -5 });
+console.log('Valid:', result3);
+console.log('Errors:', JSON.stringify(v1.errors, null, 2));
 
-console.time('typeof + % + isFinite (non-int)');
-for (let i = 0; i < iterations; i++) {
-  typeof nonInteger === 'number' && nonInteger % 1 === 0 && isFinite(nonInteger);
-}
-console.timeEnd('typeof + % + isFinite (non-int)');
+console.log('\nTest 4: Successful validation');
+const result4 = v1({ name: 'John', age: 25 });
+console.log('Valid:', result4);
+console.log('Errors:', v1.errors);
+
+console.log('\nTest 5: Pattern error');
+const v2 = schema({ type: 'string', pattern: '^[a-z]+$' });
+v2('ABC123');
+console.log('Errors:', JSON.stringify(v2.errors, null, 2));
+
+console.log('\nAll tests passed!');

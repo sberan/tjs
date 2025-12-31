@@ -195,13 +195,14 @@ export async function createValidatorAsync<T>(
 }
 
 /**
- * Validation error type
+ * Validation error type (AJV-compatible format)
  */
 export interface ValidationError {
-  path: string;
-  message: string;
-  keyword: string;
-  value?: unknown;
+  instancePath: string; // JSON pointer format: "" for root, "/prop", "/arr/0"
+  schemaPath: string; // JSON pointer to schema location
+  keyword: string; // Validation keyword that failed
+  params: object; // Keyword-specific params
+  message: string; // Human-readable error message
 }
 
 /**
@@ -214,9 +215,10 @@ export type ValidationResult<T> =
 /**
  * JSON Schema validator interface.
  * The validator is callable: validator(data) returns true/false for validity.
+ * After calling the validator function, check validator.errors for validation errors (AJV-compatible).
  */
 export interface Validator<T> {
-  /** Call validator directly to test validity (returns boolean) */
+  /** Call validator directly to test validity (returns boolean). Sets .errors property. */
   (data: unknown): boolean;
 
   /** Validate data and return result with value or error */
@@ -227,6 +229,9 @@ export interface Validator<T> {
 
   /** Phantom type for TypeScript type inference */
   readonly type: T;
+
+  /** Errors from last validation (null if valid, array if invalid). AJV-compatible format. */
+  errors: ValidationError[] | null;
 }
 
 /**
@@ -237,8 +242,39 @@ export function createValidator<T>(schema: JsonSchema, options: CompileOptions =
   const validateFn = compile(schema, options);
   const coerceOptions = options.coerce;
 
-  // Create the callable validator function
-  const validator = validateFn as Validator<T>;
+  // For AJV compatibility, track validation state for lazy error collection.
+  // Only store data on failure to minimize overhead for the common success case.
+  let _data: unknown;
+  let _result: boolean = true;
+  let _errors: CompileError[] | null = null;
+  let _computed = true;
+
+  // Thin wrapper that stores state for lazy error access
+  // Optimized: only track data when validation fails (common case is success)
+  const validator = function (data: unknown): boolean {
+    const result = validateFn(data);
+    _result = result; // Always track result for errors getter
+    if (!result) {
+      _data = data;
+      _computed = false;
+    }
+    return result;
+  } as Validator<T>;
+
+  // Lazy errors getter - only re-validate when errors are accessed
+  Object.defineProperty(validator, 'errors', {
+    get(): CompileError[] | null {
+      if (_result) return null;
+      if (!_computed) {
+        const errs: CompileError[] = [];
+        validateFn(_data, errs);
+        _errors = errs.length > 0 ? errs : null;
+        _computed = true;
+      }
+      return _errors;
+    },
+    enumerable: true,
+  });
 
   // Create specialized validate/assert methods based on whether coercion is enabled
   // This eliminates the branch on every call for better performance
@@ -259,7 +295,15 @@ export function createValidator<T>(schema: JsonSchema, options: CompileOptions =
         error:
           errors.length > 0
             ? errors
-            : [{ path: '', message: 'Validation failed', keyword: 'schema' }],
+            : [
+                {
+                  instancePath: '',
+                  schemaPath: '#',
+                  keyword: 'schema',
+                  params: {},
+                  message: 'validation failed',
+                },
+              ],
       };
     };
 
@@ -269,7 +313,7 @@ export function createValidator<T>(schema: JsonSchema, options: CompileOptions =
       if (!validateFn(coercedData, errors)) {
         const errorMsg =
           errors.length > 0
-            ? errors.map((e) => `${e.path}: ${e.message}`).join('; ')
+            ? errors.map((e) => `${e.instancePath}: ${e.message}`).join('; ')
             : 'Validation failed';
         throw new Error(errorMsg);
       }
@@ -288,7 +332,15 @@ export function createValidator<T>(schema: JsonSchema, options: CompileOptions =
         error:
           errors.length > 0
             ? errors
-            : [{ path: '', message: 'Validation failed', keyword: 'schema' }],
+            : [
+                {
+                  instancePath: '',
+                  schemaPath: '#',
+                  keyword: 'schema',
+                  params: {},
+                  message: 'validation failed',
+                },
+              ],
       };
     };
 
@@ -297,7 +349,7 @@ export function createValidator<T>(schema: JsonSchema, options: CompileOptions =
       if (!validateFn(data, errors)) {
         const errorMsg =
           errors.length > 0
-            ? errors.map((e) => `${e.path}: ${e.message}`).join('; ')
+            ? errors.map((e) => `${e.instancePath}: ${e.message}`).join('; ')
             : 'Validation failed';
         throw new Error(errorMsg);
       }
