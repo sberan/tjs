@@ -1499,6 +1499,18 @@ export function generateRefCheck(
     return;
   }
 
+  // Optimization: inline simple type-only schemas to eliminate function call overhead
+  // This is especially beneficial for nested $ref chains that resolve to simple types
+  const simpleType = getSimpleType(refSchema);
+  if (simpleType && !evalTracker) {
+    // Inline the type check directly
+    const typeCheck = getTypeCheck(dataVar, simpleType);
+    code.if(not(typeCheck), () => {
+      genError(code, pathExprCode, 'type', `Expected ${simpleType}`);
+    });
+    return;
+  }
+
   // Get the function name (queue for compilation if needed)
   const funcName = new Name(ctx.getCompiledName(refSchema) ?? ctx.queueCompile(refSchema));
 
@@ -1671,39 +1683,43 @@ export function generateCompositionChecks(
     // not: true or not: {} → always fails (since true/{} matches everything)
     if (isNoOpSchema(notSchema)) {
       genError(code, pathExprCode, 'not', 'Value must not match schema');
-    } else if (notSchema === false) {
-      // Optimization: not: false → always passes (since false matches nothing)
+      return;
+    }
+
+    // Optimization: not: false → always passes (since false matches nothing)
+    if (notSchema === false) {
       // Skip - always valid
-    } else if (
+      return;
+    }
+
+    // Optimization: detect double negation patterns
+    // not: { not: {} } or not: { not: true } → simplify to true (always passes)
+    // not: { not: false } → simplify to false (always fails)
+    if (
       typeof notSchema === 'object' &&
       notSchema !== null &&
       notSchema.not !== undefined &&
       Object.keys(notSchema).length === 1
     ) {
-      // Optimization: detect double negation patterns
-      // not: { not: {} } or not: { not: true } → simplify to true (always passes)
-      // not: { not: false } → simplify to false (always fails)
       const innerNotSchema = notSchema.not;
 
+      // not: { not: {} } or not: { not: true } → always passes
       if (isNoOpSchema(innerNotSchema)) {
-        // not: { not: {} } or not: { not: true } → always passes (skip)
-      } else if (innerNotSchema === false) {
-        // not: { not: false } → always fails
-        genError(code, pathExprCode, 'not', 'Value must not match schema');
-      } else {
-        // Not optimizable - generate normal check
-        const checkExpr = generateSubschemaCheck(code, notSchema, dataVar, ctx);
-        code.if(checkExpr, () => {
-          genError(code, pathExprCode, 'not', 'Value must not match schema');
-        });
+        // Skip - always valid (double negation of always-pass)
+        return;
       }
-    } else {
-      // Not optimizable - generate normal check
-      const checkExpr = generateSubschemaCheck(code, notSchema, dataVar, ctx);
-      code.if(checkExpr, () => {
+
+      // not: { not: false } → always fails
+      if (innerNotSchema === false) {
         genError(code, pathExprCode, 'not', 'Value must not match schema');
-      });
+        return;
+      }
     }
+
+    const checkExpr = generateSubschemaCheck(code, notSchema, dataVar, ctx);
+    code.if(checkExpr, () => {
+      genError(code, pathExprCode, 'not', 'Value must not match schema');
+    });
   }
 
   // if-then-else

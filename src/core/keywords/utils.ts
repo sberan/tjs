@@ -107,7 +107,7 @@ export function hasTypeConstraint(schema: JsonSchemaBase, type: string): boolean
 /**
  * Generate type checking expression for a given type
  */
-export function getTypeCheck(dataVar: Name, type: string): Code {
+export function getTypeCheck(dataVar: Name | Code, type: string): Code {
   switch (type) {
     case 'string':
       return _`typeof ${dataVar} === 'string'`;
