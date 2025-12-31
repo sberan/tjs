@@ -47,7 +47,7 @@ Maintain these lists throughout the session:
 ### Step 1: Run Benchmark and Identify Targets
 
 ```bash
-npm run bench:compare -- draft7 --jsb-exact 2>&1 | tail -30
+npm run bench:compare -- draft7 2>&1 | tail -30
 ```
 
 Parse the "Top 10 Slowest Tests" table. Extract keywords where tjs is slower than ajv.
@@ -77,7 +77,7 @@ cd /tmp/tjs-opt-KEYWORD && npm install
 ## Your Task
 
 1. **Baseline Measurement**
-   Run: npm run bench:compare -- draft7 --jsb-exact --filter "KEYWORD"
+   Run: npm run bench:compare -- draft7 --filter "KEYWORD"
    Record the ops/s for tjs and ajv
 
 2. **Analyze Current Implementation**
@@ -95,7 +95,7 @@ cd /tmp/tjs-opt-KEYWORD && npm install
    - Inline small functions to avoid call overhead
 
 4. **Measure Improvement**
-   Run: npm run bench:compare -- draft7 --jsb-exact --filter "KEYWORD"
+   Run: npm run bench:compare -- draft7 --filter "KEYWORD"
    Compare ops/s to baseline
 
 5. **Validate**
@@ -184,7 +184,7 @@ After processing completed agents:
    - Go to Step 2 to spawn more agents
 
 2. If ACTIVE_AGENTS is empty AND PENDING is empty:
-   - Run final benchmark: `npm run bench:compare -- draft7 --jsb-exact`
+   - Run final benchmark: `npm run bench:compare -- draft7`
    - Print summary of all optimizations
    - Exit loop
 

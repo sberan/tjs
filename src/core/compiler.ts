@@ -1006,10 +1006,8 @@ export function generateNumberChecks(
 
     if (schema.multipleOf !== undefined) {
       const multipleOf = schema.multipleOf;
-      // Use Number.isInteger for accuracy (handles large numbers and Infinity correctly)
-      // For integer multipleOf values, can use simpler modulo check
+      // For integer multipleOf values >= 1, use simpler modulo check
       if (Number.isInteger(multipleOf) && multipleOf >= 1) {
-        // Fast path for integer multipleOf: simple modulo
         code.if(_`${dataVar} % ${multipleOf} !== 0`, () => {
           genError(
             code,
@@ -1018,10 +1016,40 @@ export function generateNumberChecks(
             `Value must be a multiple of ${schema.multipleOf}`
           );
         });
-      } else {
+      } else if (Number.isInteger(1 / multipleOf)) {
+        // "Clean" fractions where 1/multipleOf is integer (0.5→2, 0.25→4, 0.0001→10000)
+        // Any integer is a multiple of these, but we need different checks:
+        // - Small values: use division (0.0075/0.0001=75, modulo has fp error)
+        // - Large values that overflow: use modulo (1e308%0.5=0, division=Infinity)
         const divVar = code.genVar('div');
         code.line(_`const ${divVar} = ${dataVar} / ${multipleOf};`);
-        code.if(_`!Number.isInteger(${divVar})`, () => {
+        code.if(_`!Number.isFinite(${divVar})`, () => {
+          // Overflow: modulo is correct for clean fractions
+          code.if(_`${dataVar} % ${multipleOf} !== 0`, () => {
+            genError(
+              code,
+              pathExprCode,
+              'multipleOf',
+              `Value must be a multiple of ${schema.multipleOf}`
+            );
+          });
+        });
+        code.else(() => {
+          // Normal: division is more accurate
+          code.if(_`!Number.isInteger(${divVar})`, () => {
+            genError(
+              code,
+              pathExprCode,
+              'multipleOf',
+              `Value must be a multiple of ${schema.multipleOf}`
+            );
+          });
+        });
+      } else {
+        // Non-clean fractions (e.g., 0.123456789): division + isInteger
+        // Overflow to Infinity → isInteger(Infinity) = false → correctly rejects
+        // (these can't evenly divide large integers anyway)
+        code.if(_`!Number.isInteger(${dataVar} / ${multipleOf})`, () => {
           genError(
             code,
             pathExprCode,
@@ -2931,8 +2959,19 @@ export function generateFormatCheck(
 ): void {
   if (schema.format === undefined) return;
 
-  // Skip if formatAssertion is disabled
-  if (!ctx.options.formatAssertion) return;
+  // Determine if format validation should be enabled:
+  // 1. If there's a custom metaschema with $vocabulary, check if format-assertion is enabled
+  // 2. Otherwise, use the global formatAssertion option (auto-detected from dialect)
+  let enableFormatAssertion: boolean;
+  if (ctx.hasCustomVocabulary()) {
+    // Custom metaschema: use vocabulary to determine format validation
+    enableFormatAssertion = ctx.isVocabularyEnabled(VOCABULARIES.format_assertion);
+  } else {
+    // No custom metaschema: use the global option (respects user's explicit setting or auto-detection)
+    enableFormatAssertion = ctx.options.formatAssertion;
+  }
+
+  if (!enableFormatAssertion) return;
 
   const format = schema.format;
 
