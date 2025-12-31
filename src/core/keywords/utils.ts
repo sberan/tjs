@@ -179,7 +179,9 @@ export function getTypeCheck(dataVar: Name | Code, type: string): Code {
     case 'number':
       return _`typeof ${dataVar} === 'number'`;
     case 'integer':
-      return _`typeof ${dataVar} === 'number' && ${dataVar} % 1 === 0 && isFinite(${dataVar})`;
+      // Use Number.isInteger for better performance and correctness
+      // It's a single native function call instead of multiple checks
+      return _`Number.isInteger(${dataVar})`;
     case 'boolean':
       return _`typeof ${dataVar} === 'boolean'`;
     case 'null':

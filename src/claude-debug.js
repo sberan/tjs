@@ -2,42 +2,38 @@
  * this file is for any scratch work that claude might help with
  */
 
-import { schema } from '../dist/index.js';
+// Microbenchmark to compare integer check performance
+console.log('=== INTEGER CHECK MICROBENCHMARK ===\n');
 
-// Test current TJS code
-const testSchema = {
-  properties: {
-    foo: {},
-    bar: {},
-  },
-  required: ['foo'],
-};
+const iterations = 100_000_000;
+const testValue = 42;
 
-const validator = schema(testSchema);
-console.log('=== TJS Generated Code ===');
-console.log(validator.toString());
+// Test 1: Number.isInteger
+console.time('Number.isInteger');
+for (let i = 0; i < iterations; i++) {
+  Number.isInteger(testValue);
+}
+console.timeEnd('Number.isInteger');
 
-const testSchema2 = {
-  properties: {
-    foo: {},
-    bar: {},
-    baz: {},
-  },
-  required: ['foo', 'bar', 'baz'],
-};
+// Test 2: typeof + modulo + isFinite
+console.time('typeof + % + isFinite');
+for (let i = 0; i < iterations; i++) {
+  typeof testValue === 'number' && testValue % 1 === 0 && isFinite(testValue);
+}
+console.timeEnd('typeof + % + isFinite');
 
-const validator2 = schema(testSchema2);
-console.log('\n=== TJS Multiple Required ===');
-console.log(validator2.toString());
+// Test with non-integer
+const nonInteger = 42.5;
 
-// Test AJV code
-const Ajv = require('ajv').default;
-const ajv = new Ajv({ code: { source: true, lines: true } });
+console.log('\n=== NON-INTEGER VALUE ===');
+console.time('Number.isInteger (non-int)');
+for (let i = 0; i < iterations; i++) {
+  Number.isInteger(nonInteger);
+}
+console.timeEnd('Number.isInteger (non-int)');
 
-const validate = ajv.compile(testSchema);
-console.log('\n=== AJV Generated Code ===');
-console.log(validate.toString());
-
-const validate2 = ajv.compile(testSchema2);
-console.log('\n=== AJV Multiple Required ===');
-console.log(validate2.toString());
+console.time('typeof + % + isFinite (non-int)');
+for (let i = 0; i < iterations; i++) {
+  typeof nonInteger === 'number' && nonInteger % 1 === 0 && isFinite(nonInteger);
+}
+console.timeEnd('typeof + % + isFinite (non-int)');

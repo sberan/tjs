@@ -1398,7 +1398,7 @@ export function generateContainsCheck(
             inlineCheck = _`typeof ${itemAccess} === 'number'`;
             break;
           case 'integer':
-            inlineCheck = _`typeof ${itemAccess} === 'number' && ${itemAccess} % 1 === 0 && isFinite(${itemAccess})`;
+            inlineCheck = _`Number.isInteger(${itemAccess})`;
             break;
           case 'boolean':
             inlineCheck = _`typeof ${itemAccess} === 'boolean'`;
@@ -2454,7 +2454,7 @@ function generateTypeCheckInline(valueVar: Name, type: unknown): Code | undefine
       case 'string':
         return _`typeof ${valueVar} === 'string'`;
       case 'integer':
-        return _`typeof ${valueVar} === 'number' && Number.isInteger(${valueVar})`;
+        return _`Number.isInteger(${valueVar})`;
       default:
         return undefined;
     }
