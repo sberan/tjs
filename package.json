@@ -66,5 +66,8 @@
       "prettier --write"
     ],
     "*.json": "prettier --write"
+  },
+  "dependencies": {
+    "ajv-formats-draft2019": "^1.6.1"
   }
 }
