@@ -3,8 +3,8 @@
 ## Summary
 
 - **Total Tests**: 1990
-- **Passed**: 1909 (95.9%)
-- **Failed**: 22
+- **Passed**: 1931 (97.0%)
+- **Failed**: 0
 - **Skipped**: 59
 
 ## By Keyword
@@ -29,7 +29,7 @@
 | dependentRequired | 20 | 0 | 0 | 100% |
 | dependentSchemas | 20 | 0 | 0 | 100% |
 | duration | 26 | 0 | 0 | 100% |
-| dynamicRef | 41 | 5 | 0 | 89% |
+| dynamicRef | 46 | 0 | 0 | 100% |
 | ecmascript-regex | 75 | 0 | 0 | 100% |
 | email | 24 | 0 | 0 | 100% |
 | enum | 45 | 0 | 0 | 100% |
@@ -72,7 +72,7 @@
 | propertyNames | 20 | 0 | 0 | 100% |
 | ref | 79 | 0 | 0 | 100% |
 | refOfUnknownKeyword | 10 | 0 | 0 | 100% |
-| refRemote | 15 | 16 | 0 | 48% |
+| refRemote | 31 | 0 | 0 | 100% |
 | regex | 8 | 0 | 0 | 100% |
 | relative-json-pointer | 18 | 0 | 0 | 100% |
 | required | 16 | 0 | 0 | 100% |
@@ -87,138 +87,4 @@
 | uri-reference | 15 | 0 | 0 | 100% |
 | uri-template | 10 | 0 | 0 | 100% |
 | uuid | 22 | 0 | 0 | 100% |
-| vocabulary | 4 | 1 | 0 | 80% |
-
-## Failures
-
-### dynamicRef / strict-tree schema, guards against misspelled properties
-
-**Test**: instance with correct field
-**Expected**: valid
-**Actual**: invalid
-
-### dynamicRef / tests for implementation dynamic anchor and reference link
-
-**Test**: correct extended schema
-**Expected**: valid
-**Actual**: invalid
-
-### dynamicRef / $ref and $dynamicAnchor are independent of order - $defs first
-
-**Test**: correct extended schema
-**Expected**: valid
-**Actual**: invalid
-
-### dynamicRef / $ref and $dynamicAnchor are independent of order - $ref first
-
-**Test**: correct extended schema
-**Expected**: valid
-**Actual**: invalid
-
-### dynamicRef / $ref to $dynamicRef finds detached $dynamicAnchor
-
-**Test**: number is valid
-**Expected**: valid
-**Actual**: invalid
-
-### refRemote / remote ref
-
-**Test**: remote ref valid
-**Expected**: valid
-**Actual**: invalid
-
-### refRemote / fragment within remote ref
-
-**Test**: remote fragment valid
-**Expected**: valid
-**Actual**: invalid
-
-### refRemote / anchor within remote ref
-
-**Test**: remote anchor valid
-**Expected**: valid
-**Actual**: invalid
-
-### refRemote / ref within remote ref
-
-**Test**: ref within ref valid
-**Expected**: valid
-**Actual**: invalid
-
-### refRemote / base URI change
-
-**Test**: base URI change ref valid
-**Expected**: valid
-**Actual**: invalid
-
-### refRemote / base URI change - change folder
-
-**Test**: number is valid
-**Expected**: valid
-**Actual**: invalid
-
-### refRemote / base URI change - change folder in subschema
-
-**Test**: number is valid
-**Expected**: valid
-**Actual**: invalid
-
-### refRemote / root ref in remote ref
-
-**Test**: string is valid
-**Expected**: valid
-**Actual**: invalid
-
-### refRemote / root ref in remote ref
-
-**Test**: null is valid
-**Expected**: valid
-**Actual**: invalid
-
-### refRemote / remote ref with ref to defs
-
-**Test**: valid
-**Expected**: valid
-**Actual**: invalid
-
-### refRemote / Location-independent identifier in remote ref
-
-**Test**: integer is valid
-**Expected**: valid
-**Actual**: invalid
-
-### refRemote / retrieved nested refs resolve relative to their URI not $id
-
-**Test**: string is valid
-**Expected**: valid
-**Actual**: invalid
-
-### refRemote / remote HTTP ref with different $id
-
-**Test**: string is valid
-**Expected**: valid
-**Actual**: invalid
-
-### refRemote / remote HTTP ref with different URN $id
-
-**Test**: string is valid
-**Expected**: valid
-**Actual**: invalid
-
-### refRemote / remote HTTP ref with nested absolute ref
-
-**Test**: string is valid
-**Expected**: valid
-**Actual**: invalid
-
-### refRemote / $ref to $ref finds detached $anchor
-
-**Test**: number is valid
-**Expected**: valid
-**Actual**: invalid
-
-### vocabulary / schema that uses custom metaschema with with no validation vocabulary
-
-**Test**: no validation: invalid number, but it still validates
-**Expected**: valid
-**Actual**: invalid
+| vocabulary | 5 | 0 | 0 | 100% |

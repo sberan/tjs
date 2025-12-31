@@ -1,15 +1,15 @@
 # Spawn Performance Optimization Agents
 
-Run this command to automatically spawn 5 parallel subagents to optimize the slowest format validators.
+Run this command to automatically spawn 5 parallel subagents to optimize the slowest  validators.
 
 ## Instructions for Claude
 
-1. First, run the benchmark to identify the top 5 slowest formats:
+1. First, run the benchmark to identify the top 5 slowest validators:
    ```bash
    npm run bench:compare:all 2>&1 | tail -20
    ```
 
-2. For each of the top 5 slowest formats (e.g., idn-hostname, iri, iri-reference, idn-email, etc.):
+2. For each of the top 5 slowest validators (e.g., idn-hostname, iri, iri-reference, idn-email, etc.):
 
    Create a git worktree:
    ```bash
@@ -19,7 +19,7 @@ Run this command to automatically spawn 5 parallel subagents to optimize the slo
 3. Spawn 5 subagents IN PARALLEL using the Task tool with this prompt template:
 
 ```
-PERFORMANCE OPTIMIZATION TASK: Optimize the FORMAT format validator
+PERFORMANCE OPTIMIZATION TASK: Optimize the FORMAT format validator (draft DRAFT)
 
 ## Setup (already done)
 Working directory: /tmp/tjs-opt-FORMAT
@@ -29,11 +29,11 @@ Run: cd /tmp/tjs-opt-FORMAT && npm install
 ## Your Task
 
 1. **Baseline Measurement**
-   Run: npm run bench:compare -- draft7 draft2020-12
+   Run: npm run bench:compare -- DRAFT
    Record the ops/s for "validation of FORMAT" test suite
 
 2. **Analyze Current Implementation**
-   Read src/core/codegen.ts and find the FORMAT format validator
+   Read src/core/compile.ts and find the relevant code
    Understand how it works and why it might be slow
 
 3. **Implement Optimization**
