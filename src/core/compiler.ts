@@ -19,6 +19,7 @@ import {
   or,
   and,
   not,
+  escapeString,
 } from './codegen.js';
 import { CompileContext, VOCABULARIES, supportsFeature, type CompileOptions } from './context.js';
 import { EvalTracker } from './eval-tracker.js';
@@ -2001,60 +2002,354 @@ export function generateCompositionChecks(
       return;
     }
 
-    // Check if condition matches
-    // Use temp tracker so we only merge if condition matches
-    const condVar = code.genVar('ifCond');
-    // Optimization: skip temp tracker for no-op schemas (true, {})
-    const needsTracker = !isNoOpSchema(ifSchema) && ifSchema !== false;
-    const tempVar = needsTracker ? evalTracker?.createTempTracker('ifTracker') : undefined;
-    const checkExpr = generateSubschemaCheck(code, ifSchema, dataVar, ctx, tempVar);
-    code.line(_`const ${condVar} = ${checkExpr};`);
+    // OPTIMIZATION: Try to inline the if schema check for better performance
+    // This avoids function call overhead and temp tracker creation/merging
+    const inlinedCheck = tryInlineIfCondition(
+      code,
+      ifSchema,
+      dataVar,
+      pathExprCode,
+      ctx,
+      evalTracker
+    );
 
-    // Merge temp tracker into parent only if condition matched
-    if (tempVar) {
+    if (inlinedCheck) {
+      // Successfully inlined - use the inlined condition variable
+      const condVar = inlinedCheck.conditionVar;
+      const propsToMark = inlinedCheck.evaluatedProps;
+
+      // When if matches, mark evaluated properties and apply then schema
       code.if(condVar, () => {
-        evalTracker?.mergeFrom(tempVar);
-      });
-    }
-
-    // When if matches, apply then schema if present
-    code.if(condVar, () => {
-      if (thenSchema !== undefined) {
-        if (thenSchema === false) {
-          genError(code, pathExprCode, 'then', 'Conditional validation failed');
-        } else if (thenSchema !== true) {
-          generateSchemaValidator(
-            code,
-            thenSchema,
-            dataVar,
-            pathExprCode,
-            ctx,
-            dynamicScopeVar,
-            evalTracker
-          );
+        // Mark properties that were evaluated during the if condition check
+        if (evalTracker?.trackingProps && propsToMark && propsToMark.length > 0) {
+          evalTracker.markProps(propsToMark);
         }
+
+        if (thenSchema !== undefined) {
+          if (thenSchema === false) {
+            genError(code, pathExprCode, 'then', 'Conditional validation failed');
+          } else if (thenSchema !== true) {
+            generateSchemaValidator(
+              code,
+              thenSchema,
+              dataVar,
+              pathExprCode,
+              ctx,
+              dynamicScopeVar,
+              evalTracker
+            );
+          }
+        }
+      });
+
+      // When if doesn't match, apply else schema if present
+      if (elseSchema !== undefined) {
+        code.if(_`!${condVar}`, () => {
+          if (elseSchema === false) {
+            genError(code, pathExprCode, 'else', 'Conditional validation failed');
+          } else if (elseSchema !== true) {
+            generateSchemaValidator(
+              code,
+              elseSchema,
+              dataVar,
+              pathExprCode,
+              ctx,
+              dynamicScopeVar,
+              evalTracker
+            );
+          }
+        });
       }
-    });
+    } else {
+      // Fallback to original approach with temp tracker
+      const condVar = code.genVar('ifCond');
+      const needsTracker = !isNoOpSchema(ifSchema) && ifSchema !== false;
+      const tempVar = needsTracker ? evalTracker?.createTempTracker('ifTracker') : undefined;
+      const checkExpr = generateSubschemaCheck(code, ifSchema, dataVar, ctx, tempVar);
+      code.line(_`const ${condVar} = ${checkExpr};`);
 
-    // When if doesn't match, apply else schema if present
-    if (elseSchema !== undefined) {
-      code.if(_`!${condVar}`, () => {
-        if (elseSchema === false) {
-          genError(code, pathExprCode, 'else', 'Conditional validation failed');
-        } else if (elseSchema !== true) {
-          generateSchemaValidator(
-            code,
-            elseSchema,
-            dataVar,
-            pathExprCode,
-            ctx,
-            dynamicScopeVar,
-            evalTracker
-          );
+      // Merge temp tracker into parent only if condition matched
+      if (tempVar) {
+        code.if(condVar, () => {
+          evalTracker?.mergeFrom(tempVar);
+        });
+      }
+
+      // When if matches, apply then schema if present
+      code.if(condVar, () => {
+        if (thenSchema !== undefined) {
+          if (thenSchema === false) {
+            genError(code, pathExprCode, 'then', 'Conditional validation failed');
+          } else if (thenSchema !== true) {
+            generateSchemaValidator(
+              code,
+              thenSchema,
+              dataVar,
+              pathExprCode,
+              ctx,
+              dynamicScopeVar,
+              evalTracker
+            );
+          }
         }
       });
+
+      // When if doesn't match, apply else schema if present
+      if (elseSchema !== undefined) {
+        code.if(_`!${condVar}`, () => {
+          if (elseSchema === false) {
+            genError(code, pathExprCode, 'else', 'Conditional validation failed');
+          } else if (elseSchema !== true) {
+            generateSchemaValidator(
+              code,
+              elseSchema,
+              dataVar,
+              pathExprCode,
+              ctx,
+              dynamicScopeVar,
+              evalTracker
+            );
+          }
+        });
+      }
     }
   }
+}
+
+/**
+ * Try to inline an if condition check instead of calling a separate function.
+ * This is a major optimization for unevaluatedProperties with if/then/else.
+ * Returns { conditionVar, evaluatedProps } if successful, undefined if we need to fall back to function call.
+ */
+function tryInlineIfCondition(
+  code: CodeBuilder,
+  ifSchema: JsonSchema,
+  dataVar: Name,
+  _pathExprCode: Code,
+  _ctx: CompileContext,
+  _evalTracker?: EvalTracker
+): { conditionVar: Name; evaluatedProps: string[] } | undefined {
+  // Handle no-op schemas
+  if (isNoOpSchema(ifSchema)) {
+    const condVar = code.genVar('ifCond');
+    code.line(_`const ${condVar} = true;`);
+    return { conditionVar: condVar, evaluatedProps: [] };
+  }
+  if (ifSchema === false) {
+    const condVar = code.genVar('ifCond');
+    code.line(_`const ${condVar} = false;`);
+    return { conditionVar: condVar, evaluatedProps: [] };
+  }
+
+  // Only inline object schemas without complex keywords
+  if (typeof ifSchema !== 'object' || ifSchema === null) return undefined;
+
+  // Don't inline if it has composition keywords or refs
+  if (
+    ifSchema.$ref ||
+    ifSchema.$dynamicRef ||
+    ifSchema.allOf ||
+    ifSchema.anyOf ||
+    ifSchema.oneOf ||
+    ifSchema.not ||
+    ifSchema.if
+  ) {
+    return undefined;
+  }
+
+  // Don't inline if it has unevaluated keywords (need complex tracking)
+  if (ifSchema.unevaluatedProperties !== undefined || ifSchema.unevaluatedItems !== undefined) {
+    return undefined;
+  }
+
+  // OPTIMIZATION: Inline simple property-based conditions
+  // Common pattern: { properties: {...}, required: [...] }
+  const hasProperties = ifSchema.properties !== undefined;
+  const hasRequired = ifSchema.required !== undefined && Array.isArray(ifSchema.required);
+  const hasPatternProperties = ifSchema.patternProperties !== undefined;
+  const hasAdditionalProperties = ifSchema.additionalProperties !== undefined;
+  const hasDependencies =
+    ifSchema.dependencies !== undefined || ifSchema.dependentSchemas !== undefined;
+
+  // For now, only inline the common simple case:
+  // - Object type check (implicit or explicit)
+  // - Properties validation
+  // - Required properties
+  // - No pattern properties, additionalProperties, or other complex features
+  const canInline =
+    (hasProperties || hasRequired) &&
+    !hasPatternProperties &&
+    !hasAdditionalProperties &&
+    !hasDependencies &&
+    !ifSchema.prefixItems &&
+    !ifSchema.items &&
+    !ifSchema.contains &&
+    !ifSchema.propertyNames &&
+    !ifSchema.minProperties &&
+    !ifSchema.maxProperties;
+
+  if (!canInline) return undefined;
+
+  // Generate inline condition check
+  const condVar = code.genVar('ifCond');
+  const tempResultVar = code.genVar('ifResult');
+  const evaluatedProps: string[] = [];
+
+  // Start with true, then check each constraint
+  code.line(_`let ${tempResultVar} = true;`);
+
+  // Check object type first
+  code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
+    // Check required properties
+    if (hasRequired && ifSchema.required && ifSchema.required.length > 0) {
+      for (const propName of ifSchema.required) {
+        if (typeof propName === 'string') {
+          const escaped = escapeString(propName);
+          code.if(_`${tempResultVar} && !("${new Code(escaped)}" in ${dataVar})`, () => {
+            code.line(_`${tempResultVar} = false;`);
+          });
+        }
+      }
+    }
+
+    // Check property validations
+    if (hasProperties && ifSchema.properties) {
+      for (const [propName, propSchema] of Object.entries(ifSchema.properties)) {
+        if (typeof propName !== 'string') continue;
+
+        const escaped = escapeString(propName);
+        const propVar = code.genVar('prop');
+
+        code.line(_`const ${propVar} = ${dataVar}["${new Code(escaped)}"];`);
+        code.if(_`${tempResultVar} && ${propVar} !== undefined`, () => {
+          // Generate inline validation for simple property schemas
+          const inlineValidation = tryInlinePropertyValidation(
+            code,
+            propSchema,
+            propVar,
+            tempResultVar
+          );
+
+          if (!inlineValidation) {
+            // Can't inline this property validation - bail out
+            code.line(_`${tempResultVar} = false; // Complex property schema, can't inline`);
+          }
+        });
+
+        // Track this property for marking if condition passes
+        evaluatedProps.push(propName);
+
+        // Early exit if validation failed
+        if (Object.keys(ifSchema.properties).length > 1) {
+          code.if(_`!${tempResultVar}`, () => {
+            code.line(_`${tempResultVar} = false;`);
+          });
+        }
+      }
+    }
+  });
+
+  // If not an object, the if condition fails
+  code.else(() => {
+    code.line(_`${tempResultVar} = false;`);
+  });
+
+  code.line(_`const ${condVar} = ${tempResultVar};`);
+  return { conditionVar: condVar, evaluatedProps };
+}
+
+/**
+ * Try to inline a simple property validation.
+ * Returns true if successful, false if we need to fall back.
+ */
+function tryInlinePropertyValidation(
+  code: CodeBuilder,
+  propSchema: JsonSchema,
+  propVar: Name,
+  resultVar: Name
+): boolean {
+  // Handle no-op schemas
+  if (isNoOpSchema(propSchema)) {
+    return true; // No validation needed
+  }
+  if (propSchema === false) {
+    code.line(_`${resultVar} = false;`);
+    return true;
+  }
+
+  if (typeof propSchema !== 'object' || propSchema === null) return false;
+
+  // Don't inline complex schemas
+  if (
+    propSchema.$ref ||
+    propSchema.$dynamicRef ||
+    propSchema.allOf ||
+    propSchema.anyOf ||
+    propSchema.oneOf ||
+    propSchema.not ||
+    propSchema.if ||
+    propSchema.properties ||
+    propSchema.patternProperties ||
+    propSchema.additionalProperties ||
+    propSchema.unevaluatedProperties ||
+    propSchema.unevaluatedItems
+  ) {
+    return false;
+  }
+
+  // Inline simple type check
+  if (propSchema.type !== undefined) {
+    const typeCheck = generateTypeCheckInline(propVar, propSchema.type);
+    if (!typeCheck) return false;
+
+    code.if(_`!(${typeCheck})`, () => {
+      code.line(_`${resultVar} = false;`);
+    });
+  }
+
+  // Inline const check
+  if (propSchema.const !== undefined) {
+    code.if(_`${propVar} !== ${new Code(JSON.stringify(propSchema.const))}`, () => {
+      code.line(_`${resultVar} = false;`);
+    });
+  }
+
+  // Inline enum check
+  if (propSchema.enum !== undefined && Array.isArray(propSchema.enum)) {
+    const enumValues = propSchema.enum.map((v) => JSON.stringify(v)).join(', ');
+    code.if(_`![${new Code(enumValues)}].includes(${propVar})`, () => {
+      code.line(_`${resultVar} = false;`);
+    });
+  }
+
+  return true;
+}
+
+/**
+ * Generate an inline type check expression
+ */
+function generateTypeCheckInline(valueVar: Name, type: unknown): Code | undefined {
+  if (typeof type === 'string') {
+    switch (type) {
+      case 'null':
+        return _`${valueVar} === null`;
+      case 'boolean':
+        return _`typeof ${valueVar} === 'boolean'`;
+      case 'object':
+        return _`${valueVar} && typeof ${valueVar} === 'object' && !Array.isArray(${valueVar})`;
+      case 'array':
+        return _`Array.isArray(${valueVar})`;
+      case 'number':
+        return _`typeof ${valueVar} === 'number'`;
+      case 'string':
+        return _`typeof ${valueVar} === 'string'`;
+      case 'integer':
+        return _`typeof ${valueVar} === 'number' && Number.isInteger(${valueVar})`;
+      default:
+        return undefined;
+    }
+  }
+  return undefined;
 }
 
 /**
