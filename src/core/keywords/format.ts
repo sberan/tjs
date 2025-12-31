@@ -95,11 +95,12 @@ function validateTime(s: string): boolean {
   const hr = +m[1];
   const min = +m[2];
   const sec = +m[3];
-  const tzSign = m[5] === '-' ? -1 : 1;
+  // For positive offset (+), we subtract to get UTC; for negative (-), we add
+  const tzSign = m[5] === '-' ? 1 : -1;
   const tzH = +(m[6] || 0);
   const tzM = +(m[7] || 0);
 
-  // Validate offset
+  // Validate offset bounds
   if (tzH > 23 || tzM > 59) return false;
 
   // Standard time validation (fast path)
@@ -109,9 +110,27 @@ function validateTime(s: string): boolean {
   if (sec >= 61 || hr > 23 || min > 59) return false;
 
   // For leap second (sec = 60), UTC time must be 23:59
-  const utcMin = min - tzM * tzSign;
-  const utcHr = hr - tzH * tzSign - (utcMin < 0 ? 1 : 0);
-  return (utcHr === 23 || utcHr === -1) && (utcMin === 59 || utcMin === -1);
+  // UTC = local time + offset (where offset is negative for + and positive for -)
+  let utcMin = min + tzM * tzSign;
+  let utcHr = hr + tzH * tzSign;
+
+  // Handle minute overflow/underflow
+  if (utcMin >= 60) {
+    utcMin -= 60;
+    utcHr += 1;
+  } else if (utcMin < 0) {
+    utcMin += 60;
+    utcHr -= 1;
+  }
+
+  // Handle hour overflow/underflow (wrap around 24-hour day)
+  if (utcHr >= 24) {
+    utcHr -= 24;
+  } else if (utcHr < 0) {
+    utcHr += 24;
+  }
+
+  return utcHr === 23 && utcMin === 59;
 }
 
 function validateDateTime(s: string): boolean {
@@ -831,9 +850,17 @@ const URI_REFERENCE_REGEX =
 // NOT_URI_FRAGMENT check - URI must contain / or :
 const NOT_URI_FRAGMENT = /\/|:/;
 
+// Detect bare IPv6 addresses (without brackets) in authority
+// Pattern: scheme://host:... where host looks like IPv6 (contains multiple colons)
+// e.g., http://2001:0db8:... is invalid; should be http://[2001:0db8:...]
+const BARE_IPV6_PATTERN = /^[a-z][a-z0-9+.-]*:\/\/[0-9a-f]*:[0-9a-f]*:/i;
+
 function validateUri(s: string): boolean {
   // Must contain / or : to not be just a fragment
-  return NOT_URI_FRAGMENT.test(s) && URI_REGEX.test(s);
+  if (!NOT_URI_FRAGMENT.test(s)) return false;
+  // Reject bare IPv6 addresses (not in brackets)
+  if (BARE_IPV6_PATTERN.test(s)) return false;
+  return URI_REGEX.test(s);
 }
 
 function validateUriReference(s: string): boolean {
@@ -841,15 +868,53 @@ function validateUriReference(s: string): boolean {
   return URI_REFERENCE_REGEX.test(s);
 }
 
-// IRI regex - similar to URI but allows Unicode characters >= U+00A0
-// Based on RFC 3987 but simplified for performance
-// Validates: scheme (1-63 chars) + ":" + (anything except forbidden chars)
-const IRI_REGEX = /^[a-z][a-z0-9+.-]{0,62}:[^\x00-\x20<>"{}|\\^`\x7f]*$/i;
+// IRI validation based on RFC 3987
+// Uses the URI regex as a base but also allows Unicode chars (>= 0x80)
+// For performance, we first try the strict URI regex, then fall back to Unicode check
 
 function validateIri(s: string): boolean {
-  // Single regex check - V8's regex engine is highly optimized
-  // No need for indexOf or other pre-checks
-  return s ? IRI_REGEX.test(s) : false;
+  if (!s) return false;
+
+  // Check for bare IPv6 (not in brackets) BEFORE the URI regex
+  // This catches http://2001:0db8:... which would otherwise pass the URI regex
+  // because it looks like a valid authority with host:port:path
+  if (BARE_IPV6_PATTERN.test(s)) return false;
+
+  // Fast path: if it's a valid URI, it's also a valid IRI
+  if (URI_REGEX.test(s)) return true;
+
+  // Slow path: check for valid IRI with Unicode characters
+  // Must have valid scheme, and no forbidden characters
+  const colonIdx = s.indexOf(':');
+  if (colonIdx < 1 || colonIdx > 63) return false;
+
+  // Validate scheme (first part before colon)
+  const scheme = s.slice(0, colonIdx);
+  if (!/^[a-z][a-z0-9+.-]*$/i.test(scheme)) return false;
+
+  // Validate rest: no control chars (0x00-0x1F, 0x7F) or forbidden chars
+  const rest = s.slice(colonIdx + 1);
+  for (let i = 0; i < rest.length; i++) {
+    const c = rest.charCodeAt(i);
+    // Control chars (0x00-0x1F and 0x7F)
+    if (c <= 0x1f || c === 0x7f) return false;
+    // Forbidden chars: space (0x20), <>"{}|\^`
+    if (
+      c === 0x20 ||
+      c === 0x22 ||
+      c === 0x3c ||
+      c === 0x3e ||
+      c === 0x5c ||
+      c === 0x5e ||
+      c === 0x60 ||
+      c === 0x7b ||
+      c === 0x7c ||
+      c === 0x7d
+    )
+      return false;
+  }
+
+  return true;
 }
 
 // IRI-reference regex - optimized for performance
