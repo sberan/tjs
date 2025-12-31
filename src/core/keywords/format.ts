@@ -653,18 +653,90 @@ function validateUriReference(s: string): boolean {
   return URI_REFERENCE_REGEX.test(s);
 }
 
-// IRI regex - like URI but allows non-ASCII characters (Unicode)
-// Based on RFC 3987 - IRIs extend URIs with Unicode support
-const IRI_REGEX =
-  /^(?:[a-z][a-z0-9+\-.]*:)(?:\/?\/(?:(?:[a-z0-9\-._~!$&'()*+,;=:]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*@)?(?:\[(?:(?:(?:(?:[0-9a-f]{1,4}:){6}|::(?:[0-9a-f]{1,4}:){5}|(?:[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){4}|(?:(?:[0-9a-f]{1,4}:){0,1}[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){3}|(?:(?:[0-9a-f]{1,4}:){0,2}[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){2}|(?:(?:[0-9a-f]{1,4}:){0,3}[0-9a-f]{1,4})?::[0-9a-f]{1,4}:|(?:(?:[0-9a-f]{1,4}:){0,4}[0-9a-f]{1,4})?::)(?:[0-9a-f]{1,4}:[0-9a-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?))|(?:(?:[0-9a-f]{1,4}:){0,5}[0-9a-f]{1,4})?::[0-9a-f]{1,4}|(?:(?:[0-9a-f]{1,4}:){0,6}[0-9a-f]{1,4})?::)|[Vv][0-9a-f]+\.[a-z0-9\-._~!$&'()*+,;=:]+)\]|(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)|(?:[a-z0-9\-._~!$&'()*+,;=]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*)(?::\d*)?(?:\/(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*)*|\/(?:(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])+(?:\/(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*)*)?|(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])+(?:\/(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*)*)(?:\?(?:[a-z0-9\-._~!$&'()*+,;=:@/?]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*)?(?:#(?:[a-z0-9\-._~!$&'()*+,;=:@/?]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*)?$/i;
-
 // IRI-reference regex - like URI-reference but allows non-ASCII
 const IRI_REFERENCE_REGEX =
   /^(?:[a-z][a-z0-9+\-.]*:)?(?:\/?\/(?:(?:[a-z0-9\-._~!$&'()*+,;=:]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*@)?(?:\[(?:(?:(?:(?:[0-9a-f]{1,4}:){6}|::(?:[0-9a-f]{1,4}:){5}|(?:[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){4}|(?:(?:[0-9a-f]{1,4}:){0,1}[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){3}|(?:(?:[0-9a-f]{1,4}:){0,2}[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){2}|(?:(?:[0-9a-f]{1,4}:){0,3}[0-9a-f]{1,4})?::[0-9a-f]{1,4}:|(?:(?:[0-9a-f]{1,4}:){0,4}[0-9a-f]{1,4})?::)(?:[0-9a-f]{1,4}:[0-9a-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?))|(?:(?:[0-9a-f]{1,4}:){0,5}[0-9a-f]{1,4})?::[0-9a-f]{1,4}|(?:(?:[0-9a-f]{1,4}:){0,6}[0-9a-f]{1,4})?::)|[Vv][0-9a-f]+\.[a-z0-9\-._~!$&'()*+,;=:]+)\]|(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)|(?:[a-z0-9\-._~!$&'"()*+,;=]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*)(?::\d*)?(?:\/(?:[a-z0-9\-._~!$&'"()*+,;=:@]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*)*|\/(?:(?:[a-z0-9\-._~!$&'"()*+,;=:@]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])+(?:\/(?:[a-z0-9\-._~!$&'"()*+,;=:@]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*)*)?|(?:[a-z0-9\-._~!$&'"()*+,;=:@]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])+(?:\/(?:[a-z0-9\-._~!$&'"()*+,;=:@]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*)*)?(?:\?(?:[a-z0-9\-._~!$&'"()*+,;=:@/?]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*)?(?:#(?:[a-z0-9\-._~!$&'"()*+,;=:@/?]|%[0-9a-f]{2}|[\u00A0-\uD7FF\uF900-\uFDCF\uFDF0-\uFFEF])*)?$/i;
 
 function validateIri(s: string): boolean {
-  if (FORMAT_REGEX.uriBadChars.test(s)) return false;
-  return NOT_URI_FRAGMENT.test(s) && IRI_REGEX.test(s);
+  // Early exit for empty strings
+  if (!s) return false;
+
+  let i = 0;
+  const len = s.length;
+
+  // Scheme: [a-z][a-z0-9+.-]*:
+  let code = s.charCodeAt(i);
+  if (code < 0x61 || code > 0x7a) return false; // First char must be a-z
+  i++;
+
+  while (i < len) {
+    code = s.charCodeAt(i);
+    if (code === 0x3a) {
+      // Found scheme separator ':'
+      i++;
+      break;
+    }
+    // Scheme chars: a-z, 0-9, +, ., -
+    if (
+      !(
+        (code >= 0x61 && code <= 0x7a) || // a-z
+        (code >= 0x41 && code <= 0x5a) || // A-Z (case insensitive)
+        (code >= 0x30 && code <= 0x39) || // 0-9
+        code === 0x2b || // +
+        code === 0x2e || // .
+        code === 0x2d // -
+      )
+    ) {
+      return false;
+    }
+    i++;
+  }
+
+  // Must have found ':' (scheme separator)
+  if (i === len || s.charCodeAt(i - 1) !== 0x3a) return false;
+
+  // Validate rest of IRI - check for disallowed characters
+  // IRI allows: unreserved, reserved, percent-encoded, and Unicode chars >= U+00A0
+  for (; i < len; i++) {
+    code = s.charCodeAt(i);
+
+    // Disallowed: control chars (0x00-0x1F, 0x7F), space (0x20), and: <>"{}|\^`
+    if (code <= 0x20 || code === 0x7f) return false;
+    if (
+      code === 0x3c || // <
+      code === 0x3e || // >
+      code === 0x22 || // "
+      code === 0x7b || // {
+      code === 0x7d || // }
+      code === 0x7c || // |
+      code === 0x5c || // \
+      code === 0x5e || // ^
+      code === 0x60 // `
+    ) {
+      return false;
+    }
+
+    // Validate percent-encoding: %[0-9a-fA-F]{2}
+    if (code === 0x25) {
+      // %
+      if (i + 2 >= len) return false;
+      const h1 = s.charCodeAt(i + 1);
+      const h2 = s.charCodeAt(i + 2);
+      if (
+        !(
+          (h1 >= 0x30 && h1 <= 0x39) || // 0-9
+          (h1 >= 0x41 && h1 <= 0x46) || // A-F
+          (h1 >= 0x61 && h1 <= 0x66) // a-f
+        ) ||
+        !((h2 >= 0x30 && h2 <= 0x39) || (h2 >= 0x41 && h2 <= 0x46) || (h2 >= 0x61 && h2 <= 0x66))
+      ) {
+        return false;
+      }
+      i += 2; // Skip the two hex digits
+    }
+  }
+
+  return true;
 }
 
 function validateIriReference(s: string): boolean {
