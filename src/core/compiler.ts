@@ -879,24 +879,14 @@ export function generateArrayChecks(
       const jVar = code.genVar('j');
 
       if (canOptimize) {
-        // Fast path: items are primitives, use object hash for O(n) lookup
-        const itemVar = code.genVar('item');
-        const indicesVar = code.genVar('indices');
-        const hasMultipleTypes = itemTypes.length > 1;
-
-        code.line(_`const ${indicesVar} = {};`);
-        code.block(_`for (let ${iVar} = ${dataVar}.length; ${iVar}--;)`, () => {
-          code.line(_`let ${itemVar} = ${dataVar}[${iVar}];`);
-          // If multiple types possible, prefix strings to avoid collision with numbers
-          if (hasMultipleTypes) {
-            code.if(_`typeof ${itemVar} === 'string'`, () => {
-              code.line(_`${itemVar} = '_' + ${itemVar};`);
+        // Fast path: items are primitives, use simple === comparison in O(n²) loop
+        // This is faster than deepEqual for primitives
+        code.block(_`outer: for (let ${iVar} = ${dataVar}.length; ${iVar}--;)`, () => {
+          code.block(_`for (let ${jVar} = ${iVar}; ${jVar}--;)`, () => {
+            code.if(_`${dataVar}[${iVar}] === ${dataVar}[${jVar}]`, () => {
+              genError(code, pathExprCode, 'uniqueItems', `Array items must be unique`);
             });
-          }
-          code.if(_`typeof ${indicesVar}[${itemVar}] === 'number'`, () => {
-            genError(code, pathExprCode, 'uniqueItems', `Array items must be unique`);
           });
-          code.line(_`${indicesVar}[${itemVar}] = ${iVar};`);
         });
       } else {
         // Slow path: O(n²) comparison using deepEqual
