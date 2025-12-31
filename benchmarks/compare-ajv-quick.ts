@@ -152,8 +152,8 @@ function loadTestSuites(draft: Draft, includeOptional: boolean = true): TestGrou
 function createAjv(draft: Draft, remotes: Record<string, unknown>): Ajv {
   const ajv =
     draft === 'draft2020-12'
-      ? new Ajv2020({ allErrors: false, strict: false, logger: false })
-      : new Ajv({ allErrors: false, strict: false, logger: false });
+      ? new Ajv2020({ allErrors: false, logger: false })
+      : new Ajv({ allErrors: false, logger: false });
 
   addFormats(ajv);
 
