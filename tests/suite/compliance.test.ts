@@ -13,8 +13,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 type Draft = 'draft4' | 'draft6' | 'draft7' | 'draft2019-09' | 'draft2020-12';
 
 // Keywords that are not yet implemented or have known issues
-const UNIMPLEMENTED_KEYWORDS = [
-  'unknownKeyword', // TODO: Meta-schema validation not implemented
+const UNIMPLEMENTED_KEYWORDS: string[] = [
+  // 'unknownKeyword', // TODO: Meta-schema validation not implemented
 ];
 
 // Optional test files that are skipped (these tests fail across all validators in json-schema-benchmark)
