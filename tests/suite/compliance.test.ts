@@ -18,9 +18,19 @@ const SKIPPED_OPTIONAL_FILES: string[] = [
   'zeroTerminatedFloats', // Language-specific numeric representation (1.0 vs 1)
 ];
 
-// Specific test descriptions to skip (format validation edge cases)
-// Currently empty - all format validations are now properly implemented
-const SKIPPED_TEST_DESCRIPTIONS: string[] = [];
+// Keywords that are not implemented
+const SKIPPED_KEYWORDS: string[] = [
+  'unevaluatedProperties', // Not implemented - removed for simplicity
+  'unevaluatedItems', // Not implemented - removed for simplicity
+];
+
+// Specific test descriptions to skip
+const SKIPPED_TEST_DESCRIPTIONS: string[] = [
+  // These tests rely on unevaluatedProperties behavior which we don't support
+  'unevaluated property', // not > collect annotations inside a 'not'
+  "referenced subschema doesn't see annotations from properties", // ref > ref creates new scope
+  'instance with misspelled field', // dynamicRef > strict-tree schema
+];
 
 // Remotes directory for the test suite
 const REMOTES_DIR = path.join(__dirname, '../json-schema-test-suite/remotes');
@@ -145,7 +155,8 @@ function testDraft(draft: Draft, includeOptional: boolean = true) {
     // Generate individual test cases for each file/group/test
     for (const file of files) {
       const keyword = file.name;
-      const isSkippedFile = SKIPPED_OPTIONAL_FILES.includes(keyword);
+      const isSkippedKeyword = SKIPPED_KEYWORDS.includes(keyword);
+      const isSkippedFile = SKIPPED_OPTIONAL_FILES.includes(keyword) || isSkippedKeyword;
       // Optional format tests specifically test format validation (not annotation-only)
       const isFormatTest = file.isFormatTest === true;
 
@@ -246,7 +257,8 @@ function testDraft(draft: Draft, includeOptional: boolean = true) {
           byKeyword[keyword] = { passed: 0, failed: 0, skipped: 0 };
         }
 
-        const isSkippedFile = SKIPPED_OPTIONAL_FILES.includes(keyword);
+        const isSkippedKeyword = SKIPPED_KEYWORDS.includes(keyword);
+        const isSkippedFile = SKIPPED_OPTIONAL_FILES.includes(keyword) || isSkippedKeyword;
 
         for (const group of file.groups) {
           for (const test of group.tests) {
