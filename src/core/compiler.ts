@@ -289,20 +289,32 @@ function generateSchemaValidator(
     const hasUnevalItems = schema.unevaluatedItems !== undefined;
 
     if (hasUnevalProps || hasUnevalItems) {
+      // Optimization: Skip tracker entirely if additionalProperties makes it redundant
+      // When additionalProperties is present with unevaluatedProperties, all properties
+      // are marked as evaluated, making the tracker unnecessary except for parent bubbling
+      const skipPropsTracking =
+        hasUnevalProps && schema.additionalProperties !== undefined && !evalTracker;
+
       // Check if contains is present anywhere - requires Set-based item tracking
       const needsItemSet = hasUnevalItems && schemaHasContains(schema, ctx);
 
-      // This schema has its own unevaluatedProperties/Items - create a NEW tracker
-      // The tracker is a local variable that gets passed to sub-validators
-      // Keep reference to parent so we can bubble up after our unevaluated* check runs
-      const trackerVar = code.genVar('tracker');
-      tracker = new EvalTracker(code, trackerVar, {
-        trackProps: hasUnevalProps,
-        trackItems: hasUnevalItems,
-        parentTracker: evalTracker,
-        useItemSet: needsItemSet,
-      });
-      tracker.init();
+      // Skip creating tracker if it would be unused
+      if (skipPropsTracking && !hasUnevalItems) {
+        // No need for tracker - skip it entirely
+        tracker = undefined;
+      } else {
+        // This schema has its own unevaluatedProperties/Items - create a NEW tracker
+        // The tracker is a local variable that gets passed to sub-validators
+        // Keep reference to parent so we can bubble up after our unevaluated* check runs
+        const trackerVar = code.genVar('tracker');
+        tracker = new EvalTracker(code, trackerVar, {
+          trackProps: hasUnevalProps && !skipPropsTracking,
+          trackItems: hasUnevalItems,
+          parentTracker: evalTracker,
+          useItemSet: needsItemSet,
+        });
+        tracker.init();
+      }
     }
     // If no unevalProps/Items here but parent has tracker, keep using parent's tracker
     // so that properties evaluated here are visible to the parent's unevaluatedProperties check
@@ -2150,10 +2162,23 @@ export function generateUnevaluatedPropertiesCheck(
     return;
   }
 
-  // Optimization: when unevaluatedProperties is true, just mark all props as evaluated
-  // without iterating through them. This is much faster than checking each property.
-  if (schema.unevaluatedProperties === true) {
-    evalTracker.markAllProps();
+  // Optimization: If additionalProperties is present (even boolean true or {}),
+  // ALL properties are marked as evaluated via markAllProps().
+  // In this case, unevaluatedProperties check will never find unevaluated properties,
+  // so we can skip generating the check entirely (except for unevaluatedProperties: true
+  // which needs to mark props for parent tracking).
+  if (schema.additionalProperties !== undefined) {
+    // If unevaluatedProperties is false, the check would never fail (all props evaluated)
+    if (schema.unevaluatedProperties === false) {
+      return; // Skip check - optimization!
+    }
+    // If unevaluatedProperties is true, we need to mark all props for parent
+    // But since additionalProperties already marked all props, this is a no-op
+    if (schema.unevaluatedProperties === true) {
+      return; // Skip check - all props already marked
+    }
+    // If unevaluatedProperties is a schema, it would never execute (all props evaluated)
+    // So we can skip it
     return;
   }
 
@@ -2168,6 +2193,9 @@ export function generateUnevaluatedPropertiesCheck(
       code.if(condition, () => {
         if (schema.unevaluatedProperties === false) {
           genError(code, keyPathExpr, 'unevaluatedProperties', 'Unevaluated property not allowed');
+        } else if (schema.unevaluatedProperties === true) {
+          // unevaluatedProperties: true - mark as evaluated (for bubbling to parent)
+          evalTracker.markPropDynamic(keyVar);
         } else if (schema.unevaluatedProperties !== undefined) {
           // unevaluatedProperties: <schema> - validate and mark as evaluated
           const propVar = code.genVar('up');
