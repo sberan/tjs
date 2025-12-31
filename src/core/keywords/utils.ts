@@ -43,7 +43,6 @@ export function genPropertyCheck(
   propName: string,
   callback: (valueVar: Name | Code) => void
 ): void {
-  const propStr = escapeString(propName);
   const propAccessCode = propAccess(dataVar, propName);
 
   if (isSafePropertyName(propName)) {
@@ -55,7 +54,8 @@ export function genPropertyCheck(
     });
   } else {
     // Slow path: use Object.hasOwn for prototype property names
-    code.if(_`Object.hasOwn(${dataVar}, '${new Code(propStr)}')`, () => {
+    // Pass raw propName - the _ template tag handles escaping via safeInterpolate
+    code.if(_`Object.hasOwn(${dataVar}, ${propName})`, () => {
       callback(propAccessCode);
     });
   }
@@ -69,16 +69,17 @@ export function genRequiredCheck(
   code: CodeBuilder,
   dataVar: Name,
   propName: string,
-  pathExprCode: Code
+  pathExprCode: Code,
+  mainFuncName: string
 ): void {
-  const propStr = escapeString(propName);
   const propPathExpr = pathExpr(pathExprCode, propName);
 
   // For prototype property names, use Object.hasOwn for accuracy.
   // For other names, use the faster 'in' operator.
+  // Pass raw propName - the _ template tag handles escaping via safeInterpolate
   const checkExpr = isSafePropertyName(propName)
-    ? _`!('${new Code(propStr)}' in ${dataVar})`
-    : _`!Object.hasOwn(${dataVar}, '${new Code(propStr)}')`;
+    ? _`!(${propName} in ${dataVar})`
+    : _`!Object.hasOwn(${dataVar}, ${propName})`;
 
   code.if(checkExpr, () => {
     genError(
@@ -89,7 +90,8 @@ export function genRequiredCheck(
       `must have required property '${propName}'`,
       {
         missingProperty: propName,
-      }
+      },
+      mainFuncName
     );
   });
 }
@@ -103,13 +105,14 @@ export function genBatchedRequiredChecks(
   code: CodeBuilder,
   dataVar: Name,
   requiredProps: readonly string[],
-  pathExprCode: Code
+  pathExprCode: Code,
+  mainFuncName: string
 ): void {
   if (requiredProps.length === 0) return;
 
   // For single property, use simple check without missing variable overhead
   if (requiredProps.length === 1) {
-    genRequiredCheck(code, dataVar, requiredProps[0], pathExprCode);
+    genRequiredCheck(code, dataVar, requiredProps[0], pathExprCode, mainFuncName);
     return;
   }
 
@@ -121,17 +124,14 @@ export function genBatchedRequiredChecks(
   // Build the compound condition
   const conditions: Code[] = [];
   for (const propName of requiredProps) {
-    const propStr = escapeString(propName);
-
+    // Pass raw propName - the _ template tag handles escaping via safeInterpolate
     if (isSafePropertyName(propName)) {
       // Fast path: use 'in' operator
-      conditions.push(
-        _`(!('${new Code(propStr)}' in ${dataVar}) && (${missingVar} = '${new Code(propStr)}'))`
-      );
+      conditions.push(_`(!(${propName} in ${dataVar}) && (${missingVar} = ${propName}))`);
     } else {
       // Slow path: use !Object.hasOwn for prototype properties
       conditions.push(
-        _`(!Object.hasOwn(${dataVar}, '${new Code(propStr)}') && (${missingVar} = '${new Code(propStr)}'))`
+        _`(!Object.hasOwn(${dataVar}, ${propName}) && (${missingVar} = ${propName}))`
       );
     }
   }
@@ -146,9 +146,13 @@ export function genBatchedRequiredChecks(
   code.if(combinedCondition, () => {
     // Use the missing variable to create dynamic path (already in JSON Pointer format)
     const propPathExpr = pathExprDynamic(pathExprCode, missingVar);
-    // For batched required, we need to pass the missingProperty dynamically
+    // Build error object using template - missingVar is a runtime variable
+    const mainFuncRef = new Name(mainFuncName);
     code.line(
-      _`if (errors) errors.push({ instancePath: ${propPathExpr}, schemaPath: '#/required', keyword: 'required', params: { missingProperty: ${missingVar} }, message: 'must have required property \\'' + ${missingVar} + '\\'' });`
+      _`if (errors) errors.push({ instancePath: ${propPathExpr}, schemaPath: '#/required', keyword: 'required', params: { missingProperty: ${missingVar} }, message: "must have required property '" + ${missingVar} + "'" });`
+    );
+    code.line(
+      _`${mainFuncRef}.errors = [{ instancePath: ${propPathExpr}, schemaPath: '#/required', keyword: 'required', params: { missingProperty: ${missingVar} }, message: "must have required property '" + ${missingVar} + "'" }];`
     );
     code.line(_`return false;`);
   });
@@ -164,6 +168,7 @@ export function genBatchedRequiredChecks(
  * @param keyword - Validation keyword that failed
  * @param message - Human-readable error message
  * @param params - Keyword-specific params object (will be stringified)
+ * @param mainFuncName - Main function name for setting .errors property (AJV-compatible)
  */
 export function genError(
   code: CodeBuilder,
@@ -171,16 +176,24 @@ export function genError(
   schemaPath: string,
   keyword: string,
   message: string,
-  params: object = {}
+  params: object,
+  mainFuncName: string
 ): void {
   const escapedMessage = escapeString(message);
   const escapedSchemaPath = escapeString(schemaPath);
   const paramsJson = JSON.stringify(params);
 
+  // Build the error object
+  const errObj = `{ instancePath: ${pathExprCode}, schemaPath: '${new Code(escapedSchemaPath)}', keyword: '${new Code(keyword)}', params: ${new Code(paramsJson)}, message: '${new Code(escapedMessage)}' }`;
+
   // pathExprCode is already in JSON Pointer format - no conversion needed
-  code.line(
-    _`if (errors) errors.push({ instancePath: ${pathExprCode}, schemaPath: '${new Code(escapedSchemaPath)}', keyword: '${new Code(keyword)}', params: ${new Code(paramsJson)}, message: '${new Code(escapedMessage)}' });`
-  );
+  code.line(_`if (errors) errors.push(${new Code(errObj)});`);
+
+  // Set .errors on main function directly (AJV-compatible pattern)
+  if (mainFuncName) {
+    code.line(_`${new Code(mainFuncName)}.errors = [${new Code(errObj)}];`);
+  }
+
   code.line(_`return false;`);
 }
 

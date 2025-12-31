@@ -237,44 +237,18 @@ export interface Validator<T> {
 /**
  * Create a JSON Schema validator.
  * Returns a callable validator with validate() and assert() methods.
+ *
+ * The generated validator function directly sets `.errors` property (AJV-compatible):
+ * - On validation failure: `.errors` contains an array with the error
+ * - On validation success: `.errors` is set to null
  */
 export function createValidator<T>(schema: JsonSchema, options: CompileOptions = {}): Validator<T> {
   const validateFn = compile(schema, options);
   const coerceOptions = options.coerce;
 
-  // For AJV compatibility, track validation state for lazy error collection.
-  // Only store data on failure to minimize overhead for the common success case.
-  let _data: unknown;
-  let _result: boolean = true;
-  let _errors: CompileError[] | null = null;
-  let _computed = true;
-
-  // Thin wrapper that stores state for lazy error access
-  // Optimized: only track data when validation fails (common case is success)
-  const validator = function (data: unknown): boolean {
-    const result = validateFn(data);
-    _result = result; // Always track result for errors getter
-    if (!result) {
-      _data = data;
-      _computed = false;
-    }
-    return result;
-  } as Validator<T>;
-
-  // Lazy errors getter - only re-validate when errors are accessed
-  Object.defineProperty(validator, 'errors', {
-    get(): CompileError[] | null {
-      if (_result) return null;
-      if (!_computed) {
-        const errs: CompileError[] = [];
-        validateFn(_data, errs);
-        _errors = errs.length > 0 ? errs : null;
-        _computed = true;
-      }
-      return _errors;
-    },
-    enumerable: true,
-  });
+  // The compiled function already sets .errors directly (AJV-style)
+  // Cast to Validator type - the function already has the right shape
+  const validator = validateFn as unknown as Validator<T>;
 
   // Create specialized validate/assert methods based on whether coercion is enabled
   // This eliminates the branch on every call for better performance
