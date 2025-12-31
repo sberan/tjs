@@ -811,13 +811,29 @@ export function generateNumberChecks(
       } else {
         const divVar = code.genVar('div');
         code.line(_`const ${divVar} = ${dataVar} / ${multipleOf};`);
-        code.if(_`!Number.isInteger(${divVar})`, () => {
-          genError(
-            code,
-            pathExprCode,
-            'multipleOf',
-            `Value must be a multiple of ${schema.multipleOf}`
-          );
+        // Handle overflow: if division overflows to Infinity, use modulo as fallback
+        // For finite results, use integer check (more accurate for small numbers)
+        code.if(_`!Number.isFinite(${divVar})`, () => {
+          // Overflow case: use modulo which handles large numbers correctly
+          code.if(_`${dataVar} % ${multipleOf} !== 0`, () => {
+            genError(
+              code,
+              pathExprCode,
+              'multipleOf',
+              `Value must be a multiple of ${schema.multipleOf}`
+            );
+          });
+        });
+        code.else(() => {
+          // Normal case: use division for better precision
+          code.if(_`!Number.isInteger(${divVar})`, () => {
+            genError(
+              code,
+              pathExprCode,
+              'multipleOf',
+              `Value must be a multiple of ${schema.multipleOf}`
+            );
+          });
         });
       }
     }
