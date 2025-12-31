@@ -739,32 +739,33 @@ async function main() {
   );
   console.log('─'.repeat(100));
 
-  // Top 10 slowest tests (where tjs is slowest compared to ajv, by % difference)
+  // Top 10 slowest tests (where tjs is slowest compared to ajv, by absolute ns difference)
   const slowest = [...allSuitePerfs]
-    .filter((s) => s.diffPercent > 0) // positive means tjs is slower (higher ns)
-    .sort((a, b) => b.diffPercent - a.diffPercent)
+    .filter((s) => s.tjsNs > s.ajvNs) // tjs is slower (higher ns)
+    .sort((a, b) => b.tjsNs - b.ajvNs - (a.tjsNs - a.ajvNs)) // sort by absolute ns difference
     .slice(0, 10);
 
   if (slowest.length > 0) {
-    console.log('\nTop 10 Slowest Tests (tjs vs ajv by % slower)');
+    console.log('\nTop 10 Slowest Tests (tjs vs ajv by absolute ns slower)');
     console.log('─'.repeat(100));
     console.log(
       'Draft'.padEnd(14) +
         'Test'.padEnd(50) +
-        'tjs ns/test'.padStart(12) +
-        'ajv ns/test'.padStart(12) +
-        'diff %'.padStart(12)
+        'tjs ns'.padStart(10) +
+        'ajv ns'.padStart(10) +
+        'diff ns'.padStart(10)
     );
     console.log('─'.repeat(100));
 
     for (const s of slowest) {
       const name = s.description.length > 48 ? s.description.slice(0, 45) + '...' : s.description;
+      const diffNs = Math.round(s.tjsNs - s.ajvNs);
       console.log(
         s.draft.padEnd(14) +
           name.padEnd(50) +
-          Math.round(s.tjsNs).toLocaleString().padStart(12) +
-          Math.round(s.ajvNs).toLocaleString().padStart(12) +
-          `${RED}+${Math.round(s.diffPercent)}%${RESET}`.padStart(21)
+          Math.round(s.tjsNs).toLocaleString().padStart(10) +
+          Math.round(s.ajvNs).toLocaleString().padStart(10) +
+          `${RED}+${diffNs.toLocaleString()}${RESET}`.padStart(19)
       );
     }
     console.log('─'.repeat(100));
