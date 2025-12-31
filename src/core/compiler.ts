@@ -2430,14 +2430,27 @@ export function generateCompositionChecks(
     const countVar = code.genVar('oneOfCount');
     code.line(_`let ${countVar} = 0;`);
 
-    // Optimization: when only tracking items (not properties) and not using item sets,
-    // we can reuse a single temp tracker across all oneOf branches.
-    // This saves object allocation since we only need the maxItem from the winning branch.
-    const onlyTrackingItems =
-      evalTracker?.trackingItems && !evalTracker?.trackingProps && !evalTracker?.useItemSet;
-    const sharedTempVar = onlyTrackingItems ? code.genVar('oneOfTracker') : undefined;
-    if (sharedTempVar) {
-      code.line(_`const ${sharedTempVar} = { maxItem: -1 };`);
+    // Optimization: reuse a single temp tracker across all oneOf branches to avoid allocations
+    // This is safe because only ONE branch can match, so we just reset and reuse
+    const needsAnyTracker =
+      evalTracker?.enabled && schema.oneOf.some((s) => !isNoOpSchema(s) && s !== false);
+    const sharedTempVar = needsAnyTracker ? code.genVar('oneOfTracker') : undefined;
+
+    if (sharedTempVar && evalTracker) {
+      const parts: Code[] = [];
+      if (evalTracker.trackingProps) {
+        parts.push(_`props: {}`);
+        if (evalTracker.hasPatterns) {
+          parts.push(_`patterns: []`);
+        }
+      }
+      if (evalTracker.trackingItems) {
+        parts.push(_`maxItem: -1`);
+        if (evalTracker.useItemSet) {
+          parts.push(_`items: new Set()`);
+        }
+      }
+      code.line(_`const ${sharedTempVar} = { ${Code.join(parts, ', ')} };`);
     }
 
     // Use a temp tracker for each branch, merge into parent only if valid
@@ -2446,16 +2459,23 @@ export function generateCompositionChecks(
       // They match everything but don't contribute any annotations
       const needsTracker = !isNoOpSchema(subSchema) && subSchema !== false;
 
-      // Use shared temp tracker when only tracking items, otherwise create individual trackers
-      const tempVar = needsTracker
-        ? (sharedTempVar ?? evalTracker?.createTempTracker('oneOfTracker'))
-        : undefined;
-
-      // Reset shared tracker maxItem before each branch check
-      if (sharedTempVar && needsTracker) {
-        code.line(_`${sharedTempVar}.maxItem = -1;`);
+      // Reset shared tracker before each branch check
+      if (sharedTempVar && needsTracker && evalTracker) {
+        if (evalTracker.trackingProps) {
+          code.line(_`${sharedTempVar}.props = {};`);
+          if (evalTracker.hasPatterns) {
+            code.line(_`${sharedTempVar}.patterns = [];`);
+          }
+        }
+        if (evalTracker.trackingItems) {
+          code.line(_`${sharedTempVar}.maxItem = -1;`);
+          if (evalTracker.useItemSet) {
+            code.line(_`${sharedTempVar}.items.clear();`);
+          }
+        }
       }
 
+      const tempVar = needsTracker ? sharedTempVar : undefined;
       const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx, tempVar);
       code.if(checkExpr, () => {
         code.line(_`${countVar}++;`);
