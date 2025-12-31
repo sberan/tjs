@@ -340,6 +340,19 @@ interface SuiteTiming {
   ajvTotalNs: number;
   testCount: number;
   iterations: number;
+  // For variance tracking
+  tjsSamples: number[];
+  ajvSamples: number[];
+}
+
+// Calculate coefficient of variation (CV) as a percentage
+function coefficientOfVariation(samples: number[]): number {
+  if (samples.length < 2) return 0;
+  const mean = samples.reduce((a, b) => a + b, 0) / samples.length;
+  if (mean === 0) return 0;
+  const variance = samples.reduce((sum, x) => sum + (x - mean) ** 2, 0) / (samples.length - 1);
+  const stdDev = Math.sqrt(variance);
+  return (stdDev / mean) * 100;
 }
 
 // Collect per-suite timing during benchmark run
@@ -361,6 +374,57 @@ function collectSuitePerfs(timings: Map<string, SuiteTiming>, draft: string): Su
   }
 
   return results;
+}
+
+// Re-run specific high-variance tests to get more stable results
+function rerunHighVarianceTests(
+  validSuites: CompiledTestSuite[],
+  suiteTimings: Map<string, SuiteTiming>,
+  varianceThreshold: number = 1.0, // CV threshold in percent
+  maxRetries: number = 3,
+  minSamples: number = 10
+): void {
+  for (const testSuite of validSuites) {
+    const timing = suiteTimings.get(testSuite.description)!;
+
+    // Check if we have enough samples and variance is too high
+    const tjsCV = coefficientOfVariation(timing.tjsSamples);
+    const ajvCV = coefficientOfVariation(timing.ajvSamples);
+
+    if (
+      timing.tjsSamples.length >= minSamples &&
+      (tjsCV > varianceThreshold || ajvCV > varianceThreshold)
+    ) {
+      // Retry this test multiple times
+      for (let retry = 0; retry < maxRetries; retry++) {
+        // Run tjs
+        const tjsStart = performance.now();
+        for (const test of testSuite.tests) {
+          testSuite.tjsValidator!(test.data);
+        }
+        const tjsElapsed = (performance.now() - tjsStart) * 1_000_000;
+        timing.tjsTotalNs += tjsElapsed;
+        timing.tjsSamples.push(tjsElapsed / testSuite.tests.length);
+        timing.iterations++;
+
+        // Run ajv
+        const ajvStart = performance.now();
+        for (const test of testSuite.tests) {
+          testSuite.ajvValidator!(test.data);
+        }
+        const ajvElapsed = (performance.now() - ajvStart) * 1_000_000;
+        timing.ajvTotalNs += ajvElapsed;
+        timing.ajvSamples.push(ajvElapsed / testSuite.tests.length);
+
+        // Check if variance is now acceptable
+        const newTjsCV = coefficientOfVariation(timing.tjsSamples);
+        const newAjvCV = coefficientOfVariation(timing.ajvSamples);
+        if (newTjsCV <= varianceThreshold && newAjvCV <= varianceThreshold) {
+          break;
+        }
+      }
+    }
+  }
 }
 
 // Run benchmark for a draft
@@ -524,6 +588,8 @@ function runBenchmark(
         ajvTotalNs: 0,
         testCount: testSuite.tests.length,
         iterations: 0,
+        tjsSamples: [],
+        ajvSamples: [],
       });
     }
 
@@ -537,7 +603,9 @@ function runBenchmark(
         for (const test of testSuite.tests) {
           testSuite.tjsValidator!(test.data);
         }
-        timing.tjsTotalNs += (performance.now() - start) * 1_000_000;
+        const elapsed = (performance.now() - start) * 1_000_000;
+        timing.tjsTotalNs += elapsed;
+        timing.tjsSamples.push(elapsed / testSuite.tests.length); // ns per test
         timing.iterations++;
       }
     });
@@ -550,7 +618,9 @@ function runBenchmark(
         for (const test of testSuite.tests) {
           testSuite.ajvValidator!(test.data);
         }
-        timing.ajvTotalNs += (performance.now() - start) * 1_000_000;
+        const elapsed = (performance.now() - start) * 1_000_000;
+        timing.ajvTotalNs += elapsed;
+        timing.ajvSamples.push(elapsed / testSuite.tests.length); // ns per test
       }
     });
 
@@ -573,6 +643,9 @@ function runBenchmark(
     suite.on('complete', function (this: Benchmark.Suite) {
       const fastest = this.filter('fastest').map('name');
       console.log(`  Fastest: ${fastest}`);
+
+      // Re-run high variance tests to get more stable results
+      rerunHighVarianceTests(validSuites, suiteTimings);
 
       // Collect per-suite performance data
       const suitePerfs = collectSuitePerfs(suiteTimings, draft);
