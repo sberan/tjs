@@ -220,42 +220,6 @@ function schemaHasContains(
 }
 
 /**
- * Check if a schema will mark all properties as evaluated.
- * This happens when:
- * - additionalProperties is present (any value)
- * - unevaluatedProperties: true is present
- * - allOf contains a schema that marks all properties
- */
-function schemaMarksAllPropsEvaluated(
-  schema: JsonSchema,
-  ctx: CompileContext,
-  visited = new Set<JsonSchema>()
-): boolean {
-  if (typeof schema !== 'object' || schema === null) return false;
-  if (visited.has(schema)) return false;
-  visited.add(schema);
-
-  // Direct markers
-  if (schema.additionalProperties !== undefined) return true;
-  if (schema.unevaluatedProperties === true) return true;
-
-  // Check allOf - ALL branches execute, so if ANY marks all props, all props are marked
-  if (schema.allOf) {
-    for (const sub of schema.allOf) {
-      if (schemaMarksAllPropsEvaluated(sub, ctx, visited)) return true;
-    }
-  }
-
-  // Follow $ref
-  if (schema.$ref) {
-    const refSchema = ctx.resolveRef(schema.$ref, schema);
-    if (refSchema && schemaMarksAllPropsEvaluated(refSchema, ctx, visited)) return true;
-  }
-
-  return false;
-}
-
-/**
  * Generate validation code for a schema
  * @param pathExprCode - Code expression that evaluates to the current path string
  * @param dynamicScopeVar - Variable name for the dynamic scope array (for $dynamicRef)
@@ -331,20 +295,11 @@ function generateSchemaValidator(
       const skipPropsTracking =
         hasUnevalProps && schema.additionalProperties !== undefined && !evalTracker;
 
-      // Optimization: When outer unevaluatedProperties: false and inner schemas mark all props,
-      // we can skip the unevaluatedProperties check entirely since it will always pass
-      const willMarkAllProps = hasUnevalProps && schemaMarksAllPropsEvaluated(schema, ctx);
-      const canSkipUnevalPropsCheck =
-        hasUnevalProps &&
-        schema.unevaluatedProperties === false &&
-        willMarkAllProps &&
-        !evalTracker;
-
       // Check if contains is present anywhere - requires Set-based item tracking
       const needsItemSet = hasUnevalItems && schemaHasContains(schema, ctx);
 
       // Skip creating tracker if it would be unused
-      if ((skipPropsTracking || canSkipUnevalPropsCheck) && !hasUnevalItems) {
+      if (skipPropsTracking && !hasUnevalItems) {
         // No need for tracker - skip it entirely
         tracker = undefined;
       } else {
@@ -353,7 +308,7 @@ function generateSchemaValidator(
         // Keep reference to parent so we can bubble up after our unevaluated* check runs
         const trackerVar = code.genVar('tracker');
         tracker = new EvalTracker(code, trackerVar, {
-          trackProps: hasUnevalProps && !skipPropsTracking && !canSkipUnevalPropsCheck,
+          trackProps: hasUnevalProps && !skipPropsTracking,
           trackItems: hasUnevalItems,
           parentTracker: evalTracker,
           useItemSet: needsItemSet,
@@ -1346,17 +1301,9 @@ export function generateDependentRequiredCheck(
   schema: JsonSchemaBase,
   dataVar: Name,
   pathExprCode: Code,
-  ctx: CompileContext
+  _ctx: CompileContext
 ): void {
   if (!schema.dependentRequired) return;
-
-  // dependentRequired was introduced in draft 2019-09
-  // Check if this keyword is supported in the compilation context's draft
-  if (!supportsFeature(ctx.options.defaultMeta, 'unevaluated')) {
-    // In draft-07 and earlier, dependentRequired doesn't exist - ignore it
-    // (unevaluated feature check is a proxy for 2019-09+ which includes dependentRequired)
-    return;
-  }
 
   // Filter out empty arrays (no requirements)
   const deps = Object.entries(schema.dependentRequired).filter(([, reqs]) => reqs.length > 0);
@@ -1394,11 +1341,6 @@ export function generateDependentSchemasCheck(
   evalTracker?: EvalTracker
 ): void {
   if (!schema.dependentSchemas) return;
-
-  // dependentSchemas was introduced in draft 2019-09
-  if (!supportsFeature(ctx.options.defaultMeta, 'unevaluated')) {
-    return; // Skip in draft-07 and earlier
-  }
 
   code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
     for (const [prop, depSchema] of Object.entries(schema.dependentSchemas!)) {
@@ -1521,6 +1463,62 @@ export function generatePropertyNamesCheck(
 }
 
 /**
+ * Check if a schema should be inlined instead of compiled as a separate function.
+ * Inlining simple schemas avoids function call overhead.
+ */
+function shouldInlineRef(
+  refSchema: JsonSchema,
+  ctx: CompileContext,
+  dynamicScopeVar?: Name,
+  evalTracker?: EvalTracker
+): boolean {
+  // Don't inline if we have eval tracker that's actively tracking (need to pass as param)
+  if (evalTracker && evalTracker.enabled) return false;
+
+  // Only inline object schemas (not boolean or string)
+  if (typeof refSchema !== 'object' || refSchema === null) return false;
+
+  // Don't inline schemas with $id (they are resources with dynamic anchors)
+  if (refSchema.$id) return false;
+
+  // Don't inline schemas that themselves have $ref (already handled by ref chain optimization)
+  if (refSchema.$ref) return false;
+
+  // Don't inline schemas with $dynamicRef or $dynamicAnchor (need dynamic scope)
+  if (refSchema.$dynamicRef || refSchema.$dynamicAnchor) return false;
+
+  // Don't inline schemas with composition keywords (complex control flow)
+  if (refSchema.allOf || refSchema.anyOf || refSchema.oneOf || refSchema.not) return false;
+  if (refSchema.if || refSchema.then || refSchema.else) return false;
+
+  // Don't inline schemas with unevaluated keywords (need tracking)
+  if (refSchema.unevaluatedProperties !== undefined || refSchema.unevaluatedItems !== undefined)
+    return false;
+
+  // Don't inline schemas with complex object validation
+  if (refSchema.properties || refSchema.patternProperties || refSchema.additionalProperties)
+    return false;
+  if (refSchema.dependentSchemas || refSchema.dependencies) return false;
+
+  // Don't inline schemas with complex array validation
+  if (refSchema.prefixItems || refSchema.items || refSchema.contains) return false;
+
+  // Don't inline schemas with $defs or definitions (they may have nested refs)
+  // These should be compiled as separate functions to allow proper ref resolution
+  if (refSchema.$defs || refSchema.definitions) return false;
+
+  // Count the number of simple validation keywords
+  const keywords = Object.keys(refSchema).filter(
+    (k) =>
+      k !== '$schema' && k !== '$comment' && k !== 'title' && k !== 'description' && k !== '$anchor'
+  );
+
+  // Inline if it has only a few simple keywords (type, const, enum, format, etc.)
+  // This catches the common case of { type: "string" }, { type: "integer" }, etc.
+  return keywords.length <= 5;
+}
+
+/**
  * Generate $ref check
  */
 export function generateRefCheck(
@@ -1533,6 +1531,9 @@ export function generateRefCheck(
   evalTracker?: EvalTracker
 ): void {
   if (!schema.$ref) return;
+
+  // Don't inline remote refs (http:// or https://) - they may have complex internal structure
+  const isRemoteRef = /^https?:\/\//.test(schema.$ref);
 
   // Resolve the reference
   let refSchema = ctx.resolveRef(schema.$ref, schema);
@@ -1569,57 +1570,19 @@ export function generateRefCheck(
     return;
   }
 
-  // Check for cross-draft reference: if the referenced schema has a different $schema,
-  // compile it separately with its own draft-specific options
-  const crossDraftSchema = ctx.getCrossDraftSchema(refSchema);
-  if (crossDraftSchema) {
-    // This is a cross-draft reference - compile it separately with its own options
-    const crossDraftName = new Name(ctx.genRuntimeName('crossDraftValidator'));
-
-    // Create a wrapper that adapts the top-level validator to the internal validator signature
-    // Internal validators take (data, errors, path, [dynamicScope], [tracker])
-    // Top-level validators take (data, errors)
-    const crossDraftOptions: CompileOptions = {
-      ...ctx.options,
-      defaultMeta: crossDraftSchema,
-      legacyRef: supportsFeature(crossDraftSchema, 'legacyRef'),
-      formatAssertion:
-        ctx.options.formatAssertion ?? supportsFeature(crossDraftSchema, 'formatAssertion'),
-    };
-
-    // Compile the cross-draft schema
-    const crossDraftValidator = compile(refSchema, crossDraftOptions);
-
-    // Create a wrapper function that adjusts error paths
-    const wrapperFn = (data: unknown, errors: CompileError[] | undefined, path: string) => {
-      if (!errors) {
-        // No error tracking - just validate
-        return crossDraftValidator(data);
-      }
-
-      // Validate with error tracking
-      const localErrors: CompileError[] = [];
-      const result = crossDraftValidator(data, localErrors);
-
-      // Adjust paths in errors and add to parent errors array
-      if (!result) {
-        for (const err of localErrors) {
-          errors.push({
-            ...err,
-            path: path + err.path,
-          });
-        }
-      }
-
-      return result;
-    };
-
-    ctx.addRuntimeFunction(crossDraftName.str, wrapperFn);
-
-    // Generate code to call the cross-draft validator wrapper
-    code.if(_`!${crossDraftName}(${dataVar}, errors, ${pathExprCode})`, () => {
-      code.line(_`return false;`);
-    });
+  // NEW OPTIMIZATION: Inline simple schemas to avoid function call overhead
+  // But don't inline remote refs - they need their own compilation context
+  if (!isRemoteRef && shouldInlineRef(refSchema, ctx, dynamicScopeVar, evalTracker)) {
+    // Inline the schema validation directly
+    generateSchemaValidator(
+      code,
+      refSchema,
+      dataVar,
+      pathExprCode,
+      ctx,
+      dynamicScopeVar,
+      evalTracker
+    );
     return;
   }
 
@@ -2277,20 +2240,15 @@ export function generateUnevaluatedPropertiesCheck(
   // Optimization: If additionalProperties is present (even boolean true or {}),
   // ALL properties are marked as evaluated via markAllProps().
   // In this case, unevaluatedProperties check will never find unevaluated properties,
-  // so we can skip generating the check entirely (except for unevaluatedProperties: true
-  // which needs to mark props for parent tracking).
+  // so we can skip generating the check entirely.
   if (schema.additionalProperties !== undefined) {
-    // If unevaluatedProperties is false, the check would never fail (all props evaluated)
-    if (schema.unevaluatedProperties === false) {
-      return; // Skip check - optimization!
-    }
-    // If unevaluatedProperties is true, we need to mark all props for parent
-    // But since additionalProperties already marked all props, this is a no-op
-    if (schema.unevaluatedProperties === true) {
-      return; // Skip check - all props already marked
-    }
-    // If unevaluatedProperties is a schema, it would never execute (all props evaluated)
-    // So we can skip it
+    return; // Skip check - additionalProperties handles all props
+  }
+
+  // Optimization: when unevaluatedProperties is true, just mark all props as evaluated
+  // without iterating through them. This is much faster than checking each property.
+  if (schema.unevaluatedProperties === true) {
+    evalTracker.markAllProps();
     return;
   }
 
