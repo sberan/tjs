@@ -221,6 +221,86 @@ function schemaHasContains(
 }
 
 /**
+ * Check if a schema tree contains patternProperties anywhere.
+ * Used to optimize tracker initialization - if no patterns exist, we can skip pattern tracking.
+ */
+function schemaHasPatternProperties(
+  schema: JsonSchema,
+  ctx: CompileContext,
+  visited = new Set<JsonSchema>()
+): boolean {
+  if (typeof schema !== 'object' || schema === null) return false;
+  if (visited.has(schema)) return false;
+  visited.add(schema);
+
+  // Direct check
+  if (schema.patternProperties !== undefined) return true;
+
+  // Check composition keywords (these all execute their branches)
+  if (schema.allOf) {
+    for (const sub of schema.allOf) {
+      if (schemaHasPatternProperties(sub, ctx, visited)) return true;
+    }
+  }
+  if (schema.anyOf) {
+    for (const sub of schema.anyOf) {
+      if (schemaHasPatternProperties(sub, ctx, visited)) return true;
+    }
+  }
+  if (schema.oneOf) {
+    for (const sub of schema.oneOf) {
+      if (schemaHasPatternProperties(sub, ctx, visited)) return true;
+    }
+  }
+  if (schema.not && schemaHasPatternProperties(schema.not, ctx, visited)) return true;
+  if (schema.if && schemaHasPatternProperties(schema.if, ctx, visited)) return true;
+  if (schema.then && schemaHasPatternProperties(schema.then, ctx, visited)) return true;
+  if (schema.else && schemaHasPatternProperties(schema.else, ctx, visited)) return true;
+
+  // Check properties (object validation keywords)
+  if (schema.properties) {
+    for (const propSchema of Object.values(schema.properties)) {
+      if (schemaHasPatternProperties(propSchema, ctx, visited)) return true;
+    }
+  }
+  if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
+    if (schemaHasPatternProperties(schema.additionalProperties, ctx, visited)) return true;
+  }
+  if (schema.unevaluatedProperties && typeof schema.unevaluatedProperties === 'object') {
+    if (schemaHasPatternProperties(schema.unevaluatedProperties, ctx, visited)) return true;
+  }
+  if (schema.dependentSchemas) {
+    for (const depSchema of Object.values(schema.dependentSchemas)) {
+      if (schemaHasPatternProperties(depSchema, ctx, visited)) return true;
+    }
+  }
+
+  // Check array keywords
+  if (schema.prefixItems) {
+    for (const itemSchema of schema.prefixItems) {
+      if (schemaHasPatternProperties(itemSchema, ctx, visited)) return true;
+    }
+  }
+  if (schema.items && typeof schema.items === 'object' && !Array.isArray(schema.items)) {
+    if (schemaHasPatternProperties(schema.items as JsonSchema, ctx, visited)) return true;
+  }
+  if (schema.contains && typeof schema.contains === 'object') {
+    if (schemaHasPatternProperties(schema.contains, ctx, visited)) return true;
+  }
+  if (schema.unevaluatedItems && typeof schema.unevaluatedItems === 'object') {
+    if (schemaHasPatternProperties(schema.unevaluatedItems, ctx, visited)) return true;
+  }
+
+  // Follow $ref
+  if (schema.$ref) {
+    const refSchema = ctx.resolveRef(schema.$ref, schema);
+    if (refSchema && schemaHasPatternProperties(refSchema, ctx, visited)) return true;
+  }
+
+  return false;
+}
+
+/**
  * Check if a schema will mark all properties as evaluated.
  * This happens when:
  * - additionalProperties is present (any value)
@@ -366,6 +446,11 @@ function generateSchemaValidator(
         // The tracker is a local variable that gets passed to sub-validators
         // Keep reference to parent so we can bubble up after our unevaluated* check runs
         const trackerVar = code.genVar('tracker');
+
+        // Optimization: Check if schema tree has patternProperties
+        // If not, we can skip pattern tracking entirely for better performance
+        const hasPatterns = hasUnevalProps && schemaHasPatternProperties(schema, ctx);
+
         tracker = new EvalTracker(code, trackerVar, {
           trackProps:
             hasUnevalProps &&
@@ -375,6 +460,7 @@ function generateSchemaValidator(
           trackItems: hasUnevalItems && !skipTrueUnevalItems,
           parentTracker: evalTracker,
           useItemSet: needsItemSet,
+          hasPatterns,
         });
         tracker.init();
       }
