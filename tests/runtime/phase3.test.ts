@@ -42,7 +42,7 @@ describe('dependentSchemas', () => {
     expect(result.error === undefined).toBe(false);
     if (result.error !== undefined) {
       expect(result.error[0].keyword).toBe('required');
-      expect(result.error[0].path).toBe('billingAddress');
+      expect(result.error[0].instancePath).toBe('/billingAddress');
     }
   });
 
@@ -168,7 +168,7 @@ describe('unevaluatedProperties', () => {
     expect(result.error === undefined).toBe(false);
     if (result.error !== undefined) {
       expect(result.error[0].keyword).toBe('unevaluatedProperties');
-      expect(result.error[0].path).toBe('extra');
+      expect(result.error[0].instancePath).toBe('/extra');
     }
   });
 
@@ -337,7 +337,7 @@ describe('unevaluatedItems', () => {
     expect(result.error === undefined).toBe(false);
     if (result.error !== undefined) {
       expect(result.error[0].keyword).toBe('unevaluatedItems');
-      expect(result.error[0].path).toBe('[2]');
+      expect(result.error[0].instancePath).toBe('/2');
     }
   });
 

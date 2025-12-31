@@ -201,7 +201,7 @@ describe('dependentRequired', () => {
     if (result.error !== undefined) {
       expect(result.error.length).toBe(1);
       expect(result.error[0].keyword).toBe('dependentRequired');
-      expect(result.error[0].path).toBe('bar');
+      expect(result.error[0].instancePath).toBe('/bar');
     }
   });
 });

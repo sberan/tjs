@@ -288,47 +288,38 @@ export function not(condition: Code): Code {
 }
 
 /**
- * Generate a path expression for error messages.
+ * Generate a path expression for error messages in JSON Pointer format (AJV-compatible).
  * Returns Code that evaluates to a path string at runtime.
+ * Paths are in JSON Pointer format: "" for root, "/foo", "/foo/0", etc.
  */
 export function pathExpr(basePath: Code | Name, segment: string | number): Code {
-  if (typeof segment === 'number') {
-    if (basePath.toString() === "''") {
-      return _`'[${new Code(String(segment))}]'`;
-    }
-    return _`${basePath} + '[${new Code(String(segment))}]'`;
-  }
-  const escaped = escapeString(segment);
-  if (/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(segment)) {
-    if (basePath.toString() === "''") {
-      return new Code(`'${escaped}'`);
-    }
-    return _`${basePath} + '.${new Code(escaped)}'`;
-  }
+  // Escape segment for JSON Pointer: ~ becomes ~0, / becomes ~1
+  const segmentStr = String(segment);
+  const escaped = escapeString(segmentStr.replace(/~/g, '~0').replace(/\//g, '~1'));
   if (basePath.toString() === "''") {
-    return new Code(`'["${escaped}"]'`);
+    return new Code(`'/${escaped}'`);
   }
-  return _`${basePath} + '["${new Code(escaped)}"]'`;
+  return _`${basePath} + '/${new Code(escaped)}'`;
 }
 
 /**
- * Generate a dynamic path expression (when segment is a variable).
+ * Generate a dynamic path expression (when segment is a variable) in JSON Pointer format.
  */
 export function pathExprDynamic(basePath: Code | Name, segmentVar: Code | Name): Code {
   if (basePath.toString() === "''") {
-    return segmentVar;
+    return _`'/' + ${segmentVar}`;
   }
-  return _`${basePath} + '.' + ${segmentVar}`;
+  return _`${basePath} + '/' + ${segmentVar}`;
 }
 
 /**
- * Generate a dynamic array index path expression.
+ * Generate a dynamic array index path expression in JSON Pointer format.
  */
 export function pathExprIndex(basePath: Code | Name, indexVar: Code | Name): Code {
   if (basePath.toString() === "''") {
-    return _`'[' + ${indexVar} + ']'`;
+    return _`'/' + ${indexVar}`;
   }
-  return _`${basePath} + '[' + ${indexVar} + ']'`;
+  return _`${basePath} + '/' + ${indexVar}`;
 }
 
 // ============================================================================

@@ -38,12 +38,14 @@ import {
 export type { RuntimeTracker } from './eval-tracker.js';
 
 /**
- * Compile error type for internal use
+ * Compile error type for internal use (AJV-compatible format)
  */
 export interface CompileError {
-  path: string;
-  message: string;
-  keyword: string;
+  instancePath: string; // JSON pointer format: "" for root, "/prop", "/arr/0"
+  schemaPath: string; // JSON pointer to schema location
+  keyword: string; // Validation keyword that failed
+  params: object; // Keyword-specific params
+  message: string; // Human-readable error message
 }
 
 /**
@@ -360,7 +362,7 @@ function generateSchemaValidator(
   }
 
   if (schema === false) {
-    genError(code, pathExprCode, 'false', 'Schema is false');
+    genError(code, pathExprCode, '#', 'false', 'boolean schema is false', {});
     return;
   }
 
@@ -603,25 +605,21 @@ export function generateTypeCheck(
   if (!ctx.isVocabularyEnabled(VOCABULARIES.validation)) return;
 
   const types = Array.isArray(schema.type) ? schema.type : [schema.type];
-  const expectedType = types.join(' or ');
-
-  // When coercion is enabled, add context to the error message
-  const isCoercionEnabled = ctx.options.coerce !== false;
-  const errorMessage = isCoercionEnabled
-    ? `Expected ${expectedType} (coercion failed)`
-    : `Expected ${expectedType}`;
 
   if (types.length === 1) {
     const type = types[0];
     const check = getTypeCheck(dataVar, type);
     code.if(not(check), () => {
-      genError(code, pathExprCode, 'type', errorMessage);
+      genError(code, pathExprCode, '#/type', 'type', `must be ${type}`, { type });
     });
   } else {
     // Multiple types - need OR
     const checks = types.map((t) => getTypeCheck(dataVar, t));
     code.if(not(or(...checks)), () => {
-      genError(code, pathExprCode, 'type', errorMessage);
+      const typeList = types.join(',');
+      genError(code, pathExprCode, '#/type', 'type', `must be ${types.join(' or ')}`, {
+        type: typeList,
+      });
     });
   }
 }
@@ -641,7 +639,9 @@ export function generateConstCheck(
   // For primitives, use strict equality
   if (schema.const === null || typeof schema.const !== 'object') {
     code.if(_`${dataVar} !== ${stringify(schema.const)}`, () => {
-      genError(code, pathExprCode, 'const', `Expected constant value`);
+      genError(code, pathExprCode, '#/const', 'const', 'must be equal to constant', {
+        allowedValue: schema.const,
+      });
     });
   } else {
     // For objects/arrays, store as runtime constant and use deepEqual
@@ -649,7 +649,9 @@ export function generateConstCheck(
     const constName = new Name(ctx.genRuntimeName('const'));
     ctx.addRuntimeFunction(constName.str, schema.const);
     code.if(_`!deepEqual(${dataVar}, ${constName})`, () => {
-      genError(code, pathExprCode, 'const', `Expected constant value`);
+      genError(code, pathExprCode, '#/const', 'const', 'must be equal to constant', {
+        allowedValue: schema.const,
+      });
     });
   }
 }
@@ -683,7 +685,9 @@ export function generateEnumCheck(
     const setName = new Name(ctx.genRuntimeName('enumSet'));
     ctx.addRuntimeFunction(setName.str, new Set(primitives));
     code.if(_`!${setName}.has(${dataVar})`, () => {
-      genError(code, pathExprCode, 'enum', `Value must be one of the allowed values`);
+      genError(code, pathExprCode, '#/enum', 'enum', 'must be equal to one of the allowed values', {
+        allowedValues: schema.enum,
+      });
     });
   } else if (primitives.length === 0) {
     // All complex - use inline loop with deepEqual
@@ -701,7 +705,9 @@ export function generateEnumCheck(
     code.line(_`  }`);
     code.line(_`}`);
     code.if(_`!${matchVar}`, () => {
-      genError(code, pathExprCode, 'enum', `Value must be one of the allowed values`);
+      genError(code, pathExprCode, '#/enum', 'enum', 'must be equal to one of the allowed values', {
+        allowedValues: schema.enum,
+      });
     });
   } else {
     // Mixed: check primitives with Set, complex with inline loop
@@ -724,7 +730,9 @@ export function generateEnumCheck(
       code.line(_`}`);
     });
     code.if(_`!${checkedVar}`, () => {
-      genError(code, pathExprCode, 'enum', `Value must be one of the allowed values`);
+      genError(code, pathExprCode, '#/enum', 'enum', 'must be equal to one of the allowed values', {
+        allowedValues: schema.enum,
+      });
     });
   }
 }
@@ -819,8 +827,10 @@ export function generateStringChecks(
           genError(
             code,
             pathExprCode,
+            '#/minLength',
             'minLength',
-            `String must be at least ${schema.minLength} characters`
+            `must NOT have fewer than ${schema.minLength} characters`,
+            { limit: schema.minLength }
           );
         });
       }
@@ -830,8 +840,10 @@ export function generateStringChecks(
           genError(
             code,
             pathExprCode,
+            '#/maxLength',
             'maxLength',
-            `String must be at most ${schema.maxLength} characters`
+            `must NOT have more than ${schema.maxLength} characters`,
+            { limit: schema.maxLength }
           );
         });
       }
@@ -850,7 +862,14 @@ export function generateStringChecks(
       ctx.addRuntimeFunction(regexName.str, new RegExp(schema.pattern, flags));
 
       code.if(_`!${regexName}.test(${dataVar})`, () => {
-        genError(code, pathExprCode, 'pattern', `String must match pattern ${schema.pattern}`);
+        genError(
+          code,
+          pathExprCode,
+          '#/pattern',
+          'pattern',
+          `must match pattern "${schema.pattern}"`,
+          { pattern: schema.pattern }
+        );
       });
     }
   });
@@ -889,7 +908,14 @@ export function generateContentChecks(
         const regexName = new Name(ctx.genRuntimeName('base64Re'));
         ctx.addRuntimeFunction(regexName.str, /^[A-Za-z0-9+/]*={0,2}$/);
         code.if(_`!${regexName}.test(${dataVar}) || ${dataVar}.length % 4 !== 0`, () => {
-          genError(code, pathExprCode, 'contentEncoding', 'String must be valid base64');
+          genError(
+            code,
+            pathExprCode,
+            '#/contentEncoding',
+            'contentEncoding',
+            'must be base64 encoded',
+            {}
+          );
         });
       }
     }
@@ -906,7 +932,14 @@ export function generateContentChecks(
               code.line(_`JSON.parse(${decodedVar});`);
             },
             () => {
-              genError(code, pathExprCode, 'contentMediaType', 'String must be valid JSON');
+              genError(
+                code,
+                pathExprCode,
+                '#/contentMediaType',
+                'contentMediaType',
+                'must be application/json',
+                {}
+              );
             }
           );
         } else {
@@ -916,7 +949,14 @@ export function generateContentChecks(
               code.line(_`JSON.parse(${dataVar});`);
             },
             () => {
-              genError(code, pathExprCode, 'contentMediaType', 'String must be valid JSON');
+              genError(
+                code,
+                pathExprCode,
+                '#/contentMediaType',
+                'contentMediaType',
+                'must be application/json',
+                {}
+              );
             }
           );
         }
@@ -957,11 +997,17 @@ export function generateNumberChecks(
       // In draft4, exclusiveMinimum is a boolean that modifies minimum
       if (schema.exclusiveMinimum === true) {
         code.if(_`${dataVar} <= ${schema.minimum}`, () => {
-          genError(code, pathExprCode, 'minimum', `Value must be > ${schema.minimum}`);
+          genError(code, pathExprCode, '#/minimum', 'minimum', `must be > ${schema.minimum}`, {
+            comparison: '>',
+            limit: schema.minimum,
+          });
         });
       } else {
         code.if(_`${dataVar} < ${schema.minimum}`, () => {
-          genError(code, pathExprCode, 'minimum', `Value must be >= ${schema.minimum}`);
+          genError(code, pathExprCode, '#/minimum', 'minimum', `must be >= ${schema.minimum}`, {
+            comparison: '>=',
+            limit: schema.minimum,
+          });
         });
       }
     }
@@ -971,11 +1017,17 @@ export function generateNumberChecks(
       // In draft4, exclusiveMaximum is a boolean that modifies maximum
       if (schema.exclusiveMaximum === true) {
         code.if(_`${dataVar} >= ${schema.maximum}`, () => {
-          genError(code, pathExprCode, 'maximum', `Value must be < ${schema.maximum}`);
+          genError(code, pathExprCode, '#/maximum', 'maximum', `must be < ${schema.maximum}`, {
+            comparison: '<',
+            limit: schema.maximum,
+          });
         });
       } else {
         code.if(_`${dataVar} > ${schema.maximum}`, () => {
-          genError(code, pathExprCode, 'maximum', `Value must be <= ${schema.maximum}`);
+          genError(code, pathExprCode, '#/maximum', 'maximum', `must be <= ${schema.maximum}`, {
+            comparison: '<=',
+            limit: schema.maximum,
+          });
         });
       }
     }
@@ -986,8 +1038,10 @@ export function generateNumberChecks(
         genError(
           code,
           pathExprCode,
+          '#/exclusiveMinimum',
           'exclusiveMinimum',
-          `Value must be > ${schema.exclusiveMinimum}`
+          `must be > ${schema.exclusiveMinimum}`,
+          { comparison: '>', limit: schema.exclusiveMinimum }
         );
       });
     }
@@ -998,8 +1052,10 @@ export function generateNumberChecks(
         genError(
           code,
           pathExprCode,
+          '#/exclusiveMaximum',
           'exclusiveMaximum',
-          `Value must be < ${schema.exclusiveMaximum}`
+          `must be < ${schema.exclusiveMaximum}`,
+          { comparison: '<', limit: schema.exclusiveMaximum }
         );
       });
     }
@@ -1012,8 +1068,10 @@ export function generateNumberChecks(
           genError(
             code,
             pathExprCode,
+            '#/multipleOf',
             'multipleOf',
-            `Value must be a multiple of ${schema.multipleOf}`
+            `must be multiple of ${schema.multipleOf}`,
+            { multipleOf: schema.multipleOf }
           );
         });
       } else if (Number.isInteger(1 / multipleOf)) {
@@ -1029,8 +1087,10 @@ export function generateNumberChecks(
             genError(
               code,
               pathExprCode,
+              '#/multipleOf',
               'multipleOf',
-              `Value must be a multiple of ${schema.multipleOf}`
+              `must be multiple of ${schema.multipleOf}`,
+              { multipleOf: schema.multipleOf }
             );
           });
         });
@@ -1040,8 +1100,10 @@ export function generateNumberChecks(
             genError(
               code,
               pathExprCode,
+              '#/multipleOf',
               'multipleOf',
-              `Value must be a multiple of ${schema.multipleOf}`
+              `must be multiple of ${schema.multipleOf}`,
+              { multipleOf: schema.multipleOf }
             );
           });
         });
@@ -1053,8 +1115,10 @@ export function generateNumberChecks(
           genError(
             code,
             pathExprCode,
+            '#/multipleOf',
             'multipleOf',
-            `Value must be a multiple of ${schema.multipleOf}`
+            `must be multiple of ${schema.multipleOf}`,
+            { multipleOf: schema.multipleOf }
           );
         });
       }
@@ -1090,8 +1154,10 @@ export function generateArrayChecks(
         genError(
           code,
           pathExprCode,
+          '#/minItems',
           'minItems',
-          `Array must have at least ${schema.minItems} items`
+          `must NOT have fewer than ${schema.minItems} items`,
+          { limit: schema.minItems }
         );
       });
     }
@@ -1101,8 +1167,10 @@ export function generateArrayChecks(
         genError(
           code,
           pathExprCode,
+          '#/maxItems',
           'maxItems',
-          `Array must have at most ${schema.maxItems} items`
+          `must NOT have more than ${schema.maxItems} items`,
+          { limit: schema.maxItems }
         );
       });
     }
@@ -1122,7 +1190,14 @@ export function generateArrayChecks(
         code.block(_`outer: for (let ${iVar} = ${dataVar}.length; ${iVar}--;)`, () => {
           code.block(_`for (let ${jVar} = ${iVar}; ${jVar}--;)`, () => {
             code.if(_`${dataVar}[${iVar}] === ${dataVar}[${jVar}]`, () => {
-              genError(code, pathExprCode, 'uniqueItems', `Array items must be unique`);
+              genError(
+                code,
+                pathExprCode,
+                '#/uniqueItems',
+                'uniqueItems',
+                'must NOT have duplicate items',
+                {}
+              );
             });
           });
         });
@@ -1131,7 +1206,14 @@ export function generateArrayChecks(
         code.block(_`outer: for (let ${iVar} = ${dataVar}.length; ${iVar}--;)`, () => {
           code.block(_`for (let ${jVar} = ${iVar}; ${jVar}--;)`, () => {
             code.if(_`deepEqual(${dataVar}[${iVar}], ${dataVar}[${jVar}])`, () => {
-              genError(code, pathExprCode, 'uniqueItems', `Array items must be unique`);
+              genError(
+                code,
+                pathExprCode,
+                '#/uniqueItems',
+                'uniqueItems',
+                'must NOT have duplicate items',
+                {}
+              );
             });
           });
         });
@@ -1178,8 +1260,10 @@ export function generateObjectChecks(
           genError(
             code,
             pathExprCode,
+            '#/minProperties',
             'minProperties',
-            `Object must have at least ${schema.minProperties} properties`
+            `must NOT have fewer than ${schema.minProperties} properties`,
+            { limit: schema.minProperties }
           );
         });
       }
@@ -1189,8 +1273,10 @@ export function generateObjectChecks(
           genError(
             code,
             pathExprCode,
+            '#/maxProperties',
             'maxProperties',
-            `Object must have at most ${schema.maxProperties} properties`
+            `must NOT have more than ${schema.maxProperties} properties`,
+            { limit: schema.maxProperties }
           );
         });
       }
@@ -1405,7 +1491,14 @@ function generateAdditionalPropsCheck(
   dynamicScopeVar?: Name
 ): void {
   if (schema === false) {
-    genError(code, pathExprCode, 'additionalProperties', 'Additional properties not allowed');
+    genError(
+      code,
+      pathExprCode,
+      '#/additionalProperties',
+      'additionalProperties',
+      'must NOT have additional properties',
+      {}
+    );
   } else if (schema === true) {
     // No check needed
   } else {
@@ -1444,8 +1537,10 @@ export function generateContainsCheck(
         genError(
           code,
           pathExprCode,
+          '#/contains',
           'contains',
-          `Array must contain at least ${minContains} matching items`
+          `must contain at least ${minContains} valid item(s)`,
+          { minContains }
         );
       });
       if (maxContains !== undefined) {
@@ -1453,8 +1548,10 @@ export function generateContainsCheck(
           genError(
             code,
             pathExprCode,
-            'maxContains',
-            `Array must contain at most ${maxContains} matching items`
+            '#/maxContains',
+            'contains',
+            `must contain at most ${maxContains} valid item(s)`,
+            { maxContains }
           );
         });
       }
@@ -1469,8 +1566,10 @@ export function generateContainsCheck(
         genError(
           code,
           pathExprCode,
+          '#/contains',
           'contains',
-          `Array must contain at least ${minContains} matching items`
+          `must contain at least ${minContains} valid item(s)`,
+          { minContains }
         );
       }
       // maxContains is always satisfied since count is 0, no items evaluated
@@ -1572,8 +1671,10 @@ export function generateContainsCheck(
       genError(
         code,
         pathExprCode,
+        '#/contains',
         'contains',
-        `Array must contain at least ${minContains} matching items`
+        `must contain at least ${minContains} valid item(s)`,
+        { minContains }
       );
     });
 
@@ -1582,8 +1683,10 @@ export function generateContainsCheck(
         genError(
           code,
           pathExprCode,
-          'maxContains',
-          `Array must contain at most ${maxContains} matching items`
+          '#/maxContains',
+          'contains',
+          `must contain at most ${maxContains} valid item(s)`,
+          { maxContains }
         );
       });
     }
@@ -1623,8 +1726,10 @@ export function generateDependentRequiredCheck(
             genError(
               code,
               reqPathExpr,
+              '#/dependentRequired',
               'dependentRequired',
-              `Property required when ${prop} is present`
+              `must have property '${reqProp}' when property '${prop}' is present`,
+              { missingProperty: reqProp }
             );
           });
         }
@@ -1710,8 +1815,10 @@ export function generateDependenciesCheck(
               genError(
                 code,
                 reqPathExpr,
+                '#/dependencies',
                 'dependencies',
-                `Property required when ${prop} is present`
+                `must have property '${reqProp}' when property '${prop}' is present`,
+                { missingProperty: reqProp }
               );
             });
           }
@@ -1757,7 +1864,14 @@ export function generatePropertyNamesCheck(
     // No property names are valid - object must be empty
     code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
       code.if(_`Object.keys(${dataVar}).length > 0`, () => {
-        genError(code, pathExprCode, 'propertyNames', 'No properties allowed');
+        genError(
+          code,
+          pathExprCode,
+          '#/propertyNames',
+          'propertyNames',
+          'property name must be valid',
+          {}
+        );
       });
     });
     return;
@@ -1766,8 +1880,9 @@ export function generatePropertyNamesCheck(
   code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
     const keyVar = new Name('key');
     code.forIn(keyVar, dataVar, () => {
-      // For propertyNames, the path is the key itself
-      generateSchemaValidator(code, propNamesSchema, keyVar, keyVar, ctx, dynamicScopeVar);
+      // For propertyNames, the path is the key itself (with JSON pointer prefix)
+      const keyPathExpr = pathExprDynamic(pathExprCode, keyVar);
+      generateSchemaValidator(code, propNamesSchema, keyVar, keyPathExpr, ctx, dynamicScopeVar);
     });
   });
 }
@@ -1868,7 +1983,9 @@ export function generateRefCheck(
 
   if (!refSchema) {
     // Can't resolve - schema is invalid, always fail
-    genError(code, pathExprCode, '$ref', `Cannot resolve reference ${schema.$ref}`);
+    genError(code, pathExprCode, '#/$ref', '$ref', `can't resolve reference ${schema.$ref}`, {
+      $ref: schema.$ref,
+    });
     return;
   }
 
@@ -1917,7 +2034,7 @@ export function generateRefCheck(
         for (const err of localErrors) {
           errors.push({
             ...err,
-            path: path + err.path,
+            instancePath: path + err.instancePath,
           });
         }
       }
@@ -2171,7 +2288,7 @@ export function generateCompositionChecks(
       });
 
       code.if(_`!${resultVar}`, () => {
-        genError(code, pathExprCode, 'anyOf', 'Value must match at least one schema');
+        genError(code, pathExprCode, '#/anyOf', 'anyOf', 'must match a schema in anyOf', {});
       });
     }
   }
@@ -2217,13 +2334,27 @@ export function generateCompositionChecks(
       // Early exit if more than one matches (only when not tracking)
       if (!evalTracker?.enabled) {
         code.if(_`${countVar} > 1`, () => {
-          genError(code, pathExprCode, 'oneOf', 'Value must match exactly one schema');
+          genError(
+            code,
+            pathExprCode,
+            '#/oneOf',
+            'oneOf',
+            'must match exactly one schema in oneOf',
+            {}
+          );
         });
       }
     });
 
     code.if(_`${countVar} !== 1`, () => {
-      genError(code, pathExprCode, 'oneOf', 'Value must match exactly one schema');
+      genError(
+        code,
+        pathExprCode,
+        '#/oneOf',
+        'oneOf',
+        'must match exactly one schema in oneOf',
+        {}
+      );
     });
   }
 
@@ -2235,7 +2366,7 @@ export function generateCompositionChecks(
     // Optimization: detect always-pass and always-fail patterns
     // not: true or not: {} → always fails (since true/{} matches everything)
     if (isNoOpSchema(notSchema)) {
-      genError(code, pathExprCode, 'not', 'Value must not match schema');
+      genError(code, pathExprCode, '#/not', 'not', 'must NOT be valid', {});
     } else if (notSchema === false) {
       // Optimization: not: false → always passes (since false matches nothing)
       // Skip - always valid
@@ -2254,19 +2385,19 @@ export function generateCompositionChecks(
         // not: { not: {} } or not: { not: true } → always passes (skip)
       } else if (innerNotSchema === false) {
         // not: { not: false } → always fails
-        genError(code, pathExprCode, 'not', 'Value must not match schema');
+        genError(code, pathExprCode, '#/not', 'not', 'must NOT be valid', {});
       } else {
         // Not optimizable - generate normal check
         const checkExpr = generateSubschemaCheck(code, notSchema, dataVar, ctx);
         code.if(checkExpr, () => {
-          genError(code, pathExprCode, 'not', 'Value must not match schema');
+          genError(code, pathExprCode, '#/not', 'not', 'must NOT be valid', {});
         });
       }
     } else {
       // Not optimizable - generate normal check
       const checkExpr = generateSubschemaCheck(code, notSchema, dataVar, ctx);
       code.if(checkExpr, () => {
-        genError(code, pathExprCode, 'not', 'Value must not match schema');
+        genError(code, pathExprCode, '#/not', 'not', 'must NOT be valid', {});
       });
     }
   }
@@ -2308,7 +2439,7 @@ export function generateCompositionChecks(
 
         if (thenSchema !== undefined) {
           if (thenSchema === false) {
-            genError(code, pathExprCode, 'then', 'Conditional validation failed');
+            genError(code, pathExprCode, '#/then', 'if', 'must match "then" schema', {});
           } else if (thenSchema !== true) {
             generateSchemaValidator(
               code,
@@ -2327,7 +2458,7 @@ export function generateCompositionChecks(
       if (elseSchema !== undefined) {
         code.if(_`!${condVar}`, () => {
           if (elseSchema === false) {
-            genError(code, pathExprCode, 'else', 'Conditional validation failed');
+            genError(code, pathExprCode, '#/else', 'if', 'must match "else" schema', {});
           } else if (elseSchema !== true) {
             generateSchemaValidator(
               code,
@@ -2360,7 +2491,7 @@ export function generateCompositionChecks(
       code.if(condVar, () => {
         if (thenSchema !== undefined) {
           if (thenSchema === false) {
-            genError(code, pathExprCode, 'then', 'Conditional validation failed');
+            genError(code, pathExprCode, '#/then', 'if', 'must match "then" schema', {});
           } else if (thenSchema !== true) {
             generateSchemaValidator(
               code,
@@ -2379,7 +2510,7 @@ export function generateCompositionChecks(
       if (elseSchema !== undefined) {
         code.if(_`!${condVar}`, () => {
           if (elseSchema === false) {
-            genError(code, pathExprCode, 'else', 'Conditional validation failed');
+            genError(code, pathExprCode, '#/else', 'if', 'must match "else" schema', {});
           } else if (elseSchema !== true) {
             generateSchemaValidator(
               code,
@@ -2857,13 +2988,15 @@ export function generateItemsChecks(
             genError(
               code,
               pathExprCode,
+              itemsIsArray ? '#/additionalItems' : '#/items',
               itemsIsArray ? 'additionalItems' : 'items',
-              `Array must have at most ${startIndex} items`
+              `must NOT have more than ${startIndex} items`,
+              {}
             );
           });
         } else {
           code.if(_`${dataVar}.length > 0`, () => {
-            genError(code, pathExprCode, 'items', 'Array must be empty');
+            genError(code, pathExprCode, '#/items', 'items', 'must NOT have more than 0 items', {});
           });
         }
       } else if (afterTupleSchema !== true) {
@@ -2885,7 +3018,9 @@ export function generateItemsChecks(
               // Inline type check with error handling
               const typeCheck = getTypeCheck(itemVar, simpleType);
               code.if(not(typeCheck), () => {
-                genError(code, itemPathExpr, 'type', `Expected ${simpleType}`);
+                genError(code, itemPathExpr, '#/items/type', 'type', `must be ${simpleType}`, {
+                  type: simpleType,
+                });
               });
             },
             startIndex
@@ -3000,7 +3135,9 @@ export function generateFormatCheck(
 
   const genFormatCheck = () => {
     code.if(formatCheck, () => {
-      genError(code, pathExprCode, 'format', `Invalid ${format} format`);
+      genError(code, pathExprCode, '#/format', 'format', `must match format "${format}"`, {
+        format,
+      });
     });
   };
 
@@ -3040,7 +3177,14 @@ export function generateDynamicRefCheck(
     // Resolve the static fallback
     const staticSchema = ctx.resolveRef(ref, schema);
     if (!staticSchema) {
-      genError(code, pathExprCode, '$dynamicRef', `Cannot resolve reference ${ref}`);
+      genError(
+        code,
+        pathExprCode,
+        '#/$dynamicRef',
+        '$dynamicRef',
+        `can't resolve reference ${ref}`,
+        { $ref: ref }
+      );
       return;
     }
     const staticFuncName = new Name(ctx.queueCompile(staticSchema));
@@ -3094,7 +3238,14 @@ export function generateDynamicRefCheck(
     const refSchema = ctx.resolveRef(ref, schema);
 
     if (!refSchema) {
-      genError(code, pathExprCode, '$dynamicRef', `Cannot resolve reference ${ref}`);
+      genError(
+        code,
+        pathExprCode,
+        '#/$dynamicRef',
+        '$dynamicRef',
+        `can't resolve reference ${ref}`,
+        { $ref: ref }
+      );
       return;
     }
 
@@ -3163,8 +3314,10 @@ export function generateUnevaluatedPropertiesCheck(
             genError(
               code,
               keyPathExpr,
+              '#/unevaluatedProperties',
               'unevaluatedProperties',
-              'Unevaluated property not allowed'
+              'must NOT have unevaluated properties',
+              {}
             );
           } else if (schema.unevaluatedProperties !== undefined) {
             // unevaluatedProperties: <schema> - validate and mark as evaluated
@@ -3231,7 +3384,14 @@ export function generateUnevaluatedItemsCheck(
 
         code.if(condition, () => {
           if (schema.unevaluatedItems === false) {
-            genError(code, itemPathExpr, 'unevaluatedItems', 'Unevaluated item not allowed');
+            genError(
+              code,
+              itemPathExpr,
+              '#/unevaluatedItems',
+              'unevaluatedItems',
+              'must NOT have unevaluated items',
+              {}
+            );
           } else {
             // unevaluatedItems: <schema> - validate and mark as evaluated
             const itemVar = code.genVar('ui');
