@@ -309,91 +309,6 @@ function decodePunycode(input: string): string | null {
 }
 
 /**
- * Check if a Unicode code point is a combining mark (General Category M)
- */
-function isCombiningMark(cp: number): boolean {
-  // Combining Diacritical Marks
-  if (cp >= 0x0300 && cp <= 0x036f) return true;
-  // Cyrillic combining marks (enclosing)
-  if (cp >= 0x0483 && cp <= 0x0489) return true;
-  // Hebrew combining marks
-  if (cp >= 0x0591 && cp <= 0x05bd) return true;
-  if (
-    cp === 0x05bf ||
-    cp === 0x05c1 ||
-    cp === 0x05c2 ||
-    cp === 0x05c4 ||
-    cp === 0x05c5 ||
-    cp === 0x05c7
-  )
-    return true;
-  // Arabic combining marks
-  if (cp >= 0x0610 && cp <= 0x061a) return true;
-  if (cp >= 0x064b && cp <= 0x065f) return true;
-  if (cp === 0x0670) return true;
-  if (cp >= 0x06d6 && cp <= 0x06dc) return true;
-  if (cp >= 0x06df && cp <= 0x06e4) return true;
-  if (cp >= 0x06e7 && cp <= 0x06e8) return true;
-  if (cp >= 0x06ea && cp <= 0x06ed) return true;
-  // Devanagari combining marks
-  if (cp >= 0x0900 && cp <= 0x0903) return true;
-  if (cp >= 0x093a && cp <= 0x094f) return true;
-  if (cp >= 0x0951 && cp <= 0x0957) return true;
-  if (cp >= 0x0962 && cp <= 0x0963) return true;
-  // Combining Diacritical Marks Extended
-  if (cp >= 0x1ab0 && cp <= 0x1aff) return true;
-  // Combining Diacritical Marks Supplement
-  if (cp >= 0x1dc0 && cp <= 0x1dff) return true;
-  // Combining Diacritical Marks for Symbols
-  if (cp >= 0x20d0 && cp <= 0x20ff) return true;
-  // CJK combining marks (includes U+302E Hangul single dot tone mark)
-  if (cp >= 0x302a && cp <= 0x302f) return true;
-  // Combining Half Marks
-  if (cp >= 0xfe20 && cp <= 0xfe2f) return true;
-  return false;
-}
-
-/**
- * Check if a code point is Greek
- */
-function isGreek(cp: number): boolean {
-  return (cp >= 0x0370 && cp <= 0x03ff) || (cp >= 0x1f00 && cp <= 0x1fff);
-}
-
-/**
- * Check if a code point is Hebrew
- */
-function isHebrew(cp: number): boolean {
-  return cp >= 0x0590 && cp <= 0x05ff;
-}
-
-/**
- * Check if a code point is Hiragana
- */
-function isHiragana(cp: number): boolean {
-  return cp >= 0x3040 && cp <= 0x309f;
-}
-
-/**
- * Check if a code point is Katakana
- */
-function isKatakana(cp: number): boolean {
-  return (cp >= 0x30a0 && cp <= 0x30ff) || (cp >= 0x31f0 && cp <= 0x31ff);
-}
-
-/**
- * Check if a code point is Han (CJK)
- */
-function isHan(cp: number): boolean {
-  return (
-    (cp >= 0x4e00 && cp <= 0x9fff) || // CJK Unified Ideographs
-    (cp >= 0x3400 && cp <= 0x4dbf) || // CJK Extension A
-    (cp >= 0x20000 && cp <= 0x2a6df) || // CJK Extension B
-    (cp >= 0xf900 && cp <= 0xfaff)
-  ); // CJK Compatibility Ideographs
-}
-
-/**
  * Check if a code point is a Virama (combining mark that creates conjuncts)
  */
 function isVirama(cp: number): boolean {
@@ -423,150 +338,132 @@ function isVirama(cp: number): boolean {
 }
 
 /**
- * Get array of code points from a string
+ * Validate an IDNA2008 U-label (Unicode label after Punycode decoding)
+ * Optimized with inlined checks
  */
-function getCodePoints(s: string): number[] {
-  const result: number[] = [];
-  for (let i = 0; i < s.length; ) {
-    const cp = s.codePointAt(i)!;
-    result.push(cp);
+function validateIdnaLabel(label: string): boolean {
+  const len = label.length;
+  if (len === 0) return false;
+
+  // U-labels cannot have -- in positions 3-4 (RFC 5891 section 4.2.3.1)
+  if (len >= 4 && label.charCodeAt(2) === 0x2d && label.charCodeAt(3) === 0x2d) {
+    return false;
+  }
+
+  // Build code points array inline
+  const codePoints: number[] = [];
+  for (let i = 0; i < len; ) {
+    const cp = label.codePointAt(i)!;
+    codePoints.push(cp);
     i += cp > 0xffff ? 2 : 1;
   }
-  return result;
-}
 
-/**
- * Check if a code point is an Arabic-Indic digit (U+0660-U+0669)
- */
-function isArabicIndicDigit(cp: number): boolean {
-  return cp >= 0x0660 && cp <= 0x0669;
-}
+  const firstCp = codePoints[0];
 
-/**
- * Check if a code point is an Extended Arabic-Indic digit (U+06F0-U+06F9)
- */
-function isExtendedArabicIndicDigit(cp: number): boolean {
-  return cp >= 0x06f0 && cp <= 0x06f9;
-}
+  // First character cannot be a combining mark (inline check for common ranges)
+  if (
+    (firstCp >= 0x0300 && firstCp <= 0x036f) ||
+    (firstCp >= 0x0483 && firstCp <= 0x0489) ||
+    (firstCp >= 0x0591 && firstCp <= 0x05bd) ||
+    firstCp === 0x05bf ||
+    firstCp === 0x05c1 ||
+    firstCp === 0x05c2 ||
+    firstCp === 0x05c4 ||
+    firstCp === 0x05c5 ||
+    firstCp === 0x05c7 ||
+    (firstCp >= 0x0610 && firstCp <= 0x061a) ||
+    (firstCp >= 0x064b && firstCp <= 0x065f) ||
+    firstCp === 0x0670 ||
+    (firstCp >= 0x06d6 && firstCp <= 0x06dc) ||
+    (firstCp >= 0x06df && firstCp <= 0x06e4) ||
+    (firstCp >= 0x06e7 && firstCp <= 0x06e8) ||
+    (firstCp >= 0x06ea && firstCp <= 0x06ed) ||
+    (firstCp >= 0x0900 && firstCp <= 0x0903) ||
+    (firstCp >= 0x093a && firstCp <= 0x094f) ||
+    (firstCp >= 0x0951 && firstCp <= 0x0957) ||
+    (firstCp >= 0x0962 && firstCp <= 0x0963) ||
+    (firstCp >= 0x1ab0 && firstCp <= 0x1aff) ||
+    (firstCp >= 0x1dc0 && firstCp <= 0x1dff) ||
+    (firstCp >= 0x20d0 && firstCp <= 0x20ff) ||
+    (firstCp >= 0x302a && firstCp <= 0x302f) ||
+    (firstCp >= 0xfe20 && firstCp <= 0xfe2f)
+  ) {
+    return false;
+  }
 
-/**
- * Check IDNA2008 contextual rules (RFC 5892 Appendix A)
- */
-function checkIdnaContextual(codePoints: number[]): boolean {
-  // Check for Arabic-Indic digit mixing (RFC 5892 A.8/A.9)
+  // Inline disallowed char check + contextual rules
   let hasArabicIndic = false;
   let hasExtendedArabicIndic = false;
-  for (const cp of codePoints) {
-    if (isArabicIndicDigit(cp)) hasArabicIndic = true;
-    if (isExtendedArabicIndicDigit(cp)) hasExtendedArabicIndic = true;
-  }
-  if (hasArabicIndic && hasExtendedArabicIndic) return false;
+  const cpLen = codePoints.length;
 
-  for (let i = 0; i < codePoints.length; i++) {
+  for (let i = 0; i < cpLen; i++) {
     const cp = codePoints[i];
 
-    // MIDDLE DOT (U+00B7) - must be between two 'l' characters
-    if (cp === 0x00b7) {
+    // Disallowed characters (inline)
+    if (
+      cp === 0x0640 ||
+      cp === 0x07fa ||
+      cp === 0x302e ||
+      cp === 0x302f ||
+      (cp >= 0x3031 && cp <= 0x3035) ||
+      cp === 0x303b
+    ) {
+      return false;
+    }
+
+    // Contextual rules (inline)
+    if (cp >= 0x0660 && cp <= 0x0669) hasArabicIndic = true;
+    else if (cp >= 0x06f0 && cp <= 0x06f9) hasExtendedArabicIndic = true;
+    // MIDDLE DOT (U+00B7)
+    else if (cp === 0x00b7) {
       const before = i > 0 ? codePoints[i - 1] : 0;
-      const after = i < codePoints.length - 1 ? codePoints[i + 1] : 0;
-      if (before !== 0x006c || after !== 0x006c) return false; // l = 0x006C
+      const after = i < cpLen - 1 ? codePoints[i + 1] : 0;
+      if (before !== 0x006c || after !== 0x006c) return false;
     }
-
-    // Greek Lower Numeral Sign / KERAIA (U+0375) - must be followed by Greek
-    if (cp === 0x0375) {
-      const after = i < codePoints.length - 1 ? codePoints[i + 1] : 0;
-      if (!isGreek(after)) return false;
+    // Greek KERAIA (U+0375)
+    else if (cp === 0x0375) {
+      const after = i < cpLen - 1 ? codePoints[i + 1] : 0;
+      if (!((after >= 0x0370 && after <= 0x03ff) || (after >= 0x1f00 && after <= 0x1fff))) {
+        return false;
+      }
     }
-
-    // Hebrew GERESH (U+05F3) - must be preceded by Hebrew
-    if (cp === 0x05f3) {
+    // Hebrew GERESH (U+05F3)
+    else if (cp === 0x05f3) {
       const before = i > 0 ? codePoints[i - 1] : 0;
-      if (!isHebrew(before)) return false;
+      if (!(before >= 0x0590 && before <= 0x05ff)) return false;
     }
-
-    // Hebrew GERSHAYIM (U+05F4) - must be preceded by Hebrew
-    if (cp === 0x05f4) {
+    // Hebrew GERSHAYIM (U+05F4)
+    else if (cp === 0x05f4) {
       const before = i > 0 ? codePoints[i - 1] : 0;
-      if (!isHebrew(before)) return false;
+      if (!(before >= 0x0590 && before <= 0x05ff)) return false;
     }
-
-    // KATAKANA MIDDLE DOT (U+30FB) - must have at least one Hiragana, Katakana (not the dot itself), or Han in label
-    if (cp === 0x30fb) {
+    // KATAKANA MIDDLE DOT (U+30FB)
+    else if (cp === 0x30fb) {
       let hasJapanese = false;
-      for (const other of codePoints) {
-        // U+30FB is katakana middle dot - we need OTHER katakana, hiragana, or han
+      for (let j = 0; j < cpLen; j++) {
+        const other = codePoints[j];
         if (other === 0x30fb) continue;
-        if (isHiragana(other) || isKatakana(other) || isHan(other)) {
+        if (
+          (other >= 0x3040 && other <= 0x309f) ||
+          (other >= 0x30a0 && other <= 0x30ff) ||
+          (other >= 0x31f0 && other <= 0x31ff) ||
+          (other >= 0x4e00 && other <= 0x9fff) ||
+          (other >= 0x3400 && other <= 0x4dbf)
+        ) {
           hasJapanese = true;
           break;
         }
       }
       if (!hasJapanese) return false;
     }
-
-    // ZERO WIDTH JOINER (U+200D) - must be preceded by Virama
-    if (cp === 0x200d) {
+    // ZERO WIDTH JOINER (U+200D)
+    else if (cp === 0x200d) {
       const before = i > 0 ? codePoints[i - 1] : 0;
       if (!isVirama(before)) return false;
     }
-
-    // ZERO WIDTH NON-JOINER (U+200C) - Virama rule OR regex rule
-    // For simplicity, allow if preceded by Virama or in a valid context
-    // RFC 5892 Appendix A.1 has complex rules; simplified check here
-    if (cp === 0x200c) {
-      // Must be preceded by Virama OR in specific script context
-      const before = i > 0 ? codePoints[i - 1] : 0;
-      // Allow if preceded by Virama (simplified rule)
-      if (!isVirama(before)) {
-        // The regex rule allows ZWNJ between certain character classes
-        // For now, be permissive with ZWNJ in Arabic/Persian contexts
-        // since full validation requires complex script detection
-      }
-    }
   }
 
-  return true;
-}
-
-/**
- * Check for IDNA2008 DISALLOWED characters
- */
-function hasDisallowedChars(codePoints: number[]): boolean {
-  for (const cp of codePoints) {
-    // U+0640 ARABIC TATWEEL is DISALLOWED
-    if (cp === 0x0640) return true;
-    // U+07FA NKO LAJANYALAN is DISALLOWED
-    if (cp === 0x07fa) return true;
-    // U+302E, U+302F are DISALLOWED (handled separately but include here too)
-    if (cp === 0x302e || cp === 0x302f) return true;
-    // U+3031-U+3035 are DISALLOWED (Japanese kana repeaters)
-    if (cp >= 0x3031 && cp <= 0x3035) return true;
-    // U+303B is DISALLOWED
-    if (cp === 0x303b) return true;
-  }
-  return false;
-}
-
-/**
- * Validate an IDNA2008 U-label (Unicode label after Punycode decoding)
- */
-function validateIdnaLabel(label: string): boolean {
-  if (label.length === 0) return false;
-
-  // U-labels cannot have -- in positions 3-4 (RFC 5891 section 4.2.3.1)
-  if (label.length >= 4 && label[2] === '-' && label[3] === '-') return false;
-
-  const codePoints = getCodePoints(label);
-
-  // First character cannot be a combining mark
-  if (isCombiningMark(codePoints[0])) return false;
-
-  // Check for disallowed characters
-  if (hasDisallowedChars(codePoints)) return false;
-
-  // Check contextual rules
-  if (!checkIdnaContextual(codePoints)) return false;
-
+  if (hasArabicIndic && hasExtendedArabicIndic) return false;
   return true;
 }
 
@@ -605,112 +502,89 @@ function validateIdnHostname(s: string): boolean {
   const len = s.length;
   if (len === 0 || len > 253) return false;
 
-  // Ultra-fast ASCII path - most common case
-  // Combined ASCII check + validation in a single pass
-  let isAscii = true;
-  let hasPunycode = false;
+  // Ultra-fast ASCII-only path - single pass with minimal branching
+  let needsSlowPath = false;
   let labelStart = 0;
-  let labelLen = 0;
 
   for (let i = 0; i <= len; i++) {
-    const code = i < len ? s.charCodeAt(i) : 0x002e; // Treat end as separator
+    const code = i < len ? s.charCodeAt(i) : 0x002e;
 
-    // Check if this is a separator (period)
     if (code === 0x002e || i === len) {
-      // Validate label length
+      const labelLen = i - labelStart;
       if (labelLen === 0 || labelLen > 63) return false;
 
-      // If we're still ASCII, validate ASCII label rules
-      if (isAscii) {
-        // Check first and last char of label (no hyphens)
-        const firstChar = s.charCodeAt(labelStart);
-        const lastChar = s.charCodeAt(labelStart + labelLen - 1);
+      const firstCode = s.charCodeAt(labelStart);
+      const lastCode = s.charCodeAt(i - 1);
 
-        // First char: must be alphanumeric
-        if (
-          !(
-            (firstChar >= 0x30 && firstChar <= 0x39) || // 0-9
-            (firstChar >= 0x41 && firstChar <= 0x5a) || // A-Z
-            (firstChar >= 0x61 && firstChar <= 0x7a)
-          )
-        ) {
-          // a-z
-          isAscii = false;
-        } else if (
-          labelLen > 1 &&
-          !(
-            (lastChar >= 0x30 && lastChar <= 0x39) || // 0-9
-            (lastChar >= 0x41 && lastChar <= 0x5a) || // A-Z
-            (lastChar >= 0x61 && lastChar <= 0x7a)
-          )
-        ) {
-          // a-z
-          isAscii = false;
-        } else if (labelLen >= 4) {
-          // Check for -- in positions 3-4
-          const c2 = s.charCodeAt(labelStart + 2);
-          const c3 = s.charCodeAt(labelStart + 3);
-          if (c2 === 0x2d && c3 === 0x2d) {
-            const c0 = s.charCodeAt(labelStart) | 0x20;
-            const c1 = s.charCodeAt(labelStart + 1) | 0x20;
-            if (c0 === 0x78 && c1 === 0x6e) {
-              // xn-- prefix - need Punycode validation
-              hasPunycode = true;
-            } else {
-              return false; // -- not allowed in positions 3-4 unless xn--
-            }
-          }
+      // Check first/last are alphanumeric
+      if (
+        !(
+          (firstCode >= 0x30 && firstCode <= 0x39) ||
+          (firstCode >= 0x41 && firstCode <= 0x5a) ||
+          (firstCode >= 0x61 && firstCode <= 0x7a)
+        )
+      ) {
+        needsSlowPath = true;
+      } else if (
+        labelLen > 1 &&
+        !(
+          (lastCode >= 0x30 && lastCode <= 0x39) ||
+          (lastCode >= 0x41 && lastCode <= 0x5a) ||
+          (lastCode >= 0x61 && lastCode <= 0x7a)
+        )
+      ) {
+        needsSlowPath = true;
+      }
+
+      // Check for -- in positions 3-4
+      if (!needsSlowPath && labelLen >= 4) {
+        const c2 = s.charCodeAt(labelStart + 2);
+        const c3 = s.charCodeAt(labelStart + 3);
+        if (c2 === 0x2d && c3 === 0x2d) {
+          const c0 = s.charCodeAt(labelStart) | 0x20;
+          const c1 = s.charCodeAt(labelStart + 1) | 0x20;
+          if (c0 !== 0x78 || c1 !== 0x6e) return false;
+          needsSlowPath = true;
         }
       }
 
       labelStart = i + 1;
-      labelLen = 0;
-    } else {
-      // Check if char is ASCII
-      if (code > 127) {
-        isAscii = false;
-      } else if (isAscii) {
-        // Validate ASCII hostname char (alphanumeric or hyphen)
-        if (
-          !(
-            (code >= 0x30 && code <= 0x39) || // 0-9
-            (code >= 0x41 && code <= 0x5a) || // A-Z
-            (code >= 0x61 && code <= 0x7a) || // a-z
-            code === 0x2d
-          )
-        ) {
-          // -
-          isAscii = false;
-        }
-      }
-      labelLen++;
+    } else if (code > 127) {
+      // Non-ASCII - need slow path
+      needsSlowPath = true;
+    } else if (
+      !(
+        (code >= 0x30 && code <= 0x39) || // 0-9
+        (code >= 0x41 && code <= 0x5a) || // A-Z
+        (code >= 0x61 && code <= 0x7a) || // a-z
+        code === 0x2d
+      )
+    ) {
+      // -
+      // Invalid ASCII character
+      return false;
     }
   }
 
-  // Fast path succeeded - pure ASCII hostname without Punycode
-  if (isAscii && !hasPunycode) return true;
+  // Fast path succeeded
+  if (!needsSlowPath) return true;
 
-  // Slow path: Non-ASCII hostname or Punycode - need full IDNA validation
-  // Trailing dot check (for Unicode separators)
+  // Slow path: Unicode or Punycode validation
   const lastChar = s.charCodeAt(len - 1);
-  if (lastChar === 0x3002 || lastChar === 0xff0e || lastChar === 0xff61) {
-    return false;
-  }
+  if (lastChar === 0x3002 || lastChar === 0xff0e || lastChar === 0xff61) return false;
 
-  // Inline label validation with Unicode separators
   labelStart = 0;
-  labelLen = 0;
-
   for (let i = 0; i <= len; i++) {
     const code = i < len ? s.charCodeAt(i) : 0x002e;
-    const isSeparator = code === 0x002e || code === 0x3002 || code === 0xff0e || code === 0xff61;
+    const isSep = code === 0x002e || code === 0x3002 || code === 0xff0e || code === 0xff61;
 
-    if (isSeparator || i === len) {
+    if (isSep || i === len) {
+      const labelLen = i - labelStart;
       if (labelLen === 0 || labelLen > 63) return false;
 
-      const label = s.substring(labelStart, labelStart + labelLen);
+      const label = s.substring(labelStart, i);
 
-      // Check if it's an A-label (Punycode)
+      // Punycode check
       if (labelLen >= 4) {
         const c0 = label.charCodeAt(0) | 0x20;
         const c1 = label.charCodeAt(1) | 0x20;
@@ -718,39 +592,25 @@ function validateIdnHostname(s: string): boolean {
         const c3 = label.charCodeAt(3);
 
         if (c0 === 0x78 && c1 === 0x6e && c2 === 0x2d && c3 === 0x2d) {
-          // xn-- prefix (Punycode)
-          const punycode = labelLen > 4 ? label.slice(4) : '';
-          if (punycode.length === 0) return false;
-
-          const punycodeNorm = punycode.toLowerCase();
-          const decoded = decodePunycode(punycodeNorm);
-          if (decoded === null) return false;
-
-          if (!validateIdnaLabel(decoded)) return false;
+          const punycode = label.slice(4);
+          if (!punycode) return false;
+          const decoded = decodePunycode(punycode.toLowerCase());
+          if (!decoded || !validateIdnaLabel(decoded)) return false;
         } else {
-          // Check for -- in positions 2-3 (not allowed for U-labels)
           if (c2 === 0x2d && c3 === 0x2d) return false;
-
-          // Check that label doesn't start or end with hyphen
           if (label.charCodeAt(0) === 0x2d || label.charCodeAt(labelLen - 1) === 0x2d) {
             return false;
           }
-
           if (!validateIdnaLabel(label)) return false;
         }
       } else {
-        // Short labels
         if (label.charCodeAt(0) === 0x2d || label.charCodeAt(labelLen - 1) === 0x2d) {
           return false;
         }
-
         if (!validateIdnaLabel(label)) return false;
       }
 
       labelStart = i + 1;
-      labelLen = 0;
-    } else {
-      labelLen++;
     }
   }
 
