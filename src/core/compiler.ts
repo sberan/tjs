@@ -1301,9 +1301,17 @@ export function generateDependentRequiredCheck(
   schema: JsonSchemaBase,
   dataVar: Name,
   pathExprCode: Code,
-  _ctx: CompileContext
+  ctx: CompileContext
 ): void {
   if (!schema.dependentRequired) return;
+
+  // dependentRequired was introduced in draft 2019-09
+  // Check if this keyword is supported in the compilation context's draft
+  if (!supportsFeature(ctx.options.defaultMeta, 'unevaluated')) {
+    // In draft-07 and earlier, dependentRequired doesn't exist - ignore it
+    // (unevaluated feature check is a proxy for 2019-09+ which includes dependentRequired)
+    return;
+  }
 
   // Filter out empty arrays (no requirements)
   const deps = Object.entries(schema.dependentRequired).filter(([, reqs]) => reqs.length > 0);
@@ -1341,6 +1349,11 @@ export function generateDependentSchemasCheck(
   evalTracker?: EvalTracker
 ): void {
   if (!schema.dependentSchemas) return;
+
+  // dependentSchemas was introduced in draft 2019-09
+  if (!supportsFeature(ctx.options.defaultMeta, 'unevaluated')) {
+    return; // Skip in draft-07 and earlier
+  }
 
   code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
     for (const [prop, depSchema] of Object.entries(schema.dependentSchemas!)) {
@@ -1508,6 +1521,60 @@ export function generateRefCheck(
     refSchema === true ||
     (typeof refSchema === 'object' && Object.keys(refSchema).length === 0)
   ) {
+    return;
+  }
+
+  // Check for cross-draft reference: if the referenced schema has a different $schema,
+  // compile it separately with its own draft-specific options
+  const crossDraftSchema = ctx.getCrossDraftSchema(refSchema);
+  if (crossDraftSchema) {
+    // This is a cross-draft reference - compile it separately with its own options
+    const crossDraftName = new Name(ctx.genRuntimeName('crossDraftValidator'));
+
+    // Create a wrapper that adapts the top-level validator to the internal validator signature
+    // Internal validators take (data, errors, path, [dynamicScope], [tracker])
+    // Top-level validators take (data, errors)
+    const crossDraftOptions: CompileOptions = {
+      ...ctx.options,
+      defaultMeta: crossDraftSchema,
+      legacyRef: supportsFeature(crossDraftSchema, 'legacyRef'),
+      formatAssertion:
+        ctx.options.formatAssertion ?? supportsFeature(crossDraftSchema, 'formatAssertion'),
+    };
+
+    // Compile the cross-draft schema
+    const crossDraftValidator = compile(refSchema, crossDraftOptions);
+
+    // Create a wrapper function that adjusts error paths
+    const wrapperFn = (data: unknown, errors: CompileError[] | undefined, path: string) => {
+      if (!errors) {
+        // No error tracking - just validate
+        return crossDraftValidator(data);
+      }
+
+      // Validate with error tracking
+      const localErrors: CompileError[] = [];
+      const result = crossDraftValidator(data, localErrors);
+
+      // Adjust paths in errors and add to parent errors array
+      if (!result) {
+        for (const err of localErrors) {
+          errors.push({
+            ...err,
+            path: path + err.path,
+          });
+        }
+      }
+
+      return result;
+    };
+
+    ctx.addRuntimeFunction(crossDraftName.str, wrapperFn);
+
+    // Generate code to call the cross-draft validator wrapper
+    code.if(_`!${crossDraftName}(${dataVar}, errors, ${pathExprCode})`, () => {
+      code.line(_`return false;`);
+    });
     return;
   }
 

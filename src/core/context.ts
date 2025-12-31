@@ -665,4 +665,56 @@ export class CompileContext {
   hasAnyDynamicAnchors(): boolean {
     return this.#dynamicAnchors.size > 0;
   }
+
+  /**
+   * Extract the draft version from a $schema URI.
+   * Returns a normalized draft identifier for comparison.
+   */
+  #getDraftVersion(schemaUri: string): string {
+    // Normalize the URI for comparison
+    const uri = schemaUri.toLowerCase().replace(/#$/, ''); // Remove trailing #
+
+    if (uri.includes('draft-04') || uri.includes('draft4')) return 'draft-04';
+    if (uri.includes('draft-06') || uri.includes('draft6')) return 'draft-06';
+    if (uri.includes('draft-07') || uri.includes('draft7')) return 'draft-07';
+    if (uri.includes('2019-09')) return '2019-09';
+    if (uri.includes('2020-12')) return '2020-12';
+
+    // Handle future drafts
+    if (uri.includes('2021')) return '2021';
+    if (uri.includes('2022')) return '2022';
+    if (uri.includes('2023')) return '2023';
+    if (uri.includes('2024')) return '2024';
+    if (uri.includes('2025')) return '2025';
+
+    // Default to the original URI if we can't determine the version
+    return uri;
+  }
+
+  /**
+   * Check if a schema uses a different draft than the root schema.
+   * Returns the schema's $schema URI if it's different, undefined otherwise.
+   */
+  getCrossDraftSchema(schema: JsonSchema): string | undefined {
+    if (typeof schema !== 'object' || schema === null || !schema.$schema) {
+      return undefined;
+    }
+
+    const rootSchemaUri =
+      typeof this.#rootSchema === 'object' && this.#rootSchema !== null
+        ? this.#rootSchema.$schema
+        : undefined;
+    const rootMeta = rootSchemaUri ?? this.options.defaultMeta;
+
+    // Compare draft versions, not exact URIs (to handle variations like with/without trailing #)
+    const refDraft = this.#getDraftVersion(schema.$schema);
+    const rootDraft = this.#getDraftVersion(rootMeta);
+
+    // If the schema's draft version is different from root, it's a cross-draft reference
+    if (refDraft !== rootDraft) {
+      return schema.$schema;
+    }
+
+    return undefined;
+  }
 }
