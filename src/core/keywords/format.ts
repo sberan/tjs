@@ -605,29 +605,114 @@ function validateIdnHostname(s: string): boolean {
   const len = s.length;
   if (len === 0 || len > 253) return false;
 
-  // Trailing dot is NOT allowed - check with charCodeAt for performance
-  const lastChar = s.charCodeAt(len - 1);
-  if (lastChar === 0x002e || lastChar === 0x3002 || lastChar === 0xff0e || lastChar === 0xff61) {
-    return false;
-  }
-
-  // Inline label validation to avoid split() allocation
+  // Ultra-fast ASCII path - most common case
+  // Combined ASCII check + validation in a single pass
+  let isAscii = true;
+  let hasPunycode = false;
   let labelStart = 0;
   let labelLen = 0;
 
   for (let i = 0; i <= len; i++) {
     const code = i < len ? s.charCodeAt(i) : 0x002e; // Treat end as separator
+
+    // Check if this is a separator (period)
+    if (code === 0x002e || i === len) {
+      // Validate label length
+      if (labelLen === 0 || labelLen > 63) return false;
+
+      // If we're still ASCII, validate ASCII label rules
+      if (isAscii) {
+        // Check first and last char of label (no hyphens)
+        const firstChar = s.charCodeAt(labelStart);
+        const lastChar = s.charCodeAt(labelStart + labelLen - 1);
+
+        // First char: must be alphanumeric
+        if (
+          !(
+            (firstChar >= 0x30 && firstChar <= 0x39) || // 0-9
+            (firstChar >= 0x41 && firstChar <= 0x5a) || // A-Z
+            (firstChar >= 0x61 && firstChar <= 0x7a)
+          )
+        ) {
+          // a-z
+          isAscii = false;
+        } else if (
+          labelLen > 1 &&
+          !(
+            (lastChar >= 0x30 && lastChar <= 0x39) || // 0-9
+            (lastChar >= 0x41 && lastChar <= 0x5a) || // A-Z
+            (lastChar >= 0x61 && lastChar <= 0x7a)
+          )
+        ) {
+          // a-z
+          isAscii = false;
+        } else if (labelLen >= 4) {
+          // Check for -- in positions 3-4
+          const c2 = s.charCodeAt(labelStart + 2);
+          const c3 = s.charCodeAt(labelStart + 3);
+          if (c2 === 0x2d && c3 === 0x2d) {
+            const c0 = s.charCodeAt(labelStart) | 0x20;
+            const c1 = s.charCodeAt(labelStart + 1) | 0x20;
+            if (c0 === 0x78 && c1 === 0x6e) {
+              // xn-- prefix - need Punycode validation
+              hasPunycode = true;
+            } else {
+              return false; // -- not allowed in positions 3-4 unless xn--
+            }
+          }
+        }
+      }
+
+      labelStart = i + 1;
+      labelLen = 0;
+    } else {
+      // Check if char is ASCII
+      if (code > 127) {
+        isAscii = false;
+      } else if (isAscii) {
+        // Validate ASCII hostname char (alphanumeric or hyphen)
+        if (
+          !(
+            (code >= 0x30 && code <= 0x39) || // 0-9
+            (code >= 0x41 && code <= 0x5a) || // A-Z
+            (code >= 0x61 && code <= 0x7a) || // a-z
+            code === 0x2d
+          )
+        ) {
+          // -
+          isAscii = false;
+        }
+      }
+      labelLen++;
+    }
+  }
+
+  // Fast path succeeded - pure ASCII hostname without Punycode
+  if (isAscii && !hasPunycode) return true;
+
+  // Slow path: Non-ASCII hostname or Punycode - need full IDNA validation
+  // Trailing dot check (for Unicode separators)
+  const lastChar = s.charCodeAt(len - 1);
+  if (lastChar === 0x3002 || lastChar === 0xff0e || lastChar === 0xff61) {
+    return false;
+  }
+
+  // Inline label validation with Unicode separators
+  labelStart = 0;
+  labelLen = 0;
+
+  for (let i = 0; i <= len; i++) {
+    const code = i < len ? s.charCodeAt(i) : 0x002e;
     const isSeparator = code === 0x002e || code === 0x3002 || code === 0xff0e || code === 0xff61;
 
     if (isSeparator || i === len) {
-      // Process label
       if (labelLen === 0 || labelLen > 63) return false;
 
       const label = s.substring(labelStart, labelStart + labelLen);
 
-      // Check if it's an A-label (Punycode) - avoid toLowerCase() allocation
+      // Check if it's an A-label (Punycode)
       if (labelLen >= 4) {
-        const c0 = label.charCodeAt(0) | 0x20; // to lowercase
+        const c0 = label.charCodeAt(0) | 0x20;
         const c1 = label.charCodeAt(1) | 0x20;
         const c2 = label.charCodeAt(2);
         const c3 = label.charCodeAt(3);
@@ -637,12 +722,10 @@ function validateIdnHostname(s: string): boolean {
           const punycode = labelLen > 4 ? label.slice(4) : '';
           if (punycode.length === 0) return false;
 
-          // Validate Punycode - need lowercase for decoding
           const punycodeNorm = punycode.toLowerCase();
           const decoded = decodePunycode(punycodeNorm);
           if (decoded === null) return false;
 
-          // Validate the decoded U-label
           if (!validateIdnaLabel(decoded)) return false;
         } else {
           // Check for -- in positions 2-3 (not allowed for U-labels)
@@ -653,17 +736,14 @@ function validateIdnHostname(s: string): boolean {
             return false;
           }
 
-          // Validate as U-label directly
           if (!validateIdnaLabel(label)) return false;
         }
       } else {
-        // Short labels - still need basic validation
-        // Check that label doesn't start or end with hyphen
+        // Short labels
         if (label.charCodeAt(0) === 0x2d || label.charCodeAt(labelLen - 1) === 0x2d) {
           return false;
         }
 
-        // Validate as U-label directly
         if (!validateIdnaLabel(label)) return false;
       }
 
