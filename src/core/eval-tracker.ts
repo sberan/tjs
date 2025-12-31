@@ -244,13 +244,22 @@ export class EvalTracker {
     const keyName = typeof keyVar === 'string' ? new Name(keyVar) : keyVar;
     // Check: not marked as all evaluated, not in evaluated props object, not matching any pattern
     // We check both compile-time patternVars (local) and runtime tracker.patterns (from called functions)
+
+    // Build base condition efficiently
     let expr = `!${this.trackerVar}.props.__all__ && !${this.trackerVar}.props[${keyName}]`;
-    // Check compile-time patterns
+
+    // Check compile-time patterns inline for better JIT optimization
     for (const patternVar of this.patternVars) {
       expr += ` && !${patternVar}.test(${keyName})`;
     }
+
     // Check runtime patterns (from nested function calls)
-    expr += ` && !${this.trackerVar}.patterns.some(p => p.test(${keyName}))`;
+    // Optimize: inline the pattern check to avoid function call overhead
+    // The V8 JIT can optimize this better than .some() or an IIFE
+    const trackerPatternsCheck = `${this.trackerVar}.patterns`;
+    expr += ` && (${trackerPatternsCheck}.length === 0 || `;
+    expr += `${trackerPatternsCheck}.every(p => !p.test(${keyName})))`;
+
     return new Code(expr);
   }
 
@@ -355,8 +364,15 @@ export class EvalTracker {
     if (!this.enabled || !tempVar) return;
     const doMerge = () => {
       if (this.trackProps) {
-        this.code.line(_`Object.assign(${this.trackerVar}.props, ${tempVar}.props);`);
-        this.code.line(_`${this.trackerVar}.patterns.push(...${tempVar}.patterns);`);
+        // Optimize: use manual loop instead of Object.assign for better performance
+        const k = new Name('k');
+        this.code.forIn(k, _`${tempVar}.props`, () => {
+          this.code.line(_`${this.trackerVar}.props[${k}] = ${tempVar}.props[${k}];`);
+        });
+        // Optimize: only push patterns if there are any to avoid spread overhead
+        this.code.if(_`${tempVar}.patterns.length > 0`, () => {
+          this.code.line(_`${this.trackerVar}.patterns.push(...${tempVar}.patterns);`);
+        });
       }
       if (this.trackItems) {
         this.code.line(
