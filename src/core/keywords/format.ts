@@ -261,6 +261,7 @@ function validateDuration(s: string): boolean {
  * Based on RFC 3492
  */
 function decodePunycode(input: string): string | null {
+  const len = input.length;
   const base = 36;
   const tMin = 1;
   const tMax = 26;
@@ -268,37 +269,39 @@ function decodePunycode(input: string): string | null {
   const damp = 700;
   const initialBias = 72;
   const initialN = 128;
-  const delimiter = '-';
 
-  const output: number[] = [];
+  // Pre-allocate output array to reduce re-allocations
+  const output: number[] = new Array(len);
+  let outputLen = 0;
   let i = 0;
   let n = initialN;
   let bias = initialBias;
 
   // Handle the basic code points
-  let basic = input.lastIndexOf(delimiter);
+  let basic = input.lastIndexOf('-');
   if (basic < 0) basic = 0;
 
   for (let j = 0; j < basic; ++j) {
     const cp = input.charCodeAt(j);
     if (cp >= 0x80) return null; // Non-ASCII before delimiter
-    output.push(cp);
+    output[outputLen++] = cp;
   }
 
   // Decode the extended code points
-  for (let idx = basic > 0 ? basic + 1 : 0; idx < input.length; ) {
+  for (let idx = basic > 0 ? basic + 1 : 0; idx < len; ) {
     const oldi = i;
     let w = 1;
     for (let k = base; ; k += base) {
-      if (idx >= input.length) return null;
+      if (idx >= len) return null;
       const cp = input.charCodeAt(idx++);
+      // Optimize digit conversion with fastest path first (lowercase letters most common)
       let digit: number;
-      if (cp >= 0x30 && cp <= 0x39)
-        digit = cp - 22; // 0-9
+      if (cp >= 0x61 && cp <= 0x7a)
+        digit = cp - 0x61; // a-z
       else if (cp >= 0x41 && cp <= 0x5a)
         digit = cp - 0x41; // A-Z
-      else if (cp >= 0x61 && cp <= 0x7a)
-        digit = cp - 0x61; // a-z
+      else if (cp >= 0x30 && cp <= 0x39)
+        digit = cp - 22; // 0-9
       else return null;
 
       i += digit * w;
@@ -308,23 +311,35 @@ function decodePunycode(input: string): string | null {
     }
 
     // Bias adaptation
-    const numPoints = output.length + 1;
+    const numPoints = outputLen + 1;
     let delta = i - oldi;
     delta = oldi === 0 ? Math.floor(delta / damp) : Math.floor(delta / 2);
     delta += Math.floor(delta / numPoints);
     let k = 0;
-    while (delta > ((base - tMin) * tMax) / 2) {
-      delta = Math.floor(delta / (base - tMin));
+    while (delta > 455) {
+      // Pre-computed: ((base - tMin) * tMax) / 2 = 455
+      delta = Math.floor(delta / 35); // Pre-computed: base - tMin = 35
       k += base;
     }
-    bias = k + Math.floor(((base - tMin + 1) * delta) / (delta + skew));
+    bias = k + Math.floor((36 * delta) / (delta + skew)); // Pre-computed: base - tMin + 1 = 36
 
     n += Math.floor(i / numPoints);
     i %= numPoints;
-    output.splice(i++, 0, n);
+
+    // Optimize splice: shift elements manually (faster than splice for small arrays)
+    for (let j = outputLen; j > i; j--) {
+      output[j] = output[j - 1];
+    }
+    output[i++] = n;
+    outputLen++;
   }
 
-  return String.fromCodePoint(...output);
+  // Build string directly to avoid spread operator overhead
+  let result = '';
+  for (let j = 0; j < outputLen; j++) {
+    result += String.fromCodePoint(output[j]);
+  }
+  return result;
 }
 
 /**
