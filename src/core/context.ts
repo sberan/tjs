@@ -25,12 +25,6 @@ export interface CompileOptions {
   /** Whether format validation is an assertion (default: auto-detected from dialect) */
   formatAssertion?: boolean;
   /**
-   * Use fast regex-only format validation (like ajv).
-   * Less accurate (e.g., Feb 30 passes date validation) but significantly faster.
-   * Default: false
-   */
-  fastFormats?: boolean;
-  /**
    * Whether content validation (contentMediaType, contentEncoding) is an assertion.
    * In draft-07, content is optionally validating.
    * In draft 2020-12, content is annotation-only by default.
@@ -197,7 +191,6 @@ export class CompileContext {
     this.options = {
       // Auto-detect from dialect if not explicitly set
       formatAssertion: options.formatAssertion ?? supportsFeature(schemaUri, 'formatAssertion'),
-      fastFormats: options.fastFormats ?? false,
       contentAssertion: options.contentAssertion ?? false,
       remotes: options.remotes ?? {},
       legacyRef: options.legacyRef ?? supportsFeature(schemaUri, 'legacyRef'),

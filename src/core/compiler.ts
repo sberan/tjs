@@ -2085,7 +2085,6 @@ const KNOWN_FORMATS = new Set([
 
 // Pre-created format validators instances (one for full validation, one for fast regex-only)
 const sharedFormatValidators = createFormatValidators(false);
-const sharedFastFormatValidators = createFormatValidators(true);
 
 export function generateFormatCheck(
   code: CodeBuilder,
@@ -2107,8 +2106,7 @@ export function generateFormatCheck(
   // For known formats, register a direct function reference for faster calls
   const isKnownFormat = KNOWN_FORMATS.has(format);
 
-  // Use fast validators if fastFormats option is enabled
-  const validators = ctx.options.fastFormats ? sharedFastFormatValidators : sharedFormatValidators;
+  const validators = sharedFormatValidators;
 
   let formatCheck: Code;
   if (isKnownFormat) {
