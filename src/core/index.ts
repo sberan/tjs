@@ -35,8 +35,8 @@ function collectExternalRefs(
   if (typeof schema !== 'object' || schema === null || visited.has(schema)) return;
   visited.add(schema);
 
-  // Check $ref
-  if (schema.$ref && !schema.$ref.startsWith('#')) {
+  // Check $ref (must be a string to be a valid JSON reference)
+  if (typeof schema.$ref === 'string' && !schema.$ref.startsWith('#')) {
     const ref = schema.$ref;
     // Resolve relative refs against base URI
     let resolvedUri: string;
