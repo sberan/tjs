@@ -1472,12 +1472,16 @@ export function generateRefCheck(
   if (!ctx.hasAnyDynamicAnchors() && refSchema) {
     let depth = 0;
     const maxDepth = 100; // Prevent infinite loops
-    while (
-      typeof refSchema === 'object' &&
-      refSchema.$ref &&
-      Object.keys(refSchema).length === 1 && // Only $ref, nothing else
-      depth < maxDepth
-    ) {
+    while (typeof refSchema === 'object' && refSchema.$ref && depth < maxDepth) {
+      // Count only meaningful keys (skip $schema and $id which don't affect validation)
+      const keys = Object.keys(refSchema);
+      const meaningfulKeys = keys.filter((k) => k !== '$schema' && k !== '$id' && k !== '$comment');
+
+      // Only follow if the schema is essentially just a $ref (possibly with metadata)
+      if (meaningfulKeys.length !== 1 || meaningfulKeys[0] !== '$ref') {
+        break;
+      }
+
       const nextSchema = ctx.resolveRef(refSchema.$ref, refSchema);
       if (!nextSchema) break;
       refSchema = nextSchema;
@@ -1509,6 +1513,60 @@ export function generateRefCheck(
       genError(code, pathExprCode, 'type', `Expected ${simpleType}`);
     });
     return;
+  }
+
+  // Optimization: inline the entire resolved schema when it's simple enough
+  // This eliminates function call overhead for commonly nested schemas
+  // Only inline when:
+  // 1. No dynamic scope (legacy mode or no dynamic anchors)
+  // 2. No eval tracker (property tracking requires shared state)
+  // 3. Schema is not already compiled (avoid duplicate code)
+  // 4. Schema doesn't have $id (which would require scope management)
+  if (
+    !dynamicScopeVar &&
+    !evalTracker &&
+    !ctx.isCompiled(refSchema) &&
+    typeof refSchema === 'object' &&
+    refSchema !== null &&
+    !refSchema.$id &&
+    !refSchema.$dynamicAnchor
+  ) {
+    // Check if schema is "simple enough" to inline
+    // Simple means: has validation keywords but no complex applicators (allOf, anyOf, oneOf, if/then/else)
+    // and no nested objects/arrays (properties, items, etc.)
+    const hasComplexApplicators =
+      refSchema.allOf !== undefined ||
+      refSchema.anyOf !== undefined ||
+      refSchema.oneOf !== undefined ||
+      refSchema.if !== undefined ||
+      refSchema.not !== undefined;
+
+    const hasNestedSchemas =
+      refSchema.properties !== undefined ||
+      refSchema.patternProperties !== undefined ||
+      refSchema.additionalProperties !== undefined ||
+      refSchema.items !== undefined ||
+      refSchema.prefixItems !== undefined ||
+      refSchema.contains !== undefined ||
+      refSchema.dependentSchemas !== undefined ||
+      (refSchema.dependencies &&
+        Object.values(refSchema.dependencies).some(
+          (d) => typeof d === 'object' && !Array.isArray(d)
+        ));
+
+    if (!hasComplexApplicators && !hasNestedSchemas) {
+      // Inline the schema validation directly
+      generateSchemaValidator(
+        code,
+        refSchema,
+        dataVar,
+        pathExprCode,
+        ctx,
+        dynamicScopeVar,
+        evalTracker
+      );
+      return;
+    }
   }
 
   // Get the function name (queue for compilation if needed)
