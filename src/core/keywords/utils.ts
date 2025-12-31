@@ -144,7 +144,56 @@ export function getItemTypes(schema: JsonSchemaBase): string[] {
       return itemType as string[];
     }
   }
-  // prefixItems or array items - too complex to analyze
+
+  // Handle tuple validation (items is an array of schemas)
+  // Only optimize if additionalItems is explicitly false OR has a type constraint
+  if (Array.isArray(itemsSchema)) {
+    const additionalItems = schema.additionalItems;
+
+    // Skip optimization if additionalItems is undefined or true (allows anything)
+    if (additionalItems === undefined || additionalItems === true) {
+      return [];
+    }
+
+    const types = new Set<string>();
+
+    // Analyze each schema in the tuple
+    for (const itemSchema of itemsSchema) {
+      if (typeof itemSchema === 'object' && itemSchema !== null) {
+        const itemType = (itemSchema as JsonSchemaBase).type;
+        if (typeof itemType === 'string') {
+          types.add(itemType);
+        } else if (Array.isArray(itemType)) {
+          for (const t of itemType) types.add(t);
+        } else {
+          // Schema without explicit type - can't optimize
+          return [];
+        }
+      } else {
+        // Boolean schema or null - can't optimize
+        return [];
+      }
+    }
+
+    // Check additionalItems schema if it's not false
+    if (additionalItems !== false) {
+      if (typeof additionalItems === 'object' && additionalItems !== null) {
+        const addType = (additionalItems as JsonSchemaBase).type;
+        if (typeof addType === 'string') {
+          types.add(addType);
+        } else if (Array.isArray(addType)) {
+          for (const t of addType) types.add(t);
+        } else {
+          // additionalItems schema without explicit type - can't optimize
+          return [];
+        }
+      }
+    }
+
+    return Array.from(types);
+  }
+
+  // prefixItems or other cases - too complex to analyze
   return [];
 }
 
