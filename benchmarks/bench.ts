@@ -52,7 +52,7 @@ function loadRemoteSchemas(draft: Draft): Record<string, unknown> {
     }
   };
 
-  const remotesDir = path.join(__dirname, '../test-suite/remotes');
+  const remotesDir = path.join(__dirname, '../tests/json-schema-test-suite/remotes');
   loadDir(remotesDir, 'http://localhost:1234/');
 
   // Load draft-specific remotes

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import type { TestFile, TestGroup } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SUITE_BASE = path.join(__dirname, '../../test-suite/tests');
+const SUITE_BASE = path.join(__dirname, '../json-schema-test-suite');
 
 type Draft = 'draft4' | 'draft6' | 'draft7' | 'draft2019-09' | 'draft2020-12';
 

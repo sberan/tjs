@@ -27,9 +27,8 @@
     "prepare": "husky",
     "bench": "tsx benchmarks/bench.ts",
     "bench:json": "tsx benchmarks/bench.ts --json",
-    "bench:ebdrup": "node benchmarks/run-ebdrup-benchmark.cjs",
-    "bench:vs-ajv": "node json-schema-benchmark/run-vs-ajv.js",
-    "bench:ebdrup:quick": "node benchmarks/run-ebdrup-compliance.cjs"
+    "bench:compare": "tsx benchmarks/compare-ajv-quick.ts",
+    "bench:compare:all": "tsx benchmarks/compare-ajv-quick.ts draft4 draft6 draft7 draft2020-12"
   },
   "keywords": [
     "json-schema",
@@ -42,12 +41,14 @@
     "node": ">=18"
   },
   "devDependencies": {
+    "@types/benchmark": "^2.1.5",
     "@typescript-eslint/eslint-plugin": "^8.50.1",
     "@typescript-eslint/parser": "^8.50.1",
     "ajv": "^8.17.1",
     "ajv-draft-04": "^1.0.0",
     "ajv-formats": "^3.0.1",
     "ajv-keywords": "^5.1.0",
+    "benchmark": "^2.1.4",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-expect-type": "^0.6.2",
