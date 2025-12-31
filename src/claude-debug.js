@@ -2,29 +2,39 @@
  * this file is for any scratch work that claude might help with
  */
 
-import { createValidator } from '../dist/index.js';
+import { schema } from '../dist/index.js';
+import { Bench } from 'tinybench';
 
-const schema = {
-  $schema: 'https://json-schema.org/draft/2020-12/schema',
-  $defs: {
-    one: {
-      oneOf: [
-        { $ref: '#/$defs/two' },
-        { required: ['b'], properties: { b: true } },
-        { required: ['xx'], patternProperties: { x: true } },
-        { required: ['all'], unevaluatedProperties: true },
-      ],
-    },
-    two: {
-      oneOf: [
-        { required: ['c'], properties: { c: true } },
-        { required: ['d'], properties: { d: true } },
-      ],
-    },
+// Test schema from the benchmark
+const testSchema = {
+  $schema: 'https://json-schema.org/v1',
+  not: {
+    anyOf: [true, { properties: { foo: true } }],
+    unevaluatedProperties: false,
   },
-  oneOf: [{ $ref: '#/$defs/one' }, { required: ['a'], properties: { a: true } }],
-  unevaluatedProperties: false,
 };
 
-const validator = createValidator(schema);
-console.log(validator.toString());
+const v = schema(testSchema);
+
+// Warm up
+for (let i = 0; i < 1000; i++) {
+  v.assert({ bar: 1 });
+  try {
+    v.assert({ foo: 1 });
+  } catch {}
+}
+
+// Benchmark
+const bench = new Bench({ time: 1000 });
+bench
+  .add('valid case { bar: 1 }', () => {
+    v.assert({ bar: 1 });
+  })
+  .add('invalid case { foo: 1 }', () => {
+    try {
+      v.assert({ foo: 1 });
+    } catch {}
+  });
+
+await bench.run();
+console.table(bench.table());

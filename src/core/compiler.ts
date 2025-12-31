@@ -2330,6 +2330,7 @@ export function generateCompositionChecks(
       }
       code.line(_`const ${sharedTempVar} = { ${Code.join(parts, ', ')} };`);
 
+      let isFirstNonNoOpBranch = true;
       schema.anyOf.forEach((subSchema) => {
         if (isNoOpSchema(subSchema)) {
           // Skip no-op branches - they don't contribute annotations
@@ -2340,17 +2341,20 @@ export function generateCompositionChecks(
           return;
         }
 
-        // Reset shared tracker before each branch check
-        if (evalTracker.trackingProps) {
-          code.line(_`${sharedTempVar}.props = {};`);
-          code.line(_`${sharedTempVar}.patterns = [];`);
-        }
-        if (evalTracker.trackingItems) {
-          code.line(_`${sharedTempVar}.maxItem = -1;`);
-          if (evalTracker.useItemSet) {
-            code.line(_`${sharedTempVar}.items.clear();`);
+        // Reset shared tracker before each branch check (except first - it's already initialized)
+        if (!isFirstNonNoOpBranch) {
+          if (evalTracker.trackingProps) {
+            code.line(_`${sharedTempVar}.props = {};`);
+            code.line(_`${sharedTempVar}.patterns.length = 0;`);
+          }
+          if (evalTracker.trackingItems) {
+            code.line(_`${sharedTempVar}.maxItem = -1;`);
+            if (evalTracker.useItemSet) {
+              code.line(_`${sharedTempVar}.items.clear();`);
+            }
           }
         }
+        isFirstNonNoOpBranch = false;
 
         // Just collect annotations from this branch by calling it with a temp tracker
         const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx, sharedTempVar);
@@ -2382,23 +2386,27 @@ export function generateCompositionChecks(
       }
 
       // Use a shared temp tracker for branches, merge into parent only if valid
+      let isFirstTrackedBranch = true;
       schema.anyOf.forEach((subSchema) => {
         // Optimization: skip temp tracker for no-op schemas (true, {})
         // They match everything but don't contribute any annotations
         const needsTracker = !isNoOpSchema(subSchema) && subSchema !== false;
 
-        // Reset shared tracker before each branch check
+        // Reset shared tracker before each branch check (except first - it's already initialized)
         if (sharedTempVar && needsTracker && evalTracker) {
-          if (evalTracker.trackingProps) {
-            code.line(_`${sharedTempVar}.props = {};`);
-            code.line(_`${sharedTempVar}.patterns = [];`);
-          }
-          if (evalTracker.trackingItems) {
-            code.line(_`${sharedTempVar}.maxItem = -1;`);
-            if (evalTracker.useItemSet) {
-              code.line(_`${sharedTempVar}.items.clear();`);
+          if (!isFirstTrackedBranch) {
+            if (evalTracker.trackingProps) {
+              code.line(_`${sharedTempVar}.props = {};`);
+              code.line(_`${sharedTempVar}.patterns.length = 0;`);
+            }
+            if (evalTracker.trackingItems) {
+              code.line(_`${sharedTempVar}.maxItem = -1;`);
+              if (evalTracker.useItemSet) {
+                code.line(_`${sharedTempVar}.items.clear();`);
+              }
             }
           }
+          isFirstTrackedBranch = false;
         }
 
         const tempVar = needsTracker ? sharedTempVar : undefined;
