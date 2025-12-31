@@ -647,11 +647,14 @@ function validateEmailIpLiteral(domain: string): boolean {
 }
 
 function validateEmail(s: string): boolean {
-  // Fast path: most emails match the simple pattern
-  if (FORMAT_REGEX.emailSimple.test(s)) return true;
-  // Slow path: check for quoted local part or IP literal domain
-  if (s.charCodeAt(0) === 34) {
-    // Quoted local part starts with "
+  const len = s.length;
+  if (len === 0) return false;
+
+  const firstChar = s.charCodeAt(0);
+
+  // Check for quoted local part (rare, use slow path)
+  if (firstChar === 34) {
+    // '"'
     if (!FORMAT_REGEX.emailQuoted.test(s)) return false;
     const atIndex = s.lastIndexOf('@');
     if (atIndex < 0) return false;
@@ -661,15 +664,118 @@ function validateEmail(s: string): boolean {
     }
     return validateHostname(domain);
   }
-  // Check for IP literal in domain
-  const atIndex = s.lastIndexOf('@');
-  if (atIndex >= 0) {
-    const domain = s.slice(atIndex + 1);
-    if (domain.charCodeAt(0) === 91 && domain.charCodeAt(domain.length - 1) === 93) {
-      return validateEmailIpLiteral(domain);
+
+  // Single pass: find @ and validate local part simultaneously
+  if (firstChar === 46) return false; // Can't start with '.'
+
+  let atIndex = -1;
+  let prevWasDot = false;
+
+  for (let i = 0; i < len; i++) {
+    const c = s.charCodeAt(i);
+
+    if (c === 64) {
+      // '@'
+      if (atIndex >= 0) return false; // Multiple @
+      if (prevWasDot) return false; // Can't end local part with '.'
+      if (i === 0) return false; // Can't start with @
+      if (i > 64) return false; // Local part too long
+      atIndex = i;
+      prevWasDot = false;
+      continue;
+    }
+
+    // Before @ - validate local part
+    if (atIndex < 0) {
+      if (c === 46) {
+        if (prevWasDot) return false; // Consecutive dots
+        prevWasDot = true;
+      } else {
+        prevWasDot = false;
+        if (!EMAIL_LOCAL_ASCII[c]) return false; // Invalid character
+      }
     }
   }
-  return false;
+
+  // Must have @ and domain
+  if (atIndex < 1 || atIndex >= len - 1) return false;
+
+  // Validate domain
+  const domainStart = atIndex + 1;
+  const domainLen = len - domainStart;
+  if (domainLen > 253) return false;
+
+  // Check for IP literal domain (rare)
+  if (s.charCodeAt(domainStart) === 91 && s.charCodeAt(len - 1) === 93) {
+    return validateEmailIpLiteral(s.slice(domainStart));
+  }
+
+  // Inline domain validation - single pass
+  let labelStart = domainStart;
+  let labelLen = 0;
+
+  for (let i = domainStart; i <= len; i++) {
+    const c = i < len ? s.charCodeAt(i) : 46; // Use '.' as terminator
+
+    if (c === 46 || i === len) {
+      // End of label
+      if (labelLen === 0 || labelLen > 63) return false;
+
+      const firstLabelChar = s.charCodeAt(labelStart);
+      const lastLabelChar = s.charCodeAt(i - 1);
+
+      // Label must start with alphanumeric
+      if (
+        !(
+          (firstLabelChar >= 48 && firstLabelChar <= 57) || // 0-9
+          (firstLabelChar >= 65 && firstLabelChar <= 90) || // A-Z
+          (firstLabelChar >= 97 && firstLabelChar <= 122)
+        )
+      )
+        // a-z
+        return false;
+
+      // Label must end with alphanumeric (if length > 1)
+      if (
+        labelLen > 1 &&
+        !(
+          (lastLabelChar >= 48 && lastLabelChar <= 57) ||
+          (lastLabelChar >= 65 && lastLabelChar <= 90) ||
+          (lastLabelChar >= 97 && lastLabelChar <= 122)
+        )
+      )
+        return false;
+
+      // Check for -- in positions 2-3 (must be xn-- for punycode)
+      if (
+        labelLen >= 4 &&
+        s.charCodeAt(labelStart + 2) === 45 &&
+        s.charCodeAt(labelStart + 3) === 45
+      ) {
+        const c0 = s.charCodeAt(labelStart) | 32;
+        const c1 = s.charCodeAt(labelStart + 1) | 32;
+        if (c0 !== 120 || c1 !== 110) return false; // Not 'xn--'
+      }
+
+      labelStart = i + 1;
+      labelLen = 0;
+    } else {
+      // Within label - check valid character
+      if (
+        !(
+          (c >= 48 && c <= 57) || // 0-9
+          (c >= 65 && c <= 90) || // A-Z
+          (c >= 97 && c <= 122) || // a-z
+          c === 45
+        )
+      )
+        // -
+        return false;
+      labelLen++;
+    }
+  }
+
+  return true;
 }
 
 // Lookup table for valid ASCII local part characters (256 entries for fast lookup)
