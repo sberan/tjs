@@ -220,6 +220,42 @@ function schemaHasContains(
 }
 
 /**
+ * Check if a schema will mark all properties as evaluated.
+ * This happens when:
+ * - additionalProperties is present (any value)
+ * - unevaluatedProperties: true is present
+ * - allOf contains a schema that marks all properties
+ */
+function schemaMarksAllPropsEvaluated(
+  schema: JsonSchema,
+  ctx: CompileContext,
+  visited = new Set<JsonSchema>()
+): boolean {
+  if (typeof schema !== 'object' || schema === null) return false;
+  if (visited.has(schema)) return false;
+  visited.add(schema);
+
+  // Direct markers
+  if (schema.additionalProperties !== undefined) return true;
+  if (schema.unevaluatedProperties === true) return true;
+
+  // Check allOf - ALL branches execute, so if ANY marks all props, all props are marked
+  if (schema.allOf) {
+    for (const sub of schema.allOf) {
+      if (schemaMarksAllPropsEvaluated(sub, ctx, visited)) return true;
+    }
+  }
+
+  // Follow $ref
+  if (schema.$ref) {
+    const refSchema = ctx.resolveRef(schema.$ref, schema);
+    if (refSchema && schemaMarksAllPropsEvaluated(refSchema, ctx, visited)) return true;
+  }
+
+  return false;
+}
+
+/**
  * Generate validation code for a schema
  * @param pathExprCode - Code expression that evaluates to the current path string
  * @param dynamicScopeVar - Variable name for the dynamic scope array (for $dynamicRef)
@@ -295,11 +331,20 @@ function generateSchemaValidator(
       const skipPropsTracking =
         hasUnevalProps && schema.additionalProperties !== undefined && !evalTracker;
 
+      // Optimization: When outer unevaluatedProperties: false and inner schemas mark all props,
+      // we can skip the unevaluatedProperties check entirely since it will always pass
+      const willMarkAllProps = hasUnevalProps && schemaMarksAllPropsEvaluated(schema, ctx);
+      const canSkipUnevalPropsCheck =
+        hasUnevalProps &&
+        schema.unevaluatedProperties === false &&
+        willMarkAllProps &&
+        !evalTracker;
+
       // Check if contains is present anywhere - requires Set-based item tracking
       const needsItemSet = hasUnevalItems && schemaHasContains(schema, ctx);
 
       // Skip creating tracker if it would be unused
-      if (skipPropsTracking && !hasUnevalItems) {
+      if ((skipPropsTracking || canSkipUnevalPropsCheck) && !hasUnevalItems) {
         // No need for tracker - skip it entirely
         tracker = undefined;
       } else {
@@ -308,7 +353,7 @@ function generateSchemaValidator(
         // Keep reference to parent so we can bubble up after our unevaluated* check runs
         const trackerVar = code.genVar('tracker');
         tracker = new EvalTracker(code, trackerVar, {
-          trackProps: hasUnevalProps && !skipPropsTracking,
+          trackProps: hasUnevalProps && !skipPropsTracking && !canSkipUnevalPropsCheck,
           trackItems: hasUnevalItems,
           parentTracker: evalTracker,
           useItemSet: needsItemSet,
