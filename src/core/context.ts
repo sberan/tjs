@@ -26,9 +26,9 @@ export interface CompileOptions {
   formatAssertion?: boolean;
   /**
    * Whether content validation (contentMediaType, contentEncoding) is an assertion.
-   * In draft-07, content is optionally validating.
-   * In draft 2020-12, content is annotation-only by default.
-   * Default: false
+   * In draft-07, content validates by default.
+   * In draft 2019-09 and 2020-12, content is annotation-only by default.
+   * Default: auto-detected from dialect
    */
   contentAssertion?: boolean;
   /** Remote schemas for $ref resolution */
@@ -75,6 +75,7 @@ export type SchemaFeature =
   | 'modernRef' // $ref can have siblings (2019-09+)
   | 'unevaluated' // unevaluatedProperties/Items (2019-09+)
   | 'formatAssertion' // format validates by default (draft-07 and earlier)
+  | 'contentAssertion' // content validates by default (draft-07 and earlier)
   | 'legacyRef'; // $ref overrides siblings (draft-07 and earlier)
 
 /**
@@ -117,6 +118,11 @@ export function supportsFeature(schemaUri: string, feature: SchemaFeature): bool
     case 'formatAssertion':
       // In draft 2020-12 and 2019-09, format is annotation-only by default
       // In draft-07 and earlier, format validates by default
+      return isLegacy;
+
+    case 'contentAssertion':
+      // In draft 2020-12 and 2019-09, content is annotation-only by default
+      // In draft-07 and earlier, content validates by default
       return isLegacy;
 
     case 'legacyRef':
@@ -194,7 +200,7 @@ export class CompileContext {
     this.options = {
       // Auto-detect from dialect if not explicitly set
       formatAssertion: options.formatAssertion ?? supportsFeature(schemaUri, 'formatAssertion'),
-      contentAssertion: options.contentAssertion ?? false,
+      contentAssertion: options.contentAssertion ?? supportsFeature(schemaUri, 'contentAssertion'),
       remotes: options.remotes ?? {},
       legacyRef: options.legacyRef ?? supportsFeature(schemaUri, 'legacyRef'),
       coerce: options.coerce ?? false,

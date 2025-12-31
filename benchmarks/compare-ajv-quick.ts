@@ -41,6 +41,7 @@ interface TestGroup {
   description: string;
   schema: unknown;
   tests: TestCase[];
+  isFormatTest?: boolean;
 }
 
 interface CompiledTestSuite {
@@ -49,6 +50,7 @@ interface CompiledTestSuite {
   tests: TestCase[];
   tjsValidator: ((data: unknown) => boolean) | null;
   ajvValidator: ((data: unknown) => boolean) | null;
+  isFormatTest?: boolean;
 }
 
 interface DraftResult {
@@ -114,14 +116,22 @@ function loadTestSuites(draft: Draft, includeOptional: boolean = true): TestGrou
   const suiteDir = path.join(__dirname, '../tests/json-schema-test-suite', draft);
   const suites: TestGroup[] = [];
 
-  const loadDir = (dir: string) => {
+  const loadDir = (dir: string, isFormatTest: boolean = false) => {
     if (!fs.existsSync(dir)) return;
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        loadDir(fullPath);
+        // Mark tests in optional/format/ directory as format tests
+        const isFormat = isFormatTest || entry.name === 'format';
+        loadDir(fullPath, isFormat);
       } else if (entry.name.endsWith('.json')) {
         const groups: TestGroup[] = JSON.parse(fs.readFileSync(fullPath, 'utf-8'));
+        // Mark all groups from format directory as format tests
+        if (isFormatTest) {
+          for (const group of groups) {
+            group.isFormatTest = true;
+          }
+        }
         suites.push(...groups);
       }
     }
@@ -173,18 +183,17 @@ function compileTestSuites(
   remotes: Record<string, unknown>
 ): CompiledTestSuite[] {
   const ajv = createAjv(draft, remotes);
-  const legacyRef = draft !== 'draft2020-12' && draft !== 'draft2019-09';
 
   return testSuites.map((suite) => {
     let tjsValidator: ((data: unknown) => boolean) | null = null;
     let ajvValidator: ((data: unknown) => boolean) | null = null;
 
     try {
+      // Enable formatAssertion for optional format tests (they test format validation)
       tjsValidator = createValidator(suite.schema as JsonSchema, {
-        legacyRef,
+        defaultMeta: draft,
         remotes: remotes as Record<string, JsonSchema>,
-        formatAssertion: true,
-        coerce: false,
+        ...(suite.isFormatTest && { formatAssertion: true }),
       });
     } catch {}
 
@@ -199,22 +208,42 @@ function compileTestSuites(
       tests: suite.tests,
       tjsValidator,
       ajvValidator,
+      isFormatTest: suite.isFormatTest,
     };
   });
+}
+
+interface FailedTest {
+  suite: string;
+  test: string;
+  expected: boolean;
+  got: boolean | 'error' | 'no-validator';
 }
 
 // Check compliance for a validator
 function checkCompliance(
   compiled: CompiledTestSuite[],
-  getValidator: (s: CompiledTestSuite) => ((data: unknown) => boolean) | null
-): { pass: number; fail: number } {
+  getValidator: (s: CompiledTestSuite) => ((data: unknown) => boolean) | null,
+  collectFailures: boolean = false
+): { pass: number; fail: number; failures: FailedTest[] } {
   let pass = 0;
   let fail = 0;
+  const failures: FailedTest[] = [];
 
   for (const suite of compiled) {
     const validator = getValidator(suite);
     if (!validator) {
       fail += suite.tests.length;
+      if (collectFailures) {
+        for (const test of suite.tests) {
+          failures.push({
+            suite: suite.description,
+            test: test.description,
+            expected: test.valid,
+            got: 'no-validator',
+          });
+        }
+      }
       continue;
     }
 
@@ -225,14 +254,30 @@ function checkCompliance(
           pass++;
         } else {
           fail++;
+          if (collectFailures) {
+            failures.push({
+              suite: suite.description,
+              test: test.description,
+              expected: test.valid,
+              got: result,
+            });
+          }
         }
       } catch {
         fail++;
+        if (collectFailures) {
+          failures.push({
+            suite: suite.description,
+            test: test.description,
+            expected: test.valid,
+            got: 'error',
+          });
+        }
       }
     }
   }
 
-  return { pass, fail };
+  return { pass, fail, failures };
 }
 
 // Quick benchmark a single validator (simple timing, not benchmark.js)
@@ -284,7 +329,8 @@ function benchmarkIndividualSuites(validSuites: CompiledTestSuite[], draft: stri
 function runBenchmark(
   draft: Draft,
   allSuitePerfs: SuitePerf[],
-  filter: RegExp | null = null
+  filter: RegExp | null = null,
+  showFailures: boolean = false
 ): Promise<DraftResult> {
   return new Promise((resolve) => {
     console.log(`\nLoading ${draft}...`);
@@ -301,7 +347,7 @@ function runBenchmark(
     const compiled = compileTestSuites(testSuites, draft, remotes);
 
     // Check compliance for both validators
-    const tjsCompliance = checkCompliance(compiled, (s) => s.tjsValidator);
+    const tjsCompliance = checkCompliance(compiled, (s) => s.tjsValidator, showFailures);
     const ajvCompliance = checkCompliance(compiled, (s) => s.ajvValidator);
 
     console.log(
@@ -310,6 +356,14 @@ function runBenchmark(
     console.log(
       `  ajv compliance: ${ajvCompliance.pass}/${ajvCompliance.pass + ajvCompliance.fail} (${ajvCompliance.fail} failures)`
     );
+
+    // Show tjs failures if requested
+    if (showFailures && tjsCompliance.failures.length > 0) {
+      console.log(`\n  tjs failures:`);
+      for (const f of tjsCompliance.failures) {
+        console.log(`    - ${f.suite} > ${f.test} (expected ${f.expected}, got ${f.got})`);
+      }
+    }
 
     // Filter to test suites where both validators compiled successfully
     const compiledSuites = compiled.filter((s) => s.tjsValidator && s.ajvValidator);
@@ -429,6 +483,7 @@ async function main() {
   // Parse arguments
   const drafts: Draft[] = [];
   let filter: RegExp | null = null;
+  let showFailures = false;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -437,6 +492,8 @@ async function main() {
       if (pattern) {
         filter = new RegExp(pattern, 'i');
       }
+    } else if (arg === '--failures' || arg === '--show-failures') {
+      showFailures = true;
     } else if (['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'].includes(arg)) {
       drafts.push(arg as Draft);
     }
@@ -453,7 +510,7 @@ async function main() {
   const allSuitePerfs: SuitePerf[] = [];
 
   for (const draft of drafts) {
-    const result = await runBenchmark(draft, allSuitePerfs, filter);
+    const result = await runBenchmark(draft, allSuitePerfs, filter, showFailures);
     results.push(result);
   }
 
