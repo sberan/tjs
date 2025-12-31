@@ -146,13 +146,8 @@ export function genBatchedRequiredChecks(
   code.if(combinedCondition, () => {
     // Use the missing variable to create dynamic path (already in JSON Pointer format)
     const propPathExpr = pathExprDynamic(pathExprCode, missingVar);
-    // Build error object using template - missingVar is a runtime variable
-    const mainFuncRef = mainFuncName;
     code.line(
-      _`if (errors) errors.push({ instancePath: ${propPathExpr}, schemaPath: '#/required', keyword: 'required', params: { missingProperty: ${missingVar} }, message: "must have required property '" + ${missingVar} + "'" });`
-    );
-    code.line(
-      _`${mainFuncRef}.errors = [{ instancePath: ${propPathExpr}, schemaPath: '#/required', keyword: 'required', params: { missingProperty: ${missingVar} }, message: "must have required property '" + ${missingVar} + "'" }];`
+      _`${mainFuncName}.errors = [{ instancePath: ${propPathExpr}, schemaPath: '#/required', keyword: 'required', params: { missingProperty: ${missingVar} }, message: "must have required property '" + ${missingVar} + "'" }];`
     );
     code.line(_`return false;`);
   });
@@ -185,14 +180,8 @@ export function genError(
   // Build the error object
   const errObj = _`{ instancePath: ${pathExprCode}, schemaPath: ${schemaPath}, keyword: ${keyword}, params: ${paramsCode}, message: ${message} }`;
 
-  // pathExprCode is already in JSON Pointer format - no conversion needed
-  code.line(_`if (errors) errors.push(${errObj});`);
-
   // Set .errors on main function directly (AJV-compatible pattern)
-  if (mainFuncName) {
-    code.line(_`${mainFuncName}.errors = [${errObj}];`);
-  }
-
+  code.line(_`${mainFuncName}.errors = [${errObj}];`);
   code.line(_`return false;`);
 }
 
