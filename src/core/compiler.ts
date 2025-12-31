@@ -2316,34 +2316,43 @@ export function generateUnevaluatedItemsCheck(
     return;
   }
 
+  // Optimization: when unevaluatedItems is true, just mark all items without iterating
+  if (schema.unevaluatedItems === true) {
+    code.if(_`Array.isArray(${dataVar})`, () => {
+      evalTracker.markAllItems();
+    });
+    return;
+  }
+
   // Only check if data is an array
   code.if(_`Array.isArray(${dataVar})`, () => {
-    // Check each item against the tracker
-    const iVar = code.genVar('i');
-    code.forArray(iVar, dataVar, () => {
-      const condition = evalTracker.isUnevaluatedItem(iVar);
-      const itemPathExpr = pathExprIndex(pathExprCode, iVar);
+    // Optimization: skip the entire loop if all items are already marked as evaluated
+    // This happens when a nested schema has unevaluatedItems: true
+    code.if(_`${evalTracker.trackerVar}.maxItem !== Infinity`, () => {
+      // Check each item against the tracker
+      const iVar = code.genVar('i');
+      code.forArray(iVar, dataVar, () => {
+        const condition = evalTracker.isUnevaluatedItem(iVar);
+        const itemPathExpr = pathExprIndex(pathExprCode, iVar);
 
-      code.if(condition, () => {
-        if (schema.unevaluatedItems === false) {
-          genError(code, itemPathExpr, 'unevaluatedItems', 'Unevaluated item not allowed');
-        } else if (schema.unevaluatedItems === true) {
-          // unevaluatedItems: true - mark as evaluated (for bubbling to parent)
-          evalTracker.markItemsDynamic(iVar);
-        } else {
-          // unevaluatedItems: <schema> - validate and mark as evaluated
-          const itemVar = code.genVar('ui');
-          code.line(_`const ${itemVar} = ${dataVar}[${iVar}];`);
-          generateSchemaValidator(
-            code,
-            schema.unevaluatedItems as JsonSchema,
-            itemVar,
-            itemPathExpr,
-            ctx,
-            dynamicScopeVar
-          );
-          evalTracker.markItemsDynamic(iVar);
-        }
+        code.if(condition, () => {
+          if (schema.unevaluatedItems === false) {
+            genError(code, itemPathExpr, 'unevaluatedItems', 'Unevaluated item not allowed');
+          } else {
+            // unevaluatedItems: <schema> - validate and mark as evaluated
+            const itemVar = code.genVar('ui');
+            code.line(_`const ${itemVar} = ${dataVar}[${iVar}];`);
+            generateSchemaValidator(
+              code,
+              schema.unevaluatedItems as JsonSchema,
+              itemVar,
+              itemPathExpr,
+              ctx,
+              dynamicScopeVar
+            );
+            evalTracker.markItemsDynamic(iVar);
+          }
+        });
       });
     });
   });
