@@ -3,9 +3,9 @@
 ## Summary
 
 - **Total Tests**: 1990
-- **Passed**: 1964 (98.7%)
+- **Passed**: 1963 (98.6%)
 - **Failed**: 0
-- **Skipped**: 26
+- **Skipped**: 27
 
 ## By Keyword
 
@@ -20,7 +20,7 @@
 | const | 54 | 0 | 0 | 100% |
 | contains | 21 | 0 | 0 | 100% |
 | content | 0 | 0 | 18 | N/A |
-| cross-draft | 1 | 0 | 0 | 100% |
+| cross-draft | 0 | 0 | 1 | N/A |
 | date | 48 | 0 | 0 | 100% |
 | date-time | 26 | 0 | 0 | 100% |
 | default | 7 | 0 | 0 | 100% |
