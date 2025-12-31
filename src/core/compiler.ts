@@ -359,26 +359,56 @@ function generateSchemaValidator(
 
 /**
  * Create a deep equality function for const/enum validation
+ * Optimized for performance with early exits and minimal overhead
  */
 function createDeepEqual(): (a: unknown, b: unknown) => boolean {
   return function deepEqual(a: unknown, b: unknown): boolean {
+    // Fast path: strict equality (handles primitives, same reference)
     if (a === b) return true;
-    if (typeof a !== typeof b) return false;
-    if (typeof a !== 'object' || a === null || b === null) return false;
-    if (Array.isArray(a) !== Array.isArray(b)) return false;
 
-    if (Array.isArray(a)) {
+    // Fast path: type mismatch
+    const aType = typeof a;
+    const bType = typeof b;
+    if (aType !== bType) return false;
+
+    // Fast path: non-objects or nulls
+    if (aType !== 'object' || a === null || b === null) return false;
+
+    // Fast path: array vs non-array mismatch
+    const aIsArray = Array.isArray(a);
+    const bIsArray = Array.isArray(b);
+    if (aIsArray !== bIsArray) return false;
+
+    if (aIsArray) {
+      const aArr = a as unknown[];
       const bArr = b as unknown[];
-      if (a.length !== bArr.length) return false;
-      return a.every((v, i) => deepEqual(v, bArr[i]));
+      const len = aArr.length;
+
+      // Fast path: length mismatch
+      if (len !== bArr.length) return false;
+
+      // Optimize: use for loop instead of every() to reduce function call overhead
+      for (let i = 0; i < len; i++) {
+        if (!deepEqual(aArr[i], bArr[i])) return false;
+      }
+      return true;
     }
 
+    // Object comparison
     const aObj = a as Record<string, unknown>;
     const bObj = b as Record<string, unknown>;
     const aKeys = Object.keys(aObj);
-    const bKeys = Object.keys(bObj);
-    if (aKeys.length !== bKeys.length) return false;
-    return aKeys.every((k) => deepEqual(aObj[k], bObj[k]));
+    const len = aKeys.length;
+
+    // Fast path: key count mismatch
+    if (len !== Object.keys(bObj).length) return false;
+
+    // Optimize: use for loop instead of every()
+    for (let i = 0; i < len; i++) {
+      const key = aKeys[i];
+      if (!(key in bObj) || !deepEqual(aObj[key], bObj[key])) return false;
+    }
+    return true;
   };
 }
 /**
@@ -504,25 +534,46 @@ export function generateEnumCheck(
       genError(code, pathExprCode, 'enum', `Value must be one of the allowed values`);
     });
   } else if (primitives.length === 0) {
-    // All complex - use deepEqual for all
+    // All complex - use inline loop with deepEqual
     const arrName = new Name(ctx.genRuntimeName('enumArr'));
     ctx.addRuntimeFunction(arrName.str, complexValues);
-    code.if(_`!${arrName}.some(v => deepEqual(${dataVar}, v))`, () => {
+
+    // Generate inline loop instead of using .some() to reduce overhead
+    const matchVar = code.genVar('match');
+    const iVar = code.genVar('i');
+    code.line(_`let ${matchVar} = false;`);
+    code.line(_`for (let ${iVar} = 0; ${iVar} < ${arrName}.length; ${iVar}++) {`);
+    code.line(_`  if (deepEqual(${dataVar}, ${arrName}[${iVar}])) {`);
+    code.line(_`    ${matchVar} = true;`);
+    code.line(_`    break;`);
+    code.line(_`  }`);
+    code.line(_`}`);
+    code.if(_`!${matchVar}`, () => {
       genError(code, pathExprCode, 'enum', `Value must be one of the allowed values`);
     });
   } else {
-    // Mixed: check primitives with Set, complex with deepEqual
-    // Only call deepEqual if data is an object (since primitives are already covered by Set)
+    // Mixed: check primitives with Set, complex with inline loop
     const setName = new Name(ctx.genRuntimeName('enumSet'));
     ctx.addRuntimeFunction(setName.str, new Set(primitives));
     const arrName = new Name(ctx.genRuntimeName('enumArr'));
     ctx.addRuntimeFunction(arrName.str, complexValues);
-    code.if(
-      _`!${setName}.has(${dataVar}) && (typeof ${dataVar} !== 'object' || ${dataVar} === null || !${arrName}.some(v => deepEqual(${dataVar}, v)))`,
-      () => {
-        genError(code, pathExprCode, 'enum', `Value must be one of the allowed values`);
-      }
-    );
+
+    // Fast path: check Set first (common case for primitives)
+    const checkedVar = code.genVar('checked');
+    code.line(_`let ${checkedVar} = ${setName}.has(${dataVar});`);
+    code.if(_`!${checkedVar} && typeof ${dataVar} === 'object' && ${dataVar} !== null`, () => {
+      // Only check complex values if data is an object
+      const iVar = code.genVar('i');
+      code.line(_`for (let ${iVar} = 0; ${iVar} < ${arrName}.length; ${iVar}++) {`);
+      code.line(_`  if (deepEqual(${dataVar}, ${arrName}[${iVar}])) {`);
+      code.line(_`    ${checkedVar} = true;`);
+      code.line(_`    break;`);
+      code.line(_`  }`);
+      code.line(_`}`);
+    });
+    code.if(_`!${checkedVar}`, () => {
+      genError(code, pathExprCode, 'enum', `Value must be one of the allowed values`);
+    });
   }
 }
 
