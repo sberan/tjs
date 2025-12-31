@@ -280,6 +280,73 @@ function matchesType(value: unknown, type: string): boolean {
 }
 
 /**
+ * Simple schema matching for 'if' conditions in coercion
+ * This is a lightweight implementation to avoid circular dependencies with the compiler
+ */
+function schemaMatches(value: unknown, schema: JsonSchema, refResolver?: RefResolver): boolean {
+  // Handle boolean schemas
+  if (typeof schema === 'boolean') {
+    return schema;
+  }
+
+  // Handle string shorthand
+  if (typeof schema === 'string') {
+    return matchesType(value, schema);
+  }
+
+  // Handle $ref
+  if (schema.$ref && refResolver) {
+    const refSchema = refResolver.resolveRef(schema.$ref, schema);
+    if (refSchema) {
+      return schemaMatches(value, refSchema, refResolver);
+    }
+    return false;
+  }
+
+  // Handle type keyword
+  if (schema.type !== undefined) {
+    const types = Array.isArray(schema.type) ? schema.type : [schema.type];
+    const matchesAnyType = types.some((t) => matchesType(value, t));
+    if (!matchesAnyType) return false;
+  }
+
+  // Handle const keyword
+  if (schema.const !== undefined) {
+    if (value !== schema.const) return false;
+  }
+
+  // Handle enum keyword
+  if (schema.enum !== undefined) {
+    if (!schema.enum.includes(value as never)) return false;
+  }
+
+  // Handle properties for objects
+  if (schema.properties && typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    const obj = value as Record<string, unknown>;
+    for (const [key, propSchema] of Object.entries(schema.properties)) {
+      if (key in obj) {
+        if (!schemaMatches(obj[key], propSchema, refResolver)) {
+          return false;
+        }
+      }
+    }
+  }
+
+  // Handle required keyword
+  if (schema.required && typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    const obj = value as Record<string, unknown>;
+    for (const requiredProp of schema.required) {
+      if (!(requiredProp in obj)) {
+        return false;
+      }
+    }
+  }
+
+  // If we get here, all checks passed
+  return true;
+}
+
+/**
  * Deep coerce a value according to a schema
  * Recursively coerces nested objects and arrays
  *
@@ -528,18 +595,41 @@ export function coerceValue(
   }
 
   // Handle if-then-else
-  if (schema.then) {
-    const result = coerceValue(currentValue, schema.then, options, refResolver);
-    if (result.coerced) {
-      currentValue = result.value;
-      wasCoerced = true;
+  // Evaluate the 'if' schema to determine which branch to apply
+  if (schema.if !== undefined) {
+    // We need to validate against the 'if' schema to determine the branch
+    const ifMatches = schemaMatches(currentValue, schema.if, refResolver);
+
+    if (ifMatches && schema.then !== undefined) {
+      // If condition matches, apply 'then' schema coercion
+      const result = coerceValue(currentValue, schema.then, options, refResolver);
+      if (result.coerced) {
+        currentValue = result.value;
+        wasCoerced = true;
+      }
+    } else if (!ifMatches && schema.else !== undefined) {
+      // If condition doesn't match, apply 'else' schema coercion
+      const result = coerceValue(currentValue, schema.else, options, refResolver);
+      if (result.coerced) {
+        currentValue = result.value;
+        wasCoerced = true;
+      }
     }
-  }
-  if (schema.else) {
-    const result = coerceValue(currentValue, schema.else, options, refResolver);
-    if (result.coerced) {
-      currentValue = result.value;
-      wasCoerced = true;
+  } else {
+    // Legacy behavior: if no 'if' schema, apply both then and else (shouldn't happen in valid schemas)
+    if (schema.then) {
+      const result = coerceValue(currentValue, schema.then, options, refResolver);
+      if (result.coerced) {
+        currentValue = result.value;
+        wasCoerced = true;
+      }
+    }
+    if (schema.else) {
+      const result = coerceValue(currentValue, schema.else, options, refResolver);
+      if (result.coerced) {
+        currentValue = result.value;
+        wasCoerced = true;
+      }
     }
   }
 

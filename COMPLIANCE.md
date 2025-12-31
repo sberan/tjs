@@ -3,9 +3,9 @@
 ## Summary
 
 - **Total Tests**: 1990
-- **Passed**: 1931 (97.0%)
+- **Passed**: 1963 (98.6%)
 - **Failed**: 0
-- **Skipped**: 59
+- **Skipped**: 27
 
 ## By Keyword
 
@@ -21,8 +21,8 @@
 | contains | 21 | 0 | 0 | 100% |
 | content | 0 | 0 | 18 | N/A |
 | cross-draft | 0 | 0 | 1 | N/A |
-| date | 31 | 0 | 17 | 100% |
-| date-time | 23 | 0 | 3 | 100% |
+| date | 48 | 0 | 0 | 100% |
+| date-time | 26 | 0 | 0 | 100% |
 | default | 7 | 0 | 0 | 100% |
 | defs | 2 | 0 | 0 | 100% |
 | dependencies-compatibility | 36 | 0 | 0 | 100% |
@@ -46,7 +46,7 @@
 | infinite-loop-detection | 2 | 0 | 0 | 100% |
 | ipv4 | 16 | 0 | 0 | 100% |
 | ipv6 | 40 | 0 | 0 | 100% |
-| iri | 14 | 0 | 1 | 100% |
+| iri | 15 | 0 | 0 | 100% |
 | iri-reference | 13 | 0 | 0 | 100% |
 | items | 29 | 0 | 0 | 100% |
 | json-pointer | 38 | 0 | 0 | 100% |
@@ -76,7 +76,7 @@
 | regex | 8 | 0 | 0 | 100% |
 | relative-json-pointer | 18 | 0 | 0 | 100% |
 | required | 16 | 0 | 0 | 100% |
-| time | 35 | 0 | 11 | 100% |
+| time | 46 | 0 | 0 | 100% |
 | type | 80 | 0 | 0 | 100% |
 | unevaluatedItems | 71 | 0 | 0 | 100% |
 | unevaluatedProperties | 125 | 0 | 0 | 100% |
