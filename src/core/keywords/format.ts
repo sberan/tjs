@@ -854,10 +854,72 @@ function validateIri(s: string): boolean {
   return true;
 }
 
+// Optimized IRI-reference validator - single-pass validation
 function validateIriReference(s: string): boolean {
   if (s === '') return true;
-  if (FORMAT_REGEX.uriBadChars.test(s)) return false;
-  return IRI_REFERENCE_REGEX.test(s);
+
+  const len = s.length;
+  let hasScheme = false;
+  let hasAuthority = false;
+
+  // Single pass: check bad chars and detect structure
+  for (let i = 0; i < len; i++) {
+    const code = s.charCodeAt(i);
+    const ch = s[i];
+
+    // Reject control chars, spaces (code <= 0x20 includes \x00-\x1f and space)
+    if (code <= 0x20 || code === 0x7f) return false;
+
+    // Check forbidden chars using switch
+    switch (ch) {
+      case '<':
+      case '>':
+      case '"':
+      case '{':
+      case '}':
+      case '|':
+      case '\\':
+      case '^':
+      case '`':
+        return false;
+      case '%':
+        // Validate percent-encoding: must be followed by 2 hex digits
+        if (i + 2 >= len) return false;
+        const h1 = s.charCodeAt(i + 1);
+        const h2 = s.charCodeAt(i + 2);
+        // Check if h1 and h2 are hex: 0-9 (48-57), A-F (65-70), a-f (97-102)
+        if (
+          !((h1 >= 48 && h1 <= 57) || (h1 >= 65 && h1 <= 70) || (h1 >= 97 && h1 <= 102)) ||
+          !((h2 >= 48 && h2 <= 57) || (h2 >= 65 && h2 <= 70) || (h2 >= 97 && h2 <= 102))
+        ) {
+          return false;
+        }
+        i += 2; // Skip hex digits
+        break;
+      case '/':
+        // Detect authority: "//" at start
+        if (i === 0 && len > 1 && s[1] === '/') {
+          hasAuthority = true;
+        }
+        break;
+      case ':':
+        // Detect scheme: letter followed by [a-z0-9+.-]* before ':'
+        if (!hasAuthority && i > 0 && i < 64) {
+          // schemes are typically short
+          const schemeMatch = /^[a-z][a-z0-9+.-]*$/i.test(s.substring(0, i));
+          if (schemeMatch) hasScheme = true;
+        }
+        break;
+    }
+  }
+
+  // For complex IRIs (with scheme or authority), validate with full regex
+  if (hasScheme || hasAuthority) {
+    return IRI_REFERENCE_REGEX.test(s);
+  }
+
+  // Simple relative reference - validated by char check above
+  return true;
 }
 
 // URI-template regex from ajv-formats (RFC 6570 compliant)
