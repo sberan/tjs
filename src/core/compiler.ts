@@ -568,9 +568,19 @@ export function generateStringChecks(
 
     if (schema.pattern !== undefined) {
       // Pre-compile regex as a runtime function for consistent performance
-      // Use 'u' flag for Unicode support (enables \p{...} property escapes)
+      // Optimize: Only use 'u' flag when necessary for better performance
+      // The 'u' flag is required for:
+      // 1. Unicode property escapes (\p{...}, \P{...})
+      // 2. Unicode code point escapes (\u{...})
+      // 3. Characters outside BMP (code points > 0xFFFF, i.e., surrogate pairs)
+      const hasUnicodeEscapes = /\\[pP]\{/.test(schema.pattern) || /\\u\{/.test(schema.pattern);
+      const hasHighUnicode = /[\uD800-\uDFFF]/.test(schema.pattern); // Surrogate pairs
+      const needsUnicode = hasUnicodeEscapes || hasHighUnicode;
+      const flags = needsUnicode ? 'u' : '';
+
       const regexName = new Name(ctx.genRuntimeName('pattern'));
-      ctx.addRuntimeFunction(regexName.str, new RegExp(schema.pattern, 'u'));
+      ctx.addRuntimeFunction(regexName.str, new RegExp(schema.pattern, flags));
+
       code.if(_`!${regexName}.test(${dataVar})`, () => {
         genError(code, pathExprCode, 'pattern', `String must match pattern ${schema.pattern}`);
       });
@@ -1000,11 +1010,15 @@ export function generatePropertiesChecks(
       const allPatterns = schema.patternProperties ? Object.keys(schema.patternProperties) : [];
 
       // Pre-compile pattern regexes for ALL patterns (needed for additionalProperties check)
-      // Use 'u' flag for Unicode support (enables \p{...} property escapes)
+      // Only use 'u' flag when necessary for better performance
       const patternRegexNames: Name[] = [];
       for (const pattern of allPatterns) {
+        const hasUnicodeEscapes = /\\[pP]\{/.test(pattern) || /\\u\{/.test(pattern);
+        const hasHighUnicode = /[\uD800-\uDFFF]/.test(pattern); // Surrogate pairs
+        const needsUnicode = hasUnicodeEscapes || hasHighUnicode;
+        const flags = needsUnicode ? 'u' : '';
         const regexName = new Name(ctx.genRuntimeName('patternRe'));
-        ctx.addRuntimeFunction(regexName.str, new RegExp(pattern, 'u'));
+        ctx.addRuntimeFunction(regexName.str, new RegExp(pattern, flags));
         patternRegexNames.push(regexName);
         // Register pattern with tracker for unevaluatedProperties check
         if (evalTracker) {
