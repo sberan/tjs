@@ -3,38 +3,28 @@
  */
 
 import { schema } from '../dist/index.js';
-import { Bench } from 'tinybench';
+import * as fs from 'fs';
 
-// Test schema from the benchmark
-const testSchema = {
-  $schema: 'https://json-schema.org/v1',
-  not: {
-    anyOf: [true, { properties: { foo: true } }],
-    unevaluatedProperties: false,
-  },
-};
+// Load test schemas
+const treeSchema = JSON.parse(
+  fs.readFileSync('./tests/json-schema-test-suite/remotes/draft2020-12/tree.json', 'utf-8')
+);
+const strictTreeTest = JSON.parse(
+  fs.readFileSync('./tests/json-schema-test-suite/draft2020-12/dynamicRef.json', 'utf-8')
+);
 
-const v = schema(testSchema);
+// Find the strict-tree test
+const strictTreeSchema = strictTreeTest.find(
+  (t) => t.description === 'strict-tree schema, guards against misspelled properties'
+).schema;
 
-// Warm up
-for (let i = 0; i < 1000; i++) {
-  v.assert({ bar: 1 });
-  try {
-    v.assert({ foo: 1 });
-  } catch {}
-}
+console.log('=== strict-tree schema ===');
+console.log(JSON.stringify(strictTreeSchema, null, 2));
 
-// Benchmark
-const bench = new Bench({ time: 1000 });
-bench
-  .add('valid case { bar: 1 }', () => {
-    v.assert({ bar: 1 });
-  })
-  .add('invalid case { foo: 1 }', () => {
-    try {
-      v.assert({ foo: 1 });
-    } catch {}
-  });
+const v = schema(strictTreeSchema, {
+  schemas: [treeSchema],
+  draft: '2020-12',
+});
 
-await bench.run();
-console.table(bench.table());
+console.log('\n=== Generated Code ===');
+console.log(v.toString());
