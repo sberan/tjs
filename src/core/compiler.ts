@@ -1902,7 +1902,118 @@ function generateSubschemaCheck(
   // Handle always-fail schema
   if (schema === false) return _`false`;
 
-  // Compile as a separate function call
+  // OPTIMIZATION: Resolve $ref chains and inline simple schemas
+  let resolvedSchema: JsonSchema = schema;
+  if (
+    typeof schema === 'object' &&
+    schema !== null &&
+    schema.$ref &&
+    !ctx.hasAnyDynamicAnchors() // Don't optimize with dynamic anchors
+  ) {
+    // Resolve the reference and follow chains
+    const refSchema = ctx.resolveRef(schema.$ref, schema);
+    if (refSchema) {
+      resolvedSchema = refSchema;
+
+      // Follow $ref-only chains to the final schema
+      let depth = 0;
+      const maxDepth = 100;
+      while (
+        typeof resolvedSchema === 'object' &&
+        resolvedSchema !== null &&
+        '$ref' in resolvedSchema &&
+        resolvedSchema.$ref &&
+        Object.keys(resolvedSchema).length === 1 &&
+        depth < maxDepth
+      ) {
+        const nextSchema = ctx.resolveRef(resolvedSchema.$ref, resolvedSchema);
+        if (!nextSchema) break;
+        resolvedSchema = nextSchema;
+        depth++;
+      }
+    }
+  }
+
+  // Try to inline simple schemas for better performance
+  // Simple type/const/enum checks don't affect property tracking, so we can inline even with tracker
+  if (
+    typeof resolvedSchema === 'object' &&
+    resolvedSchema !== null &&
+    !resolvedSchema.$ref && // Must be fully resolved (no more refs)
+    !resolvedSchema.$id && // Not a resource
+    !resolvedSchema.$dynamicRef &&
+    !resolvedSchema.$dynamicAnchor &&
+    !resolvedSchema.allOf &&
+    !resolvedSchema.anyOf &&
+    !resolvedSchema.oneOf &&
+    !resolvedSchema.not &&
+    !resolvedSchema.if &&
+    !resolvedSchema.properties &&
+    !resolvedSchema.patternProperties &&
+    !resolvedSchema.additionalProperties &&
+    !resolvedSchema.dependentSchemas &&
+    !resolvedSchema.dependencies &&
+    !resolvedSchema.prefixItems &&
+    !resolvedSchema.items &&
+    !resolvedSchema.contains &&
+    !resolvedSchema.unevaluatedProperties &&
+    !resolvedSchema.unevaluatedItems &&
+    !resolvedSchema.$defs &&
+    !resolvedSchema.definitions
+  ) {
+    // Count actual validation keywords (exclude metadata)
+    const keywords = Object.keys(resolvedSchema).filter(
+      (k) =>
+        k !== '$schema' &&
+        k !== '$comment' &&
+        k !== 'title' &&
+        k !== 'description' &&
+        k !== '$anchor' &&
+        k !== 'examples' &&
+        k !== 'default'
+    );
+
+    // Only inline very simple schemas
+    if (keywords.length === 0) {
+      return _`true`; // Empty schema = no-op
+    }
+
+    // Inline single type check
+    if (keywords.length === 1 && resolvedSchema.type) {
+      const types = Array.isArray(resolvedSchema.type)
+        ? resolvedSchema.type
+        : [resolvedSchema.type];
+      if (types.length === 1) {
+        return getTypeCheck(dataVar, types[0]);
+      } else {
+        // Multiple types - need OR
+        const checks = types.map((t) => getTypeCheck(dataVar, t));
+        return or(...checks);
+      }
+    }
+
+    // Inline const check (primitives only for simplicity)
+    if (
+      keywords.length === 1 &&
+      'const' in resolvedSchema &&
+      (resolvedSchema.const === null || typeof resolvedSchema.const !== 'object')
+    ) {
+      return _`${dataVar} === ${stringify(resolvedSchema.const)}`;
+    }
+
+    // Inline simple enum check (up to 5 primitive values)
+    if (keywords.length === 1 && resolvedSchema.enum && resolvedSchema.enum.length <= 5) {
+      const allPrimitives = resolvedSchema.enum.every(
+        (val) => val === null || typeof val !== 'object'
+      );
+      if (allPrimitives) {
+        const checks = resolvedSchema.enum.map((val) => _`${dataVar} === ${stringify(val)}`);
+        return or(...checks);
+      }
+    }
+  }
+
+  // Fall back to function call for complex schemas
   const funcName = new Name(ctx.queueCompile(schema));
   const trackerArg = trackerVar ? _`, ${trackerVar}` : _``;
   // Skip dynamicScope in legacy mode OR when there are no dynamic anchors
