@@ -176,8 +176,11 @@ export class CompileContext {
   /** Root schema for JSON pointer resolution */
   readonly #rootSchema: JsonSchema;
 
-  /** Set of enabled vocabulary URIs (null means all vocabularies are enabled) */
+  /** Set of enabled vocabulary URIs (null means no custom vocabulary, use defaults) */
   readonly #enabledVocabularies: Set<string> | null;
+
+  /** Whether the schema uses a custom metaschema with explicit $vocabulary */
+  readonly #hasCustomVocabulary: boolean;
 
   constructor(rootSchema: JsonSchema, options: CompileOptions = {}) {
     this.#rootSchema = rootSchema;
@@ -216,44 +219,59 @@ export class CompileContext {
     this.#collectAnchors(rootSchema, rootBaseUri, rootBaseUri || '__root__');
 
     // Determine enabled vocabularies from metaschema
-    this.#enabledVocabularies = this.#resolveVocabularies(rootSchema);
+    const vocabResult = this.#resolveVocabularies(rootSchema);
+    this.#enabledVocabularies = vocabResult.vocabularies;
+    this.#hasCustomVocabulary = vocabResult.hasCustomVocabulary;
   }
 
   /**
    * Resolve vocabularies from the root schema's $schema metaschema
    */
-  #resolveVocabularies(schema: JsonSchema): Set<string> | null {
+  #resolveVocabularies(schema: JsonSchema): {
+    vocabularies: Set<string> | null;
+    hasCustomVocabulary: boolean;
+  } {
     if (typeof schema !== 'object' || schema === null || !schema.$schema) {
-      return null; // All vocabularies enabled by default
+      return { vocabularies: null, hasCustomVocabulary: false };
     }
 
-    // Standard draft 2020-12 metaschema - all vocabularies enabled
-    if (schema.$schema === 'https://json-schema.org/draft/2020-12/schema') {
-      return null;
+    // Standard draft metaschemas - use default behavior, not custom vocabulary
+    const schemaUri = schema.$schema.toLowerCase().replace(/#$/, ''); // Normalize
+    const isStandardMeta =
+      schemaUri.includes('json-schema.org/draft') ||
+      schemaUri === 'https://json-schema.org/draft/2020-12/schema' ||
+      schemaUri === 'https://json-schema.org/draft/2019-09/schema' ||
+      schemaUri === 'http://json-schema.org/draft-07/schema' ||
+      schemaUri === 'http://json-schema.org/draft-06/schema' ||
+      schemaUri === 'http://json-schema.org/draft-04/schema';
+
+    if (isStandardMeta) {
+      return { vocabularies: null, hasCustomVocabulary: false };
     }
 
     // Try to resolve the custom metaschema
     const metaschema = this.#schemasById.get(schema.$schema);
     if (!metaschema || typeof metaschema !== 'object' || metaschema === null) {
-      return null; // Can't resolve, assume all enabled
+      return { vocabularies: null, hasCustomVocabulary: false };
     }
 
     // Check for $vocabulary in the metaschema
     const vocabulary = (metaschema as { $vocabulary?: Record<string, boolean> }).$vocabulary;
     if (!vocabulary || typeof vocabulary !== 'object') {
-      return null; // No vocabulary specified, all enabled
+      return { vocabularies: null, hasCustomVocabulary: false };
     }
 
     // Build set of enabled vocabularies
     const enabled = new Set<string>();
-    for (const [vocabUri, required] of Object.entries(vocabulary)) {
-      // Include vocabulary if it's marked as true or if we should support optional ones
-      if (required === true) {
-        enabled.add(vocabUri);
-      }
+    for (const [vocabUri] of Object.entries(vocabulary)) {
+      // Include vocabulary regardless of true/false value
+      // true = required (implementation MUST support or refuse)
+      // false = optional (implementation MAY support)
+      // We support format-assertion, so we enable it in both cases
+      enabled.add(vocabUri);
     }
 
-    return enabled;
+    return { vocabularies: enabled, hasCustomVocabulary: true };
   }
 
   /**
@@ -649,6 +667,13 @@ export class CompileContext {
       return true;
     }
     return this.#enabledVocabularies.has(vocabularyUri);
+  }
+
+  /**
+   * Check if the schema uses a custom metaschema with explicit $vocabulary
+   */
+  hasCustomVocabulary(): boolean {
+    return this.#hasCustomVocabulary;
   }
 
   /**

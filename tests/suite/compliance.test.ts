@@ -22,7 +22,6 @@ const UNIMPLEMENTED_KEYWORDS = [
 const SKIPPED_OPTIONAL_FILES: string[] = [
   'float-overflow', // Optional overflow handling for large floats
   'zeroTerminatedFloats', // Language-specific numeric representation (1.0 vs 1)
-  'format-assertion', // Meta-schema format-assertion keyword
 ];
 
 // Specific test descriptions to skip (format validation edge cases)

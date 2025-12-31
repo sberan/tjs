@@ -3,9 +3,9 @@
 ## Summary
 
 - **Total Tests**: 1990
-- **Passed**: 1982 (99.6%)
+- **Passed**: 1986 (99.8%)
 - **Failed**: 0
-- **Skipped**: 8
+- **Skipped**: 4
 
 ## By Keyword
 
@@ -37,7 +37,7 @@
 | exclusiveMinimum | 4 | 0 | 0 | 100% |
 | float-overflow | 0 | 0 | 1 | N/A |
 | format | 133 | 0 | 0 | 100% |
-| format-assertion | 0 | 0 | 4 | N/A |
+| format-assertion | 4 | 0 | 0 | 100% |
 | hostname | 61 | 0 | 0 | 100% |
 | id | 3 | 0 | 0 | 100% |
 | idn-email | 10 | 0 | 0 | 100% |
