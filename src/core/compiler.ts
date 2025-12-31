@@ -2048,6 +2048,19 @@ export function generateCompositionChecks(
     } else if (hasNoOpBranch && evalTracker?.enabled) {
       // Optimization: anyOf will definitely pass, just collect annotations from other branches
       // No need for result variable or validation checks
+
+      // Optimization: reuse a single temp tracker to avoid allocations
+      const sharedTempVar = code.genVar('anyOfTracker');
+      const parts: string[] = [];
+      if (evalTracker.trackingProps) parts.push('props: {}', 'patterns: []');
+      if (evalTracker.trackingItems) {
+        parts.push('maxItem: -1');
+        if (evalTracker.useItemSet) {
+          parts.push('items: new Set()');
+        }
+      }
+      code.line(_`const ${sharedTempVar} = { ${new Code(parts.join(', '))} };`);
+
       schema.anyOf.forEach((subSchema) => {
         if (isNoOpSchema(subSchema)) {
           // Skip no-op branches - they don't contribute annotations
@@ -2058,24 +2071,68 @@ export function generateCompositionChecks(
           return;
         }
 
+        // Reset shared tracker before each branch check
+        if (evalTracker.trackingProps) {
+          code.line(_`${sharedTempVar}.props = {};`);
+          code.line(_`${sharedTempVar}.patterns = [];`);
+        }
+        if (evalTracker.trackingItems) {
+          code.line(_`${sharedTempVar}.maxItem = -1;`);
+          if (evalTracker.useItemSet) {
+            code.line(_`${sharedTempVar}.items.clear();`);
+          }
+        }
+
         // Just collect annotations from this branch by calling it with a temp tracker
-        const tempVar = evalTracker.createTempTracker('anyOfTracker');
-        const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx, tempVar);
+        const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx, sharedTempVar);
         // Only merge if branch matches (to follow spec - only matching branches contribute annotations)
         code.if(checkExpr, () => {
-          evalTracker.mergeFrom(tempVar);
+          evalTracker.mergeFrom(sharedTempVar);
         });
       });
     } else {
       const resultVar = code.genVar('anyOfResult');
       code.line(_`let ${resultVar} = false;`);
 
-      // Use a temp tracker for each branch, merge into parent only if valid
+      // Optimization: reuse a single temp tracker across all branches to avoid allocations
+      // We reset the tracker before each branch and only merge when a branch matches
+      const needsAnyTracker =
+        evalTracker?.enabled && schema.anyOf.some((s) => !isNoOpSchema(s) && s !== false);
+      const sharedTempVar = needsAnyTracker ? code.genVar('anyOfTracker') : undefined;
+
+      if (sharedTempVar && evalTracker) {
+        const parts: string[] = [];
+        if (evalTracker.trackingProps) parts.push('props: {}', 'patterns: []');
+        if (evalTracker.trackingItems) {
+          parts.push('maxItem: -1');
+          if (evalTracker.useItemSet) {
+            parts.push('items: new Set()');
+          }
+        }
+        code.line(_`const ${sharedTempVar} = { ${new Code(parts.join(', '))} };`);
+      }
+
+      // Use a shared temp tracker for branches, merge into parent only if valid
       schema.anyOf.forEach((subSchema) => {
         // Optimization: skip temp tracker for no-op schemas (true, {})
         // They match everything but don't contribute any annotations
         const needsTracker = !isNoOpSchema(subSchema) && subSchema !== false;
-        const tempVar = needsTracker ? evalTracker?.createTempTracker('anyOfTracker') : undefined;
+
+        // Reset shared tracker before each branch check
+        if (sharedTempVar && needsTracker && evalTracker) {
+          if (evalTracker.trackingProps) {
+            code.line(_`${sharedTempVar}.props = {};`);
+            code.line(_`${sharedTempVar}.patterns = [];`);
+          }
+          if (evalTracker.trackingItems) {
+            code.line(_`${sharedTempVar}.maxItem = -1;`);
+            if (evalTracker.useItemSet) {
+              code.line(_`${sharedTempVar}.items.clear();`);
+            }
+          }
+        }
+
+        const tempVar = needsTracker ? sharedTempVar : undefined;
         const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx, tempVar);
         code.if(checkExpr, () => {
           code.line(_`${resultVar} = true;`);
