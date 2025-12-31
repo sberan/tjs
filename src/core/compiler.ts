@@ -1512,57 +1512,70 @@ export function generatePropertiesChecks(
         }
       }
 
-      const keyVar = new Name('key');
-      code.forIn(keyVar, dataVar, () => {
-        const keyPathExpr = pathExprDynamic(pathExprCode, keyVar);
+      // Only generate the for-in loop if there's something to do inside
+      // (non-trivial pattern props or additional props check)
+      if (nonTrivialPatternProps.length > 0 || hasAdditionalProps) {
+        const keyVar = new Name('key');
+        code.forIn(keyVar, dataVar, () => {
+          const keyPathExpr = pathExprDynamic(pathExprCode, keyVar);
 
-        // Generate patternProperties checks (only non-trivial ones)
-        for (let i = 0; i < nonTrivialPatternProps.length; i++) {
-          const [pattern, patternSchema] = nonTrivialPatternProps[i];
-          // Find the index in allPatterns to get the right regex
-          const regexIdx = allPatterns.indexOf(pattern);
-          const regexName = patternRegexNames[regexIdx];
-          code.if(_`${regexName}.test(${keyVar})`, () => {
-            const propAccessed = indexAccess(dataVar, keyVar);
-            const propVar = code.genVar('pv');
-            code.line(_`const ${propVar} = ${propAccessed};`);
-            generateSchemaValidator(
-              code,
-              patternSchema,
-              propVar,
-              keyPathExpr,
-              ctx,
-              dynamicScopeVar
-            );
-          });
-        }
-
-        // Generate additionalProperties check
-        if (hasAdditionalProps) {
-          const addPropsSchema = schema.additionalProperties!;
-
-          // Build condition: not a defined prop and not matching any pattern
-          // Use inline comparisons for small numbers of properties (faster than Set.has)
-          const conditions: Code[] = [];
-
-          // For defined properties, use inline comparison for up to ~10 props
-          if (definedProps.length > 0 && definedProps.length <= 10) {
-            const propChecks = definedProps.map((p) => _`${keyVar} !== ${p}`);
-            conditions.push(_`(${and(...propChecks)})`);
-          } else if (definedProps.length > 10) {
-            // Use Set for larger number of properties
-            const propsSetName = new Name(ctx.genRuntimeName('propsSet'));
-            ctx.addRuntimeFunction(propsSetName.str, new Set(definedProps));
-            conditions.push(_`!${propsSetName}.has(${keyVar})`);
+          // Generate patternProperties checks (only non-trivial ones)
+          for (let i = 0; i < nonTrivialPatternProps.length; i++) {
+            const [pattern, patternSchema] = nonTrivialPatternProps[i];
+            // Find the index in allPatterns to get the right regex
+            const regexIdx = allPatterns.indexOf(pattern);
+            const regexName = patternRegexNames[regexIdx];
+            code.if(_`${regexName}.test(${keyVar})`, () => {
+              const propAccessed = indexAccess(dataVar, keyVar);
+              const propVar = code.genVar('pv');
+              code.line(_`const ${propVar} = ${propAccessed};`);
+              generateSchemaValidator(
+                code,
+                patternSchema,
+                propVar,
+                keyPathExpr,
+                ctx,
+                dynamicScopeVar
+              );
+            });
           }
 
-          // Pattern checks using pre-compiled regexes
-          for (const regexName of patternRegexNames) {
-            conditions.push(_`!${regexName}.test(${keyVar})`);
-          }
+          // Generate additionalProperties check
+          if (hasAdditionalProps) {
+            const addPropsSchema = schema.additionalProperties!;
 
-          if (conditions.length > 0) {
-            code.if(and(...conditions), () => {
+            // Build condition: not a defined prop and not matching any pattern
+            // Use inline comparisons for small numbers of properties (faster than Set.has)
+            const conditions: Code[] = [];
+
+            // For defined properties, use inline comparison for up to ~10 props
+            if (definedProps.length > 0 && definedProps.length <= 10) {
+              const propChecks = definedProps.map((p) => _`${keyVar} !== ${p}`);
+              conditions.push(_`(${and(...propChecks)})`);
+            } else if (definedProps.length > 10) {
+              // Use Set for larger number of properties
+              const propsSetName = new Name(ctx.genRuntimeName('propsSet'));
+              ctx.addRuntimeFunction(propsSetName.str, new Set(definedProps));
+              conditions.push(_`!${propsSetName}.has(${keyVar})`);
+            }
+
+            // Pattern checks using pre-compiled regexes
+            for (const regexName of patternRegexNames) {
+              conditions.push(_`!${regexName}.test(${keyVar})`);
+            }
+
+            if (conditions.length > 0) {
+              code.if(and(...conditions), () => {
+                generateAdditionalPropsCheck(
+                  code,
+                  addPropsSchema,
+                  indexAccess(dataVar, keyVar),
+                  keyPathExpr,
+                  ctx,
+                  dynamicScopeVar
+                );
+              });
+            } else {
               generateAdditionalPropsCheck(
                 code,
                 addPropsSchema,
@@ -1571,19 +1584,10 @@ export function generatePropertiesChecks(
                 ctx,
                 dynamicScopeVar
               );
-            });
-          } else {
-            generateAdditionalPropsCheck(
-              code,
-              addPropsSchema,
-              indexAccess(dataVar, keyVar),
-              keyPathExpr,
-              ctx,
-              dynamicScopeVar
-            );
+            }
           }
-        }
-      });
+        });
+      }
     }
   };
 
@@ -2200,7 +2204,9 @@ export function generateRefCheck(
     // Optimization: only compute path when errors array is present (deferred path construction)
     // Most validators run without error tracking, so this avoids string concatenation overhead
     const pathArg = pathExprCode.toString() === "''" ? _`''` : _`errors ? ${pathExprCode} : ''`;
-    code.if(_`!${funcName}(${dataVar}, errors, ${pathArg})`, () => {
+    // Pass tracker if we have one (for runtime-optional tracking)
+    const trackerArg = evalTracker ? _`, ${evalTracker.trackerVar}` : _``;
+    code.if(_`!${funcName}(${dataVar}, errors, ${pathArg}${trackerArg})`, () => {
       code.line(_`return false;`);
     });
     return;
@@ -2366,9 +2372,14 @@ export function generateCompositionChecks(
         // Just collect annotations from this branch by calling it with a temp tracker
         const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx, sharedTempVar);
         // Only merge if branch matches (to follow spec - only matching branches contribute annotations)
-        code.if(checkExpr, () => {
+        // Optimization: skip the conditional if the check always returns true
+        if (checkExpr.toString() === 'true') {
           evalTracker.mergeFrom(sharedTempVar);
-        });
+        } else {
+          code.if(checkExpr, () => {
+            evalTracker.mergeFrom(sharedTempVar);
+          });
+        }
       });
     } else {
       const resultVar = code.genVar('anyOfResult');
@@ -2486,13 +2497,14 @@ export function generateCompositionChecks(
     }
 
     // Use a temp tracker for each branch, merge into parent only if valid
+    let isFirstBranch = true;
     schema.oneOf.forEach((subSchema) => {
       // Optimization: skip temp tracker for no-op schemas (true, {})
       // They match everything but don't contribute any annotations
       const needsTracker = !isNoOpSchema(subSchema) && subSchema !== false;
 
-      // Reset shared tracker before each branch check
-      if (sharedTempVar && needsTracker && evalTracker) {
+      // Reset shared tracker before each branch check (skip first since just initialized)
+      if (sharedTempVar && needsTracker && evalTracker && !isFirstBranch) {
         if (evalTracker.trackingProps) {
           code.line(_`${sharedTempVar}.props = {};`);
           if (evalTracker.hasPatterns) {
@@ -2505,6 +2517,9 @@ export function generateCompositionChecks(
             code.line(_`${sharedTempVar}.items.clear();`);
           }
         }
+      }
+      if (needsTracker) {
+        isFirstBranch = false;
       }
 
       const tempVar = needsTracker ? sharedTempVar : undefined;
@@ -3134,10 +3149,75 @@ function generateSubschemaCheck(
         return or(...checks);
       }
     }
+
+    // Inline simple required check (single property)
+    if (keywords.length === 1 && resolvedSchema.required && resolvedSchema.required.length === 1) {
+      const propName = resolvedSchema.required[0];
+      return _`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar}) && ${JSON.stringify(propName)} in ${dataVar}`;
+    }
+  }
+
+  // OPTIMIZATION: Inline properties-only schemas with all true values
+  // These always match and just mark properties as evaluated
+  // Pattern: { properties: { foo: true, bar: true } } - always valid, marks props
+  if (
+    typeof resolvedSchema === 'object' &&
+    resolvedSchema !== null &&
+    trackerVar &&
+    resolvedSchema.properties &&
+    !resolvedSchema.required &&
+    !resolvedSchema.$ref &&
+    !resolvedSchema.$id &&
+    !resolvedSchema.allOf &&
+    !resolvedSchema.anyOf &&
+    !resolvedSchema.oneOf &&
+    !resolvedSchema.not &&
+    !resolvedSchema.if &&
+    !resolvedSchema.patternProperties &&
+    !resolvedSchema.additionalProperties &&
+    !resolvedSchema.unevaluatedProperties &&
+    !resolvedSchema.unevaluatedItems &&
+    !resolvedSchema.dependentSchemas &&
+    !resolvedSchema.dependencies &&
+    !resolvedSchema.prefixItems &&
+    !resolvedSchema.items &&
+    !resolvedSchema.contains &&
+    !resolvedSchema.$dynamicRef &&
+    !resolvedSchema.$dynamicAnchor
+  ) {
+    // Check if all properties are true (no validation, just mark as evaluated)
+    const props = resolvedSchema.properties;
+    const propNames = Object.keys(props);
+    const allPropsTrue = propNames.every((k) => props[k] === true);
+
+    if (allPropsTrue && propNames.length > 0) {
+      // Emit code to mark properties as evaluated, then return true
+      _code.if(
+        _`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`,
+        () => {
+          // Mark each property as evaluated
+          for (const propName of propNames) {
+            _code.line(_`${trackerVar}.props[${stringify(propName)}] = true;`);
+          }
+        }
+      );
+      return _`true`; // Always matches
+    }
   }
 
   // Fall back to function call for complex schemas
-  const funcName = ctx.queueCompile(schema);
+  // OPTIMIZATION: If the original schema was JUST a $ref (no other keywords),
+  // and we've resolved it, queue the resolved schema directly to avoid wrapper functions.
+  // This eliminates function call indirection like validate1 -> validate3.
+  const isRefOnly =
+    typeof schema === 'object' &&
+    schema !== null &&
+    schema.$ref &&
+    Object.keys(schema).filter((k) => k !== '$ref' && k !== '$schema' && k !== '$comment')
+      .length === 0;
+  const schemaToCompile = isRefOnly && resolvedSchema !== schema ? resolvedSchema : schema;
+
+  const funcName = ctx.queueCompile(schemaToCompile);
   const trackerArg = trackerVar ? _`, ${trackerVar}` : _``;
   // Skip dynamicScope in legacy mode OR when there are no dynamic anchors
   if (ctx.options.legacyRef || !ctx.hasAnyDynamicAnchors()) {
