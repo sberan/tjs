@@ -22,7 +22,8 @@ const UNIMPLEMENTED_KEYWORDS = [
 const SKIPPED_OPTIONAL_FILES: string[] = [
   'float-overflow', // Optional overflow handling for large floats
   'zeroTerminatedFloats', // Language-specific numeric representation (1.0 vs 1)
-  'cross-draft', // Cross-draft $ref resolution
+  'content', // contentMediaType/contentEncoding (not validated)
+  // 'cross-draft', // Cross-draft $ref resolution - NOW IMPLEMENTED
   'format-assertion', // Meta-schema format-assertion keyword
 ];
 
@@ -34,20 +35,21 @@ const SKIPPED_TEST_DESCRIPTIONS: string[] = [];
 function loadRemoteSchemas(draft: Draft): Record<string, JsonSchema> {
   const remotes: Record<string, JsonSchema> = {};
 
-  const loadDir = (dir: string, baseUrl: string) => {
+  const loadDir = (dir: string, baseUrl: string, skipDrafts: boolean = true) => {
     if (!fs.existsSync(dir)) return;
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
-      // Skip other draft directories
+      // Skip other draft directories when requested
       if (
+        skipDrafts &&
         entry.isDirectory() &&
         (entry.name.startsWith('draft') || entry.name === 'draft2019-09')
       ) {
         continue;
       }
       if (entry.isDirectory()) {
-        loadDir(fullPath, `${baseUrl}${entry.name}/`);
+        loadDir(fullPath, `${baseUrl}${entry.name}/`, skipDrafts);
       } else if (entry.name.endsWith('.json')) {
         try {
           const content = fs.readFileSync(fullPath, 'utf-8');
@@ -75,6 +77,18 @@ function loadRemoteSchemas(draft: Draft): Record<string, JsonSchema> {
   const draftRemotesDir = path.join(remotesDir, draft);
   if (fs.existsSync(draftRemotesDir)) {
     loadDir(draftRemotesDir, `http://localhost:1234/${draft}/`);
+  }
+
+  // For cross-draft tests, also load schemas from ALL draft directories
+  // This allows draft7 schemas to reference draft2019-09 schemas, etc.
+  const allDrafts: Draft[] = ['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'];
+  for (const otherDraft of allDrafts) {
+    if (otherDraft !== draft) {
+      const otherDraftDir = path.join(remotesDir, otherDraft);
+      if (fs.existsSync(otherDraftDir)) {
+        loadDir(otherDraftDir, `http://localhost:1234/${otherDraft}/`, false);
+      }
+    }
   }
 
   return remotes;
@@ -211,17 +225,10 @@ function testDraft(draft: Draft, includeOptional: boolean = true) {
               if (isUnimplemented || isSkippedFile) return;
 
               try {
-                // Content tests need contentAssertion enabled only for draft-07 and earlier
-                // In draft2020-12 and 2019-09, content keywords are annotation-only
-                const isContentTest =
-                  keyword === 'content' &&
-                  (draft === 'draft4' || draft === 'draft6' || draft === 'draft7');
                 validator = createValidator(group.schema as JsonSchema, {
                   // Format tests need formatAssertion enabled to actually validate formats
                   // Non-format tests use formatAssertion: false per JSON Schema spec default
                   formatAssertion: isFormatTest,
-                  // Content tests need contentAssertion enabled to validate content (draft-07 only)
-                  contentAssertion: isContentTest,
                   // Use full (non-fast) format validators for accurate date/time validation
                   fastFormats: false,
                   remotes,

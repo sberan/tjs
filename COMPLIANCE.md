@@ -3,9 +3,9 @@
 ## Summary
 
 - **Total Tests**: 1990
-- **Passed**: 1981 (99.5%)
+- **Passed**: 1964 (98.7%)
 - **Failed**: 0
-- **Skipped**: 9
+- **Skipped**: 26
 
 ## By Keyword
 
@@ -19,8 +19,8 @@
 | boolean_schema | 18 | 0 | 0 | 100% |
 | const | 54 | 0 | 0 | 100% |
 | contains | 21 | 0 | 0 | 100% |
-| content | 18 | 0 | 0 | 100% |
-| cross-draft | 0 | 0 | 1 | N/A |
+| content | 0 | 0 | 18 | N/A |
+| cross-draft | 1 | 0 | 0 | 100% |
 | date | 48 | 0 | 0 | 100% |
 | date-time | 26 | 0 | 0 | 100% |
 | default | 7 | 0 | 0 | 100% |
