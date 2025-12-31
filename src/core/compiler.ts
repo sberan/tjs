@@ -2321,7 +2321,12 @@ export function generateCompositionChecks(
       // Optimization: reuse a single temp tracker to avoid allocations
       const sharedTempVar = code.genVar('anyOfTracker');
       const parts: Code[] = [];
-      if (evalTracker.trackingProps) parts.push(_`props: {}`, _`patterns: []`);
+      if (evalTracker.trackingProps) {
+        parts.push(_`props: {}`);
+        if (evalTracker.hasPatterns) {
+          parts.push(_`patterns: []`);
+        }
+      }
       if (evalTracker.trackingItems) {
         parts.push(_`maxItem: -1`);
         if (evalTracker.useItemSet) {
@@ -2345,7 +2350,9 @@ export function generateCompositionChecks(
         if (!isFirstNonNoOpBranch) {
           if (evalTracker.trackingProps) {
             code.line(_`${sharedTempVar}.props = {};`);
-            code.line(_`${sharedTempVar}.patterns.length = 0;`);
+            if (evalTracker.hasPatterns) {
+              code.line(_`${sharedTempVar}.patterns.length = 0;`);
+            }
           }
           if (evalTracker.trackingItems) {
             code.line(_`${sharedTempVar}.maxItem = -1;`);
@@ -2375,7 +2382,12 @@ export function generateCompositionChecks(
 
       if (sharedTempVar && evalTracker) {
         const parts: Code[] = [];
-        if (evalTracker.trackingProps) parts.push(_`props: {}`, _`patterns: []`);
+        if (evalTracker.trackingProps) {
+          parts.push(_`props: {}`);
+          if (evalTracker.hasPatterns) {
+            parts.push(_`patterns: []`);
+          }
+        }
         if (evalTracker.trackingItems) {
           parts.push(_`maxItem: -1`);
           if (evalTracker.useItemSet) {
@@ -2387,36 +2399,48 @@ export function generateCompositionChecks(
 
       // Use a shared temp tracker for branches, merge into parent only if valid
       let isFirstTrackedBranch = true;
-      schema.anyOf.forEach((subSchema) => {
+      schema.anyOf.forEach((subSchema, index) => {
         // Optimization: skip temp tracker for no-op schemas (true, {})
         // They match everything but don't contribute any annotations
         const needsTracker = !isNoOpSchema(subSchema) && subSchema !== false;
 
-        // Reset shared tracker before each branch check (except first - it's already initialized)
-        if (sharedTempVar && needsTracker && evalTracker) {
-          if (!isFirstTrackedBranch) {
-            if (evalTracker.trackingProps) {
-              code.line(_`${sharedTempVar}.props = {};`);
-              code.line(_`${sharedTempVar}.patterns.length = 0;`);
-            }
-            if (evalTracker.trackingItems) {
-              code.line(_`${sharedTempVar}.maxItem = -1;`);
-              if (evalTracker.useItemSet) {
-                code.line(_`${sharedTempVar}.items.clear();`);
+        const generateBranchCheck = () => {
+          // Reset shared tracker before each branch check (except first - it's already initialized)
+          if (sharedTempVar && needsTracker && evalTracker) {
+            if (!isFirstTrackedBranch) {
+              if (evalTracker.trackingProps) {
+                code.line(_`${sharedTempVar}.props = {};`);
+                if (evalTracker.hasPatterns) {
+                  code.line(_`${sharedTempVar}.patterns.length = 0;`);
+                }
+              }
+              if (evalTracker.trackingItems) {
+                code.line(_`${sharedTempVar}.maxItem = -1;`);
+                if (evalTracker.useItemSet) {
+                  code.line(_`${sharedTempVar}.items.clear();`);
+                }
               }
             }
+            isFirstTrackedBranch = false;
           }
-          isFirstTrackedBranch = false;
-        }
 
-        const tempVar = needsTracker ? sharedTempVar : undefined;
-        const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx, tempVar);
-        code.if(checkExpr, () => {
-          code.line(_`${resultVar} = true;`);
-          if (needsTracker) {
-            evalTracker?.mergeFrom(tempVar);
-          }
-        });
+          const tempVar = needsTracker ? sharedTempVar : undefined;
+          const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx, tempVar);
+          code.if(checkExpr, () => {
+            code.line(_`${resultVar} = true;`);
+            if (needsTracker) {
+              evalTracker?.mergeFrom(tempVar);
+            }
+          });
+        };
+
+        // Optimization: short-circuit if no tracking needed and we already found a match
+        // When tracking is disabled, we can stop as soon as one branch succeeds
+        if (!needsAnyTracker && index > 0) {
+          code.if(_`!${resultVar}`, generateBranchCheck);
+        } else {
+          generateBranchCheck();
+        }
       });
 
       code.if(_`!${resultVar}`, () => {
