@@ -22,7 +22,6 @@ const UNIMPLEMENTED_KEYWORDS = [
 const SKIPPED_OPTIONAL_FILES: string[] = [
   'float-overflow', // Optional overflow handling for large floats
   'zeroTerminatedFloats', // Language-specific numeric representation (1.0 vs 1)
-  'content', // contentMediaType/contentEncoding (not validated)
   'cross-draft', // Cross-draft $ref resolution
   'format-assertion', // Meta-schema format-assertion keyword
 ];
@@ -212,10 +211,17 @@ function testDraft(draft: Draft, includeOptional: boolean = true) {
               if (isUnimplemented || isSkippedFile) return;
 
               try {
+                // Content tests need contentAssertion enabled only for draft-07 and earlier
+                // In draft2020-12 and 2019-09, content keywords are annotation-only
+                const isContentTest =
+                  keyword === 'content' &&
+                  (draft === 'draft4' || draft === 'draft6' || draft === 'draft7');
                 validator = createValidator(group.schema as JsonSchema, {
                   // Format tests need formatAssertion enabled to actually validate formats
                   // Non-format tests use formatAssertion: false per JSON Schema spec default
                   formatAssertion: isFormatTest,
+                  // Content tests need contentAssertion enabled to validate content (draft-07 only)
+                  contentAssertion: isContentTest,
                   // Use full (non-fast) format validators for accurate date/time validation
                   fastFormats: false,
                   remotes,
