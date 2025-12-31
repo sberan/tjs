@@ -346,14 +346,19 @@ function generateSchemaValidator(
       const skipTrueUnevalProps =
         hasUnevalProps && schema.unevaluatedProperties === true && !evalTracker;
 
+      // Optimization: When unevaluatedItems: true and no parent tracker,
+      // we don't need to track anything since we accept all items
+      const skipTrueUnevalItems =
+        hasUnevalItems && schema.unevaluatedItems === true && !evalTracker;
+
       // Check if contains is present anywhere - requires Set-based item tracking
       const needsItemSet = hasUnevalItems && schemaHasContains(schema, ctx);
 
       // Skip creating tracker if it would be unused
-      if (
-        (skipPropsTracking || canSkipUnevalPropsCheck || skipTrueUnevalProps) &&
-        !hasUnevalItems
-      ) {
+      const shouldSkipProps = skipPropsTracking || canSkipUnevalPropsCheck || skipTrueUnevalProps;
+      const shouldSkipItems = skipTrueUnevalItems;
+
+      if ((shouldSkipProps || !hasUnevalProps) && (shouldSkipItems || !hasUnevalItems)) {
         // No need for tracker - skip it entirely
         tracker = undefined;
       } else {
@@ -367,7 +372,7 @@ function generateSchemaValidator(
             !skipPropsTracking &&
             !canSkipUnevalPropsCheck &&
             !skipTrueUnevalProps,
-          trackItems: hasUnevalItems,
+          trackItems: hasUnevalItems && !skipTrueUnevalItems,
           parentTracker: evalTracker,
           useItemSet: needsItemSet,
         });
