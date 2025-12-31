@@ -122,6 +122,47 @@ interface BenchmarkRunResult {
   incorrectCount: number;
 }
 
+// Maximum variance allowed before retrying (1%)
+const MAX_VARIANCE_PCT = 1;
+// Maximum number of retry attempts
+const MAX_RETRIES = 3;
+
+/**
+ * Calculate the coefficient of variation (relative standard deviation) as a percentage
+ */
+function calculateVariancePct(values: number[]): number {
+  if (values.length < 2) return 0;
+  const mean = values.reduce((a, b) => a + b, 0) / values.length;
+  if (mean === 0) return 0;
+  const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length;
+  const stdDev = Math.sqrt(variance);
+  return (stdDev / mean) * 100;
+}
+
+/**
+ * Run a single timed benchmark pass and return ops/sec
+ */
+function runTimedPass(
+  safeCompiled: CompiledTest[],
+  iterations: number
+): { durationMs: number; opsPerSec: number } {
+  const totalTests = safeCompiled.reduce((sum, c) => sum + c.tests.length, 0);
+
+  const start = performance.now();
+  for (let i = 0; i < iterations; i++) {
+    for (const { validate, tests } of safeCompiled) {
+      for (const test of tests) {
+        validate(test.data);
+      }
+    }
+  }
+  const durationMs = performance.now() - start;
+  const totalValidations = totalTests * iterations;
+  const opsPerSec = Math.round((totalValidations / durationMs) * 1000);
+
+  return { durationMs, opsPerSec };
+}
+
 function runBenchmark(compiled: CompiledTest[], iterations: number): BenchmarkRunResult {
   const keywordTimes: Record<string, number> = {};
   let correctCount = 0;
@@ -161,40 +202,95 @@ function runBenchmark(compiled: CompiledTest[], iterations: number): BenchmarkRu
     }
   }
 
-  // Timed run
-  const start = performance.now();
+  // Run benchmark with variance checking and retry
+  let attempts = 0;
+  let results: { durationMs: number; opsPerSec: number }[] = [];
 
-  for (let i = 0; i < iterations; i++) {
-    for (const { validate, tests } of safeCompiled) {
-      for (const test of tests) {
-        validate(test.data);
+  while (attempts < MAX_RETRIES) {
+    attempts++;
+
+    // Run two passes
+    const pass1 = runTimedPass(safeCompiled, iterations);
+    const pass2 = runTimedPass(safeCompiled, iterations);
+    results = [pass1, pass2];
+
+    const variancePct = calculateVariancePct(results.map((r) => r.opsPerSec));
+
+    if (variancePct <= MAX_VARIANCE_PCT) {
+      break; // Variance is acceptable
+    }
+
+    // Variance too high, retry (unless we've hit max retries)
+    if (attempts < MAX_RETRIES) {
+      // Small delay to let system stabilize
+      const delay = 10;
+      const delayStart = performance.now();
+      while (performance.now() - delayStart < delay) {
+        // busy wait
       }
     }
   }
 
-  const durationMs = performance.now() - start;
+  // Use the average of the final results
+  const avgDurationMs = results.reduce((sum, r) => sum + r.durationMs, 0) / results.length;
   const totalTests = safeCompiled.reduce((sum, c) => sum + c.tests.length, 0);
   const totalValidations = totalTests * iterations;
 
   // Calculate per-keyword ops/sec (run separately for accurate timing)
+  // Apply same variance checking for per-keyword measurements
   const safeKeywords = new Set(safeCompiled.map((c) => c.keyword));
   for (const keyword of safeKeywords) {
     const keywordCompiled = safeCompiled.filter((c) => c.keyword === keyword);
     const keywordTests = keywordCompiled.reduce((sum, c) => sum + c.tests.length, 0);
 
-    const kwStart = performance.now();
-    for (let i = 0; i < iterations; i++) {
-      for (const { validate, tests } of keywordCompiled) {
-        for (const test of tests) {
-          validate(test.data);
+    let kwAttempts = 0;
+    let kwResults: number[] = [];
+
+    while (kwAttempts < MAX_RETRIES) {
+      kwAttempts++;
+
+      // Run two passes for this keyword
+      const kwPass1Start = performance.now();
+      for (let i = 0; i < iterations; i++) {
+        for (const { validate, tests } of keywordCompiled) {
+          for (const test of tests) {
+            validate(test.data);
+          }
         }
       }
+      const kwPass1Duration = performance.now() - kwPass1Start;
+      const kwOps1 = Math.round((keywordTests * iterations) / (kwPass1Duration / 1000));
+
+      const kwPass2Start = performance.now();
+      for (let i = 0; i < iterations; i++) {
+        for (const { validate, tests } of keywordCompiled) {
+          for (const test of tests) {
+            validate(test.data);
+          }
+        }
+      }
+      const kwPass2Duration = performance.now() - kwPass2Start;
+      const kwOps2 = Math.round((keywordTests * iterations) / (kwPass2Duration / 1000));
+
+      kwResults = [kwOps1, kwOps2];
+      const kwVariancePct = calculateVariancePct(kwResults);
+
+      if (kwVariancePct <= MAX_VARIANCE_PCT) {
+        break;
+      }
     }
-    const kwDuration = performance.now() - kwStart;
-    keywordTimes[keyword] = Math.round((keywordTests * iterations) / (kwDuration / 1000));
+
+    // Use average of results
+    keywordTimes[keyword] = Math.round(kwResults.reduce((a, b) => a + b, 0) / kwResults.length);
   }
 
-  return { totalValidations, durationMs, byKeyword: keywordTimes, correctCount, incorrectCount };
+  return {
+    totalValidations,
+    durationMs: avgDurationMs,
+    byKeyword: keywordTimes,
+    correctCount,
+    incorrectCount,
+  };
 }
 
 function formatNumber(n: number): string {
