@@ -917,16 +917,15 @@ describe('coercion', () => {
   });
 
   describe('error messages', () => {
-    // TODO: Custom coercion error messages require changes to the compiler
-    it.skip('provides helpful error when coercion fails', () => {
+    it('provides helpful error when coercion fails', () => {
       const NumberSchema = schema({ type: 'number' }, { coerce: true });
       const result = NumberSchema.validate('abc');
       expect(result.error === undefined).toBe(false);
-      if (!result.error === undefined) {
-        expect(result.errors.length).toBeGreaterThan(0);
-        expect(result.errors[0].keyword).toBe('type');
+      if (result.error !== undefined) {
+        expect(result.error.length).toBeGreaterThan(0);
+        expect(result.error[0].keyword).toBe('type');
         // Error message should indicate coercion was attempted
-        expect(result.errors[0].message).toContain('coercion');
+        expect(result.error[0].message).toContain('coercion');
       }
     });
 
@@ -947,8 +946,8 @@ describe('coercion', () => {
       );
       const result = Schema.validate({ user: { age: 'not-a-number' } });
       expect(result.error === undefined).toBe(false);
-      if (!result.error === undefined) {
-        expect(result.errors[0].path).toBe('user.age');
+      if (result.error !== undefined) {
+        expect(result.error[0].path).toBe('user.age');
       }
     });
   });

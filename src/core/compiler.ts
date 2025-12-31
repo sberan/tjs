@@ -425,17 +425,24 @@ export function generateTypeCheck(
 
   const types = Array.isArray(schema.type) ? schema.type : [schema.type];
   const expectedType = types.join(' or ');
+
+  // When coercion is enabled, add context to the error message
+  const isCoercionEnabled = ctx.options.coerce !== false;
+  const errorMessage = isCoercionEnabled
+    ? `Expected ${expectedType} (coercion failed)`
+    : `Expected ${expectedType}`;
+
   if (types.length === 1) {
     const type = types[0];
     const check = getTypeCheck(dataVar, type);
     code.if(not(check), () => {
-      genError(code, pathExprCode, 'type', `Expected ${expectedType}`);
+      genError(code, pathExprCode, 'type', errorMessage);
     });
   } else {
     // Multiple types - need OR
     const checks = types.map((t) => getTypeCheck(dataVar, t));
     code.if(not(or(...checks)), () => {
-      genError(code, pathExprCode, 'type', `Expected ${expectedType}`);
+      genError(code, pathExprCode, 'type', errorMessage);
     });
   }
 }
