@@ -1721,13 +1721,14 @@ export function generateCompositionChecks(
       code.if(checkExpr, () => {
         code.line(_`${countVar}++;`);
         evalTracker?.mergeFrom(tempVar);
+        // Early exit optimization: if more than one matches, fail immediately
+        // This avoids checking remaining schemas when we already know validation will fail
+        if (!evalTracker?.enabled) {
+          code.if(_`${countVar} > 1`, () => {
+            genError(code, pathExprCode, 'oneOf', 'Value must match exactly one schema');
+          });
+        }
       });
-      // Early exit if more than one matches (only when not tracking)
-      if (!evalTracker?.enabled) {
-        code.if(_`${countVar} > 1`, () => {
-          genError(code, pathExprCode, 'oneOf', 'Value must match exactly one schema');
-        });
-      }
     });
 
     code.if(_`${countVar} !== 1`, () => {
@@ -1870,6 +1871,15 @@ function generateSubschemaCheck(
   }
   // Handle always-fail schema
   if (schema === false) return _`false`;
+
+  // Optimization: inline simple type-only schemas to avoid function call overhead
+  // This is especially beneficial for nested oneOf with simple type checks
+  if (!trackerVar && typeof schema === 'object' && schema !== null) {
+    const simpleType = getSimpleType(schema);
+    if (simpleType) {
+      return getTypeCheck(dataVar, simpleType);
+    }
+  }
 
   // Compile as a separate function call
   const funcName = new Name(ctx.queueCompile(schema));
