@@ -108,6 +108,31 @@ export class EvalTracker {
     }
   }
 
+  /** Mark multiple static property names as evaluated - optimized batch operation */
+  markProps(propNames: string[]): void {
+    if (!this.trackProps || propNames.length === 0) return;
+
+    // For small numbers, inline individual assignments
+    if (propNames.length <= 3) {
+      for (const propName of propNames) {
+        this.markProp(propName);
+      }
+      return;
+    }
+
+    // For larger numbers, use Object.assign with a literal object for better performance
+    const assignments = propNames.map((name) => `"${escapeString(name)}": true`).join(', ');
+    const stmt = _`Object.assign(${this.trackerVar}.props, { ${new Code(assignments)} });`;
+
+    if (this.isRuntimeOptional) {
+      this.code.if(this.trackerVar, () => {
+        this.code.line(stmt);
+      });
+    } else {
+      this.code.line(stmt);
+    }
+  }
+
   /** Mark a dynamic property (key variable) as evaluated */
   markPropDynamic(keyVar: Name | string): void {
     if (this.trackProps) {
@@ -299,16 +324,13 @@ export class EvalTracker {
 
     if (this.trackProps && this.parentTracker.trackProps) {
       const copyProps = () => {
-        // Copy __all__ flag if set
+        // Fast path: if child marked all props, parent should too
         this.code.if(_`${this.trackerVar}.props.__all__`, () => {
           this.code.line(_`${parentVar}.props.__all__ = true;`);
         });
-        // Copy individual props
+        // Copy individual props using Object.assign - faster than for...in
         this.code.else(() => {
-          const k = new Name('k');
-          this.code.forIn(k, _`${this.trackerVar}.props`, () => {
-            this.code.line(_`${parentVar}.props[${k}] = true;`);
-          });
+          this.code.line(_`Object.assign(${parentVar}.props, ${this.trackerVar}.props);`);
         });
       };
 
@@ -364,11 +386,8 @@ export class EvalTracker {
     if (!this.enabled || !tempVar) return;
     const doMerge = () => {
       if (this.trackProps) {
-        // Optimize: use manual loop instead of Object.assign for better performance
-        const k = new Name('k');
-        this.code.forIn(k, _`${tempVar}.props`, () => {
-          this.code.line(_`${this.trackerVar}.props[${k}] = ${tempVar}.props[${k}];`);
-        });
+        // Use Object.assign for bulk property copy - faster than for...in loop
+        this.code.line(_`Object.assign(${this.trackerVar}.props, ${tempVar}.props);`);
         // Optimize: only push patterns if there are any to avoid spread overhead
         this.code.if(_`${tempVar}.patterns.length > 0`, () => {
           this.code.line(_`${this.trackerVar}.patterns.push(...${tempVar}.patterns);`);

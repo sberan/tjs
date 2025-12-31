@@ -979,9 +979,9 @@ export function generatePropertiesChecks(
   const genChecks = () => {
     // Mark all properties from 'properties' as evaluated (even trivial ones count as evaluated)
     if (evalTracker && schema.properties) {
-      for (const propName of Object.keys(schema.properties)) {
-        evalTracker.markProp(propName);
-      }
+      const propNames = Object.keys(schema.properties);
+      // Use batch marking for better performance
+      evalTracker.markProps(propNames);
     }
 
     // Validate defined properties (only non-trivial ones)
