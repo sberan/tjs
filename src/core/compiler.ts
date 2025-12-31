@@ -1888,8 +1888,31 @@ export function generateCompositionChecks(
     // If any schema is a no-op (true, {}), anyOf always passes
     // NOTE: no-op schemas (true/{}) match everything but DON'T mark any properties as evaluated
     // So we still need to check other branches for property tracking
-    if (schema.anyOf.some((s) => isNoOpSchema(s)) && !evalTracker?.enabled) {
+    const hasNoOpBranch = schema.anyOf.some((s) => isNoOpSchema(s));
+
+    if (hasNoOpBranch && !evalTracker?.enabled) {
       // Skip generating anyOf check entirely when not tracking
+    } else if (hasNoOpBranch && evalTracker?.enabled) {
+      // Optimization: anyOf will definitely pass, just collect annotations from other branches
+      // No need for result variable or validation checks
+      schema.anyOf.forEach((subSchema) => {
+        if (isNoOpSchema(subSchema)) {
+          // Skip no-op branches - they don't contribute annotations
+          return;
+        }
+        if (subSchema === false) {
+          // Skip false branches - they can't match
+          return;
+        }
+
+        // Just collect annotations from this branch by calling it with a temp tracker
+        const tempVar = evalTracker.createTempTracker('anyOfTracker');
+        const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx, tempVar);
+        // Only merge if branch matches (to follow spec - only matching branches contribute annotations)
+        code.if(checkExpr, () => {
+          evalTracker.mergeFrom(tempVar);
+        });
+      });
     } else {
       const resultVar = code.genVar('anyOfResult');
       code.line(_`let ${resultVar} = false;`);
