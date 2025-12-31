@@ -3,7 +3,16 @@
  */
 
 import type { JsonSchemaBase } from '../../types.js';
-import { CodeBuilder, Code, Name, _, escapeString, propAccess, pathExpr } from '../codegen.js';
+import {
+  CodeBuilder,
+  Code,
+  Name,
+  _,
+  escapeString,
+  propAccess,
+  pathExpr,
+  pathExprDynamic,
+} from '../codegen.js';
 
 /**
  * Property names that exist on Object.prototype or Array.prototype.
@@ -72,6 +81,62 @@ export function genRequiredCheck(
     : _`!Object.hasOwn(${dataVar}, '${new Code(propStr)}')`;
 
   code.if(checkExpr, () => {
+    genError(code, propPathExpr, 'required', 'Required property missing');
+  });
+}
+
+/**
+ * Generate batched required checks for better performance.
+ * Combines all required checks into a single compound boolean expression
+ * similar to AJV's approach, which is more efficient than separate if statements.
+ */
+export function genBatchedRequiredChecks(
+  code: CodeBuilder,
+  dataVar: Name,
+  requiredProps: readonly string[],
+  pathExprCode: Code
+): void {
+  if (requiredProps.length === 0) return;
+
+  // For single property, use simple check without missing variable overhead
+  if (requiredProps.length === 1) {
+    genRequiredCheck(code, dataVar, requiredProps[0], pathExprCode);
+    return;
+  }
+
+  // For multiple properties, batch them into a single check
+  // Generate a compound condition with missing variable tracking
+  const missingVar = code.genVar('missing');
+  code.line(_`let ${missingVar};`);
+
+  // Build the compound condition
+  const conditions: Code[] = [];
+  for (const propName of requiredProps) {
+    const propStr = escapeString(propName);
+
+    if (isSafePropertyName(propName)) {
+      // Fast path: use 'in' operator
+      conditions.push(
+        _`(!('${new Code(propStr)}' in ${dataVar}) && (${missingVar} = '${new Code(propStr)}'))`
+      );
+    } else {
+      // Slow path: use !Object.hasOwn for prototype properties
+      conditions.push(
+        _`(!Object.hasOwn(${dataVar}, '${new Code(propStr)}') && (${missingVar} = '${new Code(propStr)}'))`
+      );
+    }
+  }
+
+  // Combine all conditions with ||
+  let combinedCondition = conditions[0];
+  for (let i = 1; i < conditions.length; i++) {
+    combinedCondition = _`${combinedCondition} || ${conditions[i]}`;
+  }
+
+  // Generate the if statement with error
+  code.if(combinedCondition, () => {
+    // Use the missing variable to create dynamic path
+    const propPathExpr = pathExprDynamic(pathExprCode, missingVar);
     genError(code, propPathExpr, 'required', 'Required property missing');
   });
 }

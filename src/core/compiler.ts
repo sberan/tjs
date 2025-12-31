@@ -27,7 +27,7 @@ import { createFormatValidators } from './keywords/format.js';
 import {
   genError,
   genPropertyCheck,
-  genRequiredCheck,
+  genBatchedRequiredChecks,
   hasTypeConstraint,
   getTypeCheck,
   getItemTypes,
@@ -992,9 +992,7 @@ export function generateObjectChecks(
 
   const genChecks = () => {
     if (schema.required && schema.required.length > 0) {
-      for (const prop of schema.required) {
-        genRequiredCheck(code, dataVar, prop, pathExprCode);
-      }
+      genBatchedRequiredChecks(code, dataVar, schema.required, pathExprCode);
     }
 
     if (schema.minProperties !== undefined || schema.maxProperties !== undefined) {
