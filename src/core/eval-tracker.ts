@@ -179,8 +179,8 @@ export class EvalTracker {
       // This is common when marking sequential items (0, 1, 2, ...) in prefixItems
       const needsCondition = index <= this.compileTimeMaxItem;
       const baseStmt = needsCondition
-        ? _`if (${new Code(String(index))} > ${this.trackerVar}.maxItem) ${this.trackerVar}.maxItem = ${new Code(String(index))};`
-        : _`${this.trackerVar}.maxItem = ${new Code(String(index))};`;
+        ? _`if (${index} > ${this.trackerVar}.maxItem) ${this.trackerVar}.maxItem = ${index};`
+        : _`${this.trackerVar}.maxItem = ${index};`;
 
       // Update compile-time tracking
       if (index > this.compileTimeMaxItem) {
@@ -188,7 +188,7 @@ export class EvalTracker {
       }
 
       if (this.useItemSet) {
-        const setStmt = _`${this.trackerVar}.items.add(${new Code(String(index))});`;
+        const setStmt = _`${this.trackerVar}.items.add(${index});`;
         if (this.isRuntimeOptional) {
           this.code.if(this.trackerVar, () => {
             this.code.line(baseStmt);
@@ -293,11 +293,11 @@ export class EvalTracker {
 
     // Build base condition efficiently with early exits
     // Order: cheapest checks first (property lookups), then regex tests
-    let expr = `!${this.trackerVar}.props.__all__ && !${this.trackerVar}.props[${keyName}]`;
+    let expr = _`!${this.trackerVar}.props.__all__ && !${this.trackerVar}.props[${keyName}]`;
 
     // Check compile-time patterns inline for better JIT optimization
     for (const patternVar of this.patternVars) {
-      expr += ` && !${patternVar}.test(${keyName})`;
+      expr = _`${expr} && !${patternVar}.test(${keyName})`;
     }
 
     // Check runtime patterns (from nested function calls)
@@ -307,11 +307,11 @@ export class EvalTracker {
     if (this.hasPatterns) {
       // Optimize: use !.some() instead of .every() - benchmarks show .some() is faster
       // Also check length === 0 first to short-circuit in the common case
-      const patternsVar = `${this.trackerVar}.patterns`;
-      expr += ` && (${patternsVar}.length === 0 || !${patternsVar}.some(p => p.test(${keyName})))`;
+      const patternsVar = _`${this.trackerVar}.patterns`;
+      expr = _`${expr} && (${patternsVar}.length === 0 || !${patternsVar}.some(p => p.test(${keyName})))`;
     }
 
-    return new Code(expr);
+    return expr;
   }
 
   /** Check if an item is unevaluated (returns Code expression) */

@@ -188,6 +188,9 @@ export class CompileContext {
   /** Whether the schema uses a custom metaschema with explicit $vocabulary */
   readonly #hasCustomVocabulary: boolean;
 
+  /** Main function name for error assignment */
+  #mainFuncName: string | null = null;
+
   constructor(rootSchema: JsonSchema, options: CompileOptions = {}) {
     this.#rootSchema = rootSchema;
 
@@ -409,10 +412,25 @@ export class CompileContext {
   }
 
   /**
-   * Generate a unique function name for a schema
+   * Generate a unique function name for a schema.
+   * The first call sets the main function name used for error assignment.
    */
   genFuncName(): string {
-    return `validate${this.#funcCounter++}`;
+    const name = `validate${this.#funcCounter++}`;
+    if (this.#mainFuncName === null) {
+      this.#mainFuncName = name;
+    }
+    return name;
+  }
+
+  /**
+   * Get the main function name for error assignment in generated code.
+   */
+  getMainFuncName(): string {
+    if (this.#mainFuncName === null) {
+      throw new Error('Main function name not yet generated');
+    }
+    return this.#mainFuncName;
   }
 
   /**
