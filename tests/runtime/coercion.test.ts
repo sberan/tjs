@@ -652,8 +652,7 @@ describe('coercion', () => {
     });
 
     describe('if-then-else', () => {
-      // TODO: Conditional coercion requires evaluating 'if' schema to determine branch
-      it.skip('coerces based on conditional branch', () => {
+      it('coerces based on conditional branch', () => {
         const ConditionalSchema = schema(
           {
             type: 'object',
