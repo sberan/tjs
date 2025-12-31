@@ -37,6 +37,8 @@ export class EvalTracker {
   readonly isRuntimeOptional: boolean;
   /** If true, use Set-based item tracking (for contains) instead of just maxItem */
   readonly useItemSet: boolean;
+  /** Track the maximum item index marked at compile time for optimization */
+  private compileTimeMaxItem: number = -1;
 
   private readonly code: CodeBuilder;
 
@@ -165,7 +167,18 @@ export class EvalTracker {
   /** Mark a static item index as evaluated */
   markItem(index: number): void {
     if (this.trackItems) {
-      const baseStmt = _`if (${new Code(String(index))} > ${this.trackerVar}.maxItem) ${this.trackerVar}.maxItem = ${new Code(String(index))};`;
+      // Optimization: Skip the condition check if we know at compile time that index > compileTimeMaxItem
+      // This is common when marking sequential items (0, 1, 2, ...) in prefixItems
+      const needsCondition = index <= this.compileTimeMaxItem;
+      const baseStmt = needsCondition
+        ? _`if (${new Code(String(index))} > ${this.trackerVar}.maxItem) ${this.trackerVar}.maxItem = ${new Code(String(index))};`
+        : _`${this.trackerVar}.maxItem = ${new Code(String(index))};`;
+
+      // Update compile-time tracking
+      if (index > this.compileTimeMaxItem) {
+        this.compileTimeMaxItem = index;
+      }
+
       if (this.useItemSet) {
         const setStmt = _`${this.trackerVar}.items.add(${new Code(String(index))});`;
         if (this.isRuntimeOptional) {
