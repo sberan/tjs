@@ -137,8 +137,8 @@ export function containsUnevaluatedProperties(
 }
 
 /**
- * Property tracker for a single schema scope.
- * Supports nested scopes for schemas with their own unevaluatedProperties.
+ * Property tracker for unevaluatedProperties support.
+ * Manages tracking of evaluated properties across schema validation.
  */
 export class PropsTracker {
   readonly #code: CodeBuilder;
@@ -202,6 +202,7 @@ export class PropsTracker {
   activate(): void {
     this.#active = true;
   }
+
   /**
    * Mark specific property names as evaluated (from `properties` keyword)
    * When inside a branch context, collects to the branch's static props.
@@ -405,6 +406,8 @@ export class PropsTracker {
     return this.#needsDynamic;
   }
 
+  // ==================== Scope Management ====================
+
   /**
    * Push a new isolated scope for nested unevaluatedProperties.
    * The new scope starts fresh and doesn't see parent's tracked properties.
@@ -423,7 +426,6 @@ export class PropsTracker {
     });
 
     // Reset to fresh state for new scope
-    // The nested unevaluatedProperties should NOT see properties from parent/sibling applicators
     this.#staticProps = undefined;
     this.#patterns = [];
     this.#dynamicVar = undefined;
@@ -493,42 +495,5 @@ export class PropsTracker {
         this.#code.line(_`Object.assign(${mainVar}, ${branch.dynamicVar});`);
       }
     });
-  }
-
-  /**
-   * Execute a callback within a branch context.
-   * Returns the branch state for merging after the callback completes.
-   *
-   * @param fn - The callback to execute
-   * @param isolate - If true, push a new scope so the branch has isolated tracking
-   *                  (used when subschema has its own unevaluatedProperties)
-   */
-  withBranch<T>(fn: () => T, isolate = false): { result: T; branch: BranchState } {
-    if (isolate) {
-      // Activate tracking - isolate is used when subschema has unevaluatedProperties
-      this.#active = true;
-      this.pushScope();
-    }
-    const branch = this.enterBranch();
-    const result = fn();
-    this.exitBranch();
-    if (isolate) {
-      this.popScope(false); // Don't merge - the branch handles it
-    }
-    return { result, branch };
-  }
-
-  /**
-   * Execute a callback within a branch context and automatically merge.
-   * Use when the branch should always be merged unconditionally.
-   * Returns the callback result for chaining.
-   */
-  withMergedBranch<T>(fn: () => T): T {
-    if (!this.#active || this.#staticProps === true) {
-      return fn();
-    }
-    const { result, branch } = this.withBranch(fn);
-    this.mergeBranch(branch, new Name('true'));
-    return result;
   }
 }
