@@ -255,8 +255,6 @@ export function getTypeCheck(dataVar: Name | Code, type: string): Code {
     case 'number':
       return _`typeof ${dataVar} === 'number'`;
     case 'integer':
-      // Use Number.isInteger for better performance and correctness
-      // It's a single native function call instead of multiple checks
       return _`Number.isInteger(${dataVar})`;
     case 'boolean':
       return _`typeof ${dataVar} === 'boolean'`;
@@ -269,6 +267,36 @@ export function getTypeCheck(dataVar: Name | Code, type: string): Code {
     default:
       return _`false`;
   }
+}
+
+/**
+ * Generate optimized type checking for multiple types (union).
+ * Returns undefined if no optimization is available.
+ */
+export function getOptimizedUnionTypeCheck(
+  dataVar: Name | Code,
+  types: readonly string[]
+): Code | undefined {
+  // Sort to normalize for pattern matching
+  const sorted = [...types].sort();
+  const key = sorted.join(',');
+
+  // Common union patterns
+  switch (key) {
+    case 'number,string':
+      // typeof handles both string and number efficiently
+      const t = Code.raw(`typeof ${dataVar.toString()}`);
+      return _`(${t} === 'string' || ${t} === 'number')`;
+    case 'boolean,number,string':
+      const t2 = Code.raw(`typeof ${dataVar.toString()}`);
+      return _`(${t2} === 'string' || ${t2} === 'number' || ${t2} === 'boolean')`;
+    case 'null,string':
+      return _`(${dataVar} === null || typeof ${dataVar} === 'string')`;
+    case 'null,number':
+      return _`(${dataVar} === null || typeof ${dataVar} === 'number')`;
+  }
+
+  return undefined;
 }
 
 /**
