@@ -37,7 +37,7 @@ interface ScopeState {
 /**
  * Branch state for tracking items during branch execution.
  */
-interface ItemsBranchState {
+export interface ItemsBranchState {
   /** Static item count collected during branch execution (highest prefixItems index + 1) */
   staticItemCount: number;
   /** Whether all items are evaluated in this branch */
