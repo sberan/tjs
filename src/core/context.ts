@@ -4,6 +4,8 @@
 
 import type { JsonSchema, JsonSchemaBase } from '../types.js';
 import { Name } from './codegen.js';
+import type { CodeBuilder } from './codegen.js';
+import { PropsTracker } from './props-tracker.js';
 
 /**
  * Coercion options - can be boolean or object with per-type settings
@@ -191,6 +193,12 @@ export class CompileContext {
 
   /** Main function name for error assignment */
   #mainFuncName: Name | null = null;
+
+  /** Property tracker for unevaluatedProperties support */
+  #propsTracker: PropsTracker | null = null;
+
+  /** Code builder reference (set when props tracker is initialized) */
+  #codeBuilder: CodeBuilder | null = null;
 
   constructor(rootSchema: JsonSchema, options: CompileOptions = {}) {
     this.#rootSchema = rootSchema;
@@ -759,5 +767,35 @@ export class CompileContext {
     }
 
     return undefined;
+  }
+
+  /**
+   * Initialize the property tracker for unevaluatedProperties support.
+   * Must be called before accessing the tracker.
+   *
+   * @param code - The CodeBuilder instance
+   * @param active - Whether tracking should be active (schema contains unevaluatedProperties)
+   */
+  initPropsTracker(code: CodeBuilder, active: boolean): void {
+    this.#codeBuilder = code;
+    this.#propsTracker = new PropsTracker(code, active);
+  }
+
+  /**
+   * Get the property tracker.
+   * Returns an inactive tracker if not initialized.
+   */
+  getPropsTracker(): PropsTracker {
+    if (!this.#propsTracker) {
+      throw new Error('PropsTracker not initialized. Call initPropsTracker first.');
+    }
+    return this.#propsTracker;
+  }
+
+  /**
+   * Check if property tracking is active.
+   */
+  hasActivePropsTracking(): boolean {
+    return this.#propsTracker?.active ?? false;
   }
 }

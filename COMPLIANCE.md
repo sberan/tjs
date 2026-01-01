@@ -3,9 +3,9 @@
 ## Summary
 
 - **Total Tests**: 1990
-- **Passed**: 1791 (90.0%)
+- **Passed**: 1914 (96.2%)
 - **Failed**: 0
-- **Skipped**: 199
+- **Skipped**: 76
 
 ## By Keyword
 
@@ -29,7 +29,7 @@
 | dependentRequired | 20 | 0 | 0 | 100% |
 | dependentSchemas | 20 | 0 | 0 | 100% |
 | duration | 26 | 0 | 0 | 100% |
-| dynamicRef | 45 | 0 | 1 | 100% |
+| dynamicRef | 44 | 0 | 2 | 100% |
 | ecmascript-regex | 75 | 0 | 0 | 100% |
 | email | 24 | 0 | 0 | 100% |
 | enum | 45 | 0 | 0 | 100% |
@@ -63,7 +63,7 @@
 | multipleOf | 10 | 0 | 0 | 100% |
 | no-schema | 3 | 0 | 0 | 100% |
 | non-bmp-regex | 12 | 0 | 0 | 100% |
-| not | 39 | 0 | 1 | 100% |
+| not | 38 | 0 | 2 | 100% |
 | oneOf | 27 | 0 | 0 | 100% |
 | pattern | 9 | 0 | 0 | 100% |
 | patternProperties | 23 | 0 | 0 | 100% |
@@ -79,7 +79,7 @@
 | time | 46 | 0 | 0 | 100% |
 | type | 80 | 0 | 0 | 100% |
 | unevaluatedItems | 0 | 0 | 71 | N/A |
-| unevaluatedProperties | 0 | 0 | 125 | N/A |
+| unevaluatedProperties | 125 | 0 | 0 | 100% |
 | uniqueItems | 69 | 0 | 0 | 100% |
 | unknown | 7 | 0 | 0 | 100% |
 | unknownKeyword | 3 | 0 | 0 | 100% |
