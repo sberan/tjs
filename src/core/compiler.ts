@@ -2448,19 +2448,18 @@ export function generateCompositionChecks(
 
       code.if(matchedVar, () => {
         code.line(_`${countVar}++;`);
-      });
-
-      // Early exit if more than one matches
-      code.if(_`${countVar} > 1`, () => {
-        genError(
-          code,
-          pathExprCode,
-          '#/oneOf',
-          'oneOf',
-          'must match exactly one schema in oneOf',
-          {},
-          ctx
-        );
+        // Early exit optimization: check immediately after increment
+        code.if(_`${countVar} > 1`, () => {
+          genError(
+            code,
+            pathExprCode,
+            '#/oneOf',
+            'oneOf',
+            'must match exactly one schema in oneOf',
+            {},
+            ctx
+          );
+        });
       });
 
       // Merge this branch's properties/items if it matched (conditionally)
@@ -2468,10 +2467,8 @@ export function generateCompositionChecks(
     });
 
     // Final validation - exactly one must match
-    const oneOfValidVar = code.genVar('oneOfValid');
-    code.line(_`const ${oneOfValidVar} = ${countVar} === 1;`);
-
-    code.if(_`!${oneOfValidVar}`, () => {
+    // Inline the validation check instead of creating a temp variable
+    code.if(_`${countVar} !== 1`, () => {
       genError(
         code,
         pathExprCode,

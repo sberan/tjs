@@ -311,7 +311,8 @@ export function pathExpr(basePath: Code | Name, segment: string | number): Code 
   if (basePath.toString() === "''") {
     return Code.raw(`'/${escaped}'`);
   }
-  return _`${basePath} + '/${Code.raw(escaped)}'`;
+  // Use template literal for faster string concatenation
+  return Code.raw(`\`\${${basePath}}/${escaped}\``);
 }
 
 /**
@@ -319,9 +320,11 @@ export function pathExpr(basePath: Code | Name, segment: string | number): Code 
  */
 export function pathExprDynamic(basePath: Code | Name, segmentVar: Code | Name): Code {
   if (basePath.toString() === "''") {
-    return _`'/' + ${segmentVar}`;
+    // Use template literal for faster string concatenation
+    return Code.raw(`\`/\${${segmentVar}}\``);
   }
-  return _`${basePath} + '/' + ${segmentVar}`;
+  // Use template literal for faster string concatenation
+  return Code.raw(`\`\${${basePath}}/\${${segmentVar}}\``);
 }
 
 /**
@@ -329,9 +332,11 @@ export function pathExprDynamic(basePath: Code | Name, segmentVar: Code | Name):
  */
 export function pathExprIndex(basePath: Code | Name, indexVar: Code | Name): Code {
   if (basePath.toString() === "''") {
-    return _`'/' + ${indexVar}`;
+    // Use template literal for faster string concatenation
+    return Code.raw(`\`/\${${indexVar}}\``);
   }
-  return _`${basePath} + '/' + ${indexVar}`;
+  // Use template literal for faster string concatenation
+  return Code.raw(`\`\${${basePath}}/\${${indexVar}}\``);
 }
 
 // ============================================================================
