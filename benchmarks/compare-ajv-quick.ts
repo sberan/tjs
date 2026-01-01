@@ -22,6 +22,7 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import Benchmark from 'benchmark';
 import Ajv from 'ajv';
+import Ajv2019 from 'ajv/dist/2019.js';
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { createValidator } from '../src/core/index.js';
@@ -208,11 +209,28 @@ function loadTestSuites(draft: Draft, includeOptional: boolean = true): TestGrou
 }
 
 // Create AJV instance with format validation enabled
-function createAjv(draft: Draft, remotes: Record<string, unknown>): Ajv {
-  const ajv =
-    draft === 'draft2020-12'
-      ? new Ajv2020({ allErrors: false, logger: false })
-      : new Ajv({ allErrors: false, logger: false });
+function createAjv(
+  draft: Draft,
+  remotes: Record<string, unknown>,
+  formatAssertion: boolean = false
+): Ajv {
+  // For draft 2019-09/2020-12, format is annotation-only by default.
+  // Pass validateFormats: true to enable format validation for format tests.
+  // Disable strict mode to avoid rejecting valid schemas (e.g., additionalItems without array items).
+  const opts = {
+    allErrors: false,
+    logger: false as const,
+    validateFormats: formatAssertion,
+    strict: false,
+  };
+  let ajv: Ajv;
+  if (draft === 'draft2020-12') {
+    ajv = new Ajv2020(opts);
+  } else if (draft === 'draft2019-09') {
+    ajv = new Ajv2019(opts);
+  } else {
+    ajv = new Ajv(opts);
+  }
 
   addFormats(ajv);
 
@@ -233,8 +251,10 @@ function compileTestSuites(
   remotes: Record<string, unknown>,
   freshAjvPerSchema: boolean = false
 ): CompiledTestSuite[] {
-  // Shared Ajv instance (used when freshAjvPerSchema is false)
-  const sharedAjv = freshAjvPerSchema ? null : createAjv(draft, remotes);
+  // Shared Ajv instances (used when freshAjvPerSchema is false)
+  // We need two: one with format validation, one without
+  const sharedAjv = freshAjvPerSchema ? null : createAjv(draft, remotes, false);
+  const sharedAjvWithFormat = freshAjvPerSchema ? null : createAjv(draft, remotes, true);
 
   return testSuites.map((suite) => {
     let tjsValidator: ((data: unknown) => boolean) | null = null;
@@ -251,7 +271,12 @@ function compileTestSuites(
 
     try {
       // Use fresh Ajv per schema if requested (matches json-schema-benchmark)
-      const ajv = freshAjvPerSchema ? createAjv(draft, remotes) : sharedAjv!;
+      // Enable format validation for format tests
+      const ajv = freshAjvPerSchema
+        ? createAjv(draft, remotes, suite.isFormatTest ?? false)
+        : suite.isFormatTest
+          ? sharedAjvWithFormat!
+          : sharedAjv!;
       const fn = ajv.compile(suite.schema as object);
       ajvValidator = (data: unknown) => fn(data) as boolean;
     } catch {}
@@ -703,7 +728,8 @@ async function main() {
       drafts.push(arg as Draft);
     }
   }
-  if (drafts.length === 0) drafts.push('draft4', 'draft6', 'draft7', 'draft2020-12');
+  if (drafts.length === 0)
+    drafts.push('draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12');
 
   console.log('tjs vs ajv Benchmark Comparison');
   if (filter) {
