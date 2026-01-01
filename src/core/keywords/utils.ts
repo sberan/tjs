@@ -13,6 +13,7 @@ import {
   pathExprDynamic,
   stringify,
 } from '../codegen.js';
+import type { CompileContext } from '../context.js';
 
 /**
  * Property names that exist on Object.prototype or Array.prototype.
@@ -70,7 +71,7 @@ export function genRequiredCheck(
   dataVar: Name,
   propName: string,
   pathExprCode: Code,
-  mainFuncName: Name
+  ctx: CompileContext
 ): void {
   const propPathExpr = pathExpr(pathExprCode, propName);
 
@@ -91,7 +92,7 @@ export function genRequiredCheck(
       {
         missingProperty: propName,
       },
-      mainFuncName
+      ctx
     );
   });
 }
@@ -106,13 +107,13 @@ export function genBatchedRequiredChecks(
   dataVar: Name,
   requiredProps: readonly string[],
   pathExprCode: Code,
-  mainFuncName: Name
+  ctx: CompileContext
 ): void {
   if (requiredProps.length === 0) return;
 
   // For single property, use simple check without missing variable overhead
   if (requiredProps.length === 1) {
-    genRequiredCheck(code, dataVar, requiredProps[0], pathExprCode, mainFuncName);
+    genRequiredCheck(code, dataVar, requiredProps[0], pathExprCode, ctx);
     return;
   }
 
@@ -144,18 +145,32 @@ export function genBatchedRequiredChecks(
 
   // Generate the if statement with error
   code.if(combinedCondition, () => {
-    // Use the missing variable to create dynamic path (already in JSON Pointer format)
-    const propPathExpr = pathExprDynamic(pathExprCode, missingVar);
-    code.line(
-      _`${mainFuncName}.errors = [{ instancePath: ${propPathExpr}, schemaPath: '#/required', keyword: 'required', params: { missingProperty: ${missingVar} }, message: "must have required property '" + ${missingVar} + "'" }];`
-    );
-    code.line(_`return false;`);
+    // Check if we're in subschema check mode
+    if (ctx?.isInSubschemaCheck()) {
+      // Subschema mode: set valid = false and break out of labeled block
+      const validVar = ctx.getSubschemaValidVar();
+      const label = ctx.getSubschemaLabel();
+      code.line(_`${validVar} = false;`);
+      code.line(_`break ${label};`);
+    } else {
+      // Normal mode: set errors and return false
+      // Use the missing variable to create dynamic path (already in JSON Pointer format)
+      const propPathExpr = pathExprDynamic(pathExprCode, missingVar);
+      code.line(
+        _`${ctx.getMainFuncName()}.errors = [{ instancePath: ${propPathExpr}, schemaPath: '#/required', keyword: 'required', params: { missingProperty: ${missingVar} }, message: "must have required property '" + ${missingVar} + "'" }];`
+      );
+      code.line(_`return false;`);
+    }
   });
 }
 
 /**
  * Generate code to push an error and return false.
  * Errors are in AJV-compatible format with instancePath, schemaPath, keyword, params, message.
+ *
+ * When called inside a subschema check context (ctx.isInSubschemaCheck() is true),
+ * this generates `validVar = false; break label;` instead of `return false`.
+ * This allows subschema checks to use labeled blocks instead of IIFEs.
  *
  * @param code - Code builder
  * @param pathExprCode - Code expression for the instance path (already in JSON Pointer format)
@@ -164,6 +179,7 @@ export function genBatchedRequiredChecks(
  * @param message - Human-readable error message
  * @param params - Keyword-specific params object (will be stringified)
  * @param mainFuncName - Main function name for setting .errors property (AJV-compatible)
+ * @param ctx - Optional compile context for subschema check mode
  */
 export function genError(
   code: CodeBuilder,
@@ -172,8 +188,19 @@ export function genError(
   keyword: string,
   message: string,
   params: object,
-  mainFuncName: Name
+  ctx: CompileContext
 ): void {
+  // Check if we're in subschema check mode
+  if (ctx?.isInSubschemaCheck()) {
+    // Subschema mode: set valid = false and break out of labeled block
+    const validVar = ctx.getSubschemaValidVar();
+    const label = ctx.getSubschemaLabel();
+    code.line(_`${validVar} = false;`);
+    code.line(_`break ${label};`);
+    return;
+  }
+
+  // Normal mode: set errors and return false
   // Use stringify() to get a Code object that won't be double-quoted by the _ template
   const paramsCode = stringify(params);
 
@@ -181,8 +208,29 @@ export function genError(
   const errObj = _`{ instancePath: ${pathExprCode}, schemaPath: ${schemaPath}, keyword: ${keyword}, params: ${paramsCode}, message: ${message} }`;
 
   // Set .errors on main function directly (AJV-compatible pattern)
-  code.line(_`${mainFuncName}.errors = [${errObj}];`);
+  code.line(_`${ctx.getMainFuncName()}.errors = [${errObj}];`);
   code.line(_`return false;`);
+}
+
+/**
+ * Generate code to exit from a subschema check when a sub-validator call fails.
+ * In normal mode: generates `return false`
+ * In subschema mode: generates `validVar = false; break label;`
+ *
+ * Use this when calling a sub-validator function and need to handle its failure.
+ * Unlike genError, this doesn't set error objects (the sub-validator already did).
+ */
+export function genSubschemaExit(code: CodeBuilder, ctx: CompileContext): void {
+  if (ctx.isInSubschemaCheck()) {
+    // Subschema mode: set valid = false and break out of labeled block
+    const validVar = ctx.getSubschemaValidVar();
+    const label = ctx.getSubschemaLabel();
+    code.line(_`${validVar} = false;`);
+    code.line(_`break ${label};`);
+  } else {
+    // Normal mode: just return false (error was already set by sub-validator)
+    code.line(_`return false;`);
+  }
 }
 
 /**

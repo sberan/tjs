@@ -196,6 +196,9 @@ export class CompileContext {
   /** Main function name for error assignment */
   #mainFuncName: Name | null = null;
 
+  /** Stack for subschema check contexts (for labeled block approach) */
+  #subschemaStack: Array<{ label: Name; validVar: Name }> = [];
+
   /** Property tracker for unevaluatedProperties support */
   #propsTracker: PropsTracker | null = null;
 
@@ -832,5 +835,49 @@ export class CompileContext {
    */
   getAnnotationTracker(): AnnotationTracker {
     return new AnnotationTracker(this.getPropsTracker(), this.getItemsTracker());
+  }
+
+  // ==================== Subschema Check Mode ====================
+
+  /**
+   * Enter a subschema check context.
+   * In this mode, genError will use `break` instead of `return false`.
+   */
+  enterSubschemaCheck(label: Name, validVar: Name): void {
+    this.#subschemaStack.push({ label, validVar });
+  }
+
+  /**
+   * Exit the current subschema check context.
+   */
+  exitSubschemaCheck(): void {
+    this.#subschemaStack.pop();
+  }
+
+  /**
+   * Check if we're inside a subschema check context.
+   */
+  isInSubschemaCheck(): boolean {
+    return this.#subschemaStack.length > 0;
+  }
+
+  /**
+   * Get the label for the current subschema check block.
+   */
+  getSubschemaLabel(): Name {
+    if (this.#subschemaStack.length === 0) {
+      throw new Error('Not in subschema check context');
+    }
+    return this.#subschemaStack[this.#subschemaStack.length - 1].label;
+  }
+
+  /**
+   * Get the valid variable for the current subschema check.
+   */
+  getSubschemaValidVar(): Name {
+    if (this.#subschemaStack.length === 0) {
+      throw new Error('Not in subschema check context');
+    }
+    return this.#subschemaStack[this.#subschemaStack.length - 1].validVar;
   }
 }
