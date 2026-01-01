@@ -3,9 +3,9 @@
 ## Summary
 
 - **Total Tests**: 1990
-- **Passed**: 1914 (96.2%)
+- **Passed**: 1985 (99.7%)
 - **Failed**: 0
-- **Skipped**: 76
+- **Skipped**: 5
 
 ## By Keyword
 
@@ -78,7 +78,7 @@
 | required | 16 | 0 | 0 | 100% |
 | time | 46 | 0 | 0 | 100% |
 | type | 80 | 0 | 0 | 100% |
-| unevaluatedItems | 0 | 0 | 71 | N/A |
+| unevaluatedItems | 71 | 0 | 0 | 100% |
 | unevaluatedProperties | 125 | 0 | 0 | 100% |
 | uniqueItems | 69 | 0 | 0 | 100% |
 | unknown | 7 | 0 | 0 | 100% |

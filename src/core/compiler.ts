@@ -36,6 +36,7 @@ import {
   hasRestrictiveUnevaluatedProperties,
   containsUnevaluatedProperties,
 } from './props-tracker.js';
+import { hasRestrictiveUnevaluatedItems, containsUnevaluatedItems } from './items-tracker.js';
 
 /**
  * Compile error type for internal use (AJV-compatible format)
@@ -68,6 +69,11 @@ export function compile(schema: JsonSchema, options: CompileOptions = {}): Valid
   // Pre-scan schema to activate tracking if any nested schema has unevaluatedProperties
   const needsPropsTracking = containsUnevaluatedProperties(schema);
   ctx.initPropsTracker(code, needsPropsTracking);
+
+  // Initialize items tracker for unevaluatedItems support
+  // Pre-scan schema to activate tracking if any nested schema has unevaluatedItems
+  const needsItemsTracking = containsUnevaluatedItems(schema);
+  ctx.initItemsTracker(code, needsItemsTracking);
 
   // Add runtime functions
   ctx.addRuntimeFunction('deepEqual', createDeepEqual());
@@ -203,15 +209,29 @@ function generateSchemaValidator(
     return;
   }
 
-  if (!ctx.getPropsTracker().active && hasRestrictiveUnevaluatedProperties(schema)) {
-    ctx.getPropsTracker().active = true;
+  const propsTracker = ctx.getPropsTracker();
+  const itemsTracker = ctx.getItemsTracker();
+
+  if (!propsTracker.active && hasRestrictiveUnevaluatedProperties(schema)) {
+    propsTracker.active = true;
+  }
+
+  // Lazy activation for unevaluatedItems
+  if (!itemsTracker.active && hasRestrictiveUnevaluatedItems(schema)) {
+    itemsTracker.activate();
   }
 
   // If schema has $dynamicRef and unevaluatedProperties, we need dynamic tracking
   // because the dynamically resolved schema may define additional properties
   if (schema.$dynamicRef && hasRestrictiveUnevaluatedProperties(schema)) {
-    ctx.getPropsTracker().activate();
-    ctx.getPropsTracker().enableDynamic();
+    propsTracker.activate();
+    propsTracker.enableDynamic();
+  }
+
+  // If schema has $dynamicRef and unevaluatedItems, we need dynamic tracking
+  if (schema.$dynamicRef && hasRestrictiveUnevaluatedItems(schema)) {
+    itemsTracker.activate();
+    itemsTracker.enableDynamic();
   }
 
   // Check if this schema is a new schema resource (has $id)
@@ -257,9 +277,9 @@ function generateSchemaValidator(
     generatePropertyNamesCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
     generateDependentSchemasCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
     generateDependenciesCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
-    // unevaluatedProperties must be checked LAST after all other keywords
+    // unevaluated* must be checked LAST after all other keywords
     generateUnevaluatedPropertiesCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
-    // Note: unevaluatedItems is not yet supported
+    generateUnevaluatedItemsCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
   }
 
   // Pop dynamic anchors after validation (if we pushed any)
@@ -1463,6 +1483,78 @@ export function generateUnevaluatedPropertiesCheck(
 }
 
 /**
+ * Generate unevaluatedItems check for arrays
+ */
+export function generateUnevaluatedItemsCheck(
+  code: CodeBuilder,
+  schema: JsonSchemaBase,
+  dataVar: Name,
+  pathExprCode: Code,
+  ctx: CompileContext,
+  dynamicScopeVar?: Name
+): void {
+  if (schema.unevaluatedItems === undefined) return;
+
+  const itemsTracker = ctx.getItemsTracker();
+
+  // If all items are already evaluated, nothing to check
+  if (itemsTracker.allItemsEvaluated) return;
+
+  const unevalSchema = schema.unevaluatedItems;
+
+  // If unevaluatedItems: true, we need to ensure dynamic var exists before the loop
+  // so that item markings are visible to parent schemas
+  if (unevalSchema === true && itemsTracker.active) {
+    itemsTracker.getDynamicVar();
+  }
+
+  const genCheck = () => {
+    const iVar = code.genVar('i');
+    const lenVar = code.genVar('len');
+    code.line(_`const ${lenVar} = ${dataVar}.length;`);
+
+    code.for(_`let ${iVar} = 0`, _`${iVar} < ${lenVar}`, _`${iVar}++`, () => {
+      const itemPathExpr = pathExprIndex(pathExprCode, iVar);
+
+      // Generate the condition: is this item unevaluated?
+      const isUnevaluatedExpr = itemsTracker.isItemUnevaluated(iVar);
+
+      code.if(isUnevaluatedExpr, () => {
+        if (unevalSchema === false) {
+          // unevaluatedItems: false - no unevaluated items allowed
+          genError(
+            code,
+            itemPathExpr,
+            '#/unevaluatedItems',
+            'unevaluatedItems',
+            'must NOT have unevaluated items',
+            {},
+            ctx.getMainFuncName()
+          );
+        } else if (unevalSchema === true) {
+          // unevaluatedItems: true - all unevaluated items are valid
+          // Mark item as evaluated so parent schemas see it
+          itemsTracker.markItemEvaluated(iVar);
+        } else {
+          // unevaluatedItems: schema - validate against the schema
+          const itemAccess = indexAccess(dataVar, iVar);
+          const itemVar = code.genVar('unevalItem');
+          code.line(_`const ${itemVar} = ${itemAccess};`);
+          generateSchemaValidator(code, unevalSchema, itemVar, itemPathExpr, ctx, dynamicScopeVar);
+        }
+      });
+    });
+  };
+
+  // Skip type check if schema already has type: 'array'
+  if (hasTypeConstraint(schema, 'array')) {
+    genCheck();
+  } else {
+    code.if(_`Array.isArray(${dataVar})`, genCheck);
+  }
+}
+
+/**
  * Generate contains check (minContains, maxContains)
  */
 export function generateContainsCheck(
@@ -1479,9 +1571,17 @@ export function generateContainsCheck(
   const minContains = schema.minContains ?? 1;
   const maxContains = schema.maxContains;
 
+  // Get tracker for unevaluatedItems support
+  const itemsTracker = ctx.getItemsTracker();
+  const needsItemsTracking = itemsTracker.active;
+
   // Handle boolean schemas directly
   if (containsSchema === true) {
-    // Every item matches - check array length
+    // Every item matches - mark all items as evaluated
+    if (needsItemsTracking) {
+      itemsTracker.markAllItemsEvaluated();
+    }
+    // Check array length
     code.if(_`Array.isArray(${dataVar})`, () => {
       code.if(_`${dataVar}.length < ${minContains}`, () => {
         genError(
@@ -1513,6 +1613,7 @@ export function generateContainsCheck(
 
   if (containsSchema === false) {
     // Nothing matches - only valid if minContains is 0
+    // No items are evaluated by contains: false
     code.if(_`Array.isArray(${dataVar})`, () => {
       if (minContains > 0) {
         genError(
@@ -1529,9 +1630,16 @@ export function generateContainsCheck(
     return;
   }
 
-  // If minContains is 0 and no maxContains, contains is always satisfied
-  if (minContains === 0 && maxContains === undefined) {
+  // If minContains is 0 and no maxContains, and no items tracking needed,
+  // contains is always satisfied and we can skip
+  if (minContains === 0 && maxContains === undefined && !needsItemsTracking) {
     return;
+  }
+
+  // Ensure the items dynamic var is created BEFORE the array check block
+  // so it's in scope for both contains and unevaluatedItems
+  if (needsItemsTracking) {
+    itemsTracker.getDynamicVar();
   }
 
   code.if(_`Array.isArray(${dataVar})`, () => {
@@ -1539,6 +1647,10 @@ export function generateContainsCheck(
     code.line(_`let ${countVar} = 0;`);
 
     const iVar = code.genVar('i');
+
+    // When tracking items for unevaluatedItems, we can't use early exit
+    // because we need to find ALL matching indices
+    const canEarlyExit = !needsItemsTracking && maxContains === undefined;
 
     // Try to inline simple type checks for better performance
     // Check if schema is a simple type-only schema that can be inlined
@@ -1582,10 +1694,14 @@ export function generateContainsCheck(
 
         code.if(inlineCheck, () => {
           code.line(_`${countVar}++;`);
+          // Track matched index for unevaluatedItems
+          if (needsItemsTracking) {
+            itemsTracker.markItemEvaluated(iVar);
+          }
         });
 
-        // Early exit if we've found enough and no maxContains
-        if (maxContains === undefined) {
+        // Early exit if we've found enough and no maxContains and no items tracking
+        if (canEarlyExit) {
           code.if(_`${countVar} >= ${minContains}`, () => {
             code.line(_`break;`);
           });
@@ -1601,10 +1717,14 @@ export function generateContainsCheck(
         // Call the compiled contains validator (pass null for errors to skip collection)
         code.if(_`${containsFuncName}(${itemAccess}, null, '')`, () => {
           code.line(_`${countVar}++;`);
+          // Track matched index for unevaluatedItems
+          if (needsItemsTracking) {
+            itemsTracker.markItemEvaluated(iVar);
+          }
         });
 
-        // Early exit if we've found enough and no maxContains
-        if (maxContains === undefined) {
+        // Early exit if we've found enough and no maxContains and no items tracking
+        if (canEarlyExit) {
           code.if(_`${countVar} >= ${minContains}`, () => {
             code.line(_`break;`);
           });
@@ -1705,20 +1825,37 @@ export function generateDependentSchemasCheck(
   }
 
   const propsTracker = ctx.getPropsTracker();
+  const itemsTracker = ctx.getItemsTracker();
 
-  // Ensure dynamic var is created before branching (so it's in correct scope)
+  // Ensure dynamic vars are created before branching (so they're in correct scope)
   if (propsTracker.active) {
     propsTracker.getDynamicVar();
+  }
+  if (itemsTracker.active) {
+    itemsTracker.getDynamicVar();
   }
 
   code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
     for (const [prop, depSchema] of Object.entries(schema.dependentSchemas!)) {
-      code.if(_`${prop} in ${dataVar}`, () => {
-        // Track dependent schema properties - they only count when trigger property is present
-        propsTracker.withMergedBranch(() => {
-          generateSchemaValidator(code, depSchema, dataVar, pathExprCode, ctx, dynamicScopeVar);
-        });
+      // Use branch tracking: properties from dependent schemas only count as evaluated
+      // when the trigger property is present at runtime
+      const propsBranch = propsTracker.enterBranch();
+      const itemsBranch = itemsTracker.enterBranch();
+
+      // Create a variable to track if the trigger property exists
+      const triggerExists = code.genVar('depTrigger');
+      code.line(_`const ${triggerExists} = ${stringify(prop)} in ${dataVar};`);
+
+      code.if(triggerExists, () => {
+        generateSchemaValidator(code, depSchema, dataVar, pathExprCode, ctx, dynamicScopeVar);
       });
+
+      propsTracker.exitBranch();
+      itemsTracker.exitBranch();
+
+      // Merge branch properties when trigger exists
+      propsTracker.mergeBranch(propsBranch, triggerExists);
+      itemsTracker.mergeBranch(itemsBranch, triggerExists);
     }
   });
 }
@@ -1996,12 +2133,14 @@ export function generateRefCheck(
 
   // NEW OPTIMIZATION: Inline simple schemas to avoid function call overhead
   // But don't inline remote refs - they need their own compilation context
-  // Also force inlining when property tracking is active (for unevaluatedProperties support)
+  // Also force inlining when property/item tracking is active (for unevaluatedProperties/Items support)
   // But never inline cyclic refs (they would cause infinite recursion)
   const propsTracker = ctx.getPropsTracker();
+  const itemsTracker = ctx.getItemsTracker();
   const refHasId = typeof refSchema === 'object' && refSchema !== null && refSchema.$id;
   const isCyclicRef = ctx.isCompiled(refSchema);
-  const forceInlineForTracking = propsTracker.active && !refHasId && !isCyclicRef;
+  const forceInlineForTracking =
+    (propsTracker.active || itemsTracker.active) && !refHasId && !isCyclicRef;
   if (
     !isRemoteRef &&
     (shouldInlineRef(refSchema, ctx, dynamicScopeVar) || forceInlineForTracking)
@@ -2100,13 +2239,26 @@ export function generateCompositionChecks(
   // Property tracking is automatic - generatePropertiesChecks handles it
   if (schema.allOf && schema.allOf.length > 0) {
     const propsTracker = ctx.getPropsTracker();
+    const itemsTracker = ctx.getItemsTracker();
     for (const subSchema of schema.allOf) {
-      // If subschema has restrictive unevaluatedProperties, it needs isolated tracking
-      // so it doesn't see sibling annotations
-      if (hasRestrictiveUnevaluatedProperties(subSchema)) {
+      // If subschema has restrictive unevaluatedProperties/unevaluatedItems, it needs isolated tracking
+      // so it doesn't see sibling annotations (cousins can't see each other)
+      const needsPropsIsolation = hasRestrictiveUnevaluatedProperties(subSchema);
+      const needsItemsIsolation = hasRestrictiveUnevaluatedItems(subSchema);
+      if (needsPropsIsolation) {
         propsTracker.withScope(() => {
-          generateSchemaValidator(code, subSchema, dataVar, pathExprCode, ctx, dynamicScopeVar);
+          if (needsItemsIsolation) {
+            itemsTracker.withScope(() => {
+              generateSchemaValidator(code, subSchema, dataVar, pathExprCode, ctx, dynamicScopeVar);
+            }, false);
+          } else {
+            generateSchemaValidator(code, subSchema, dataVar, pathExprCode, ctx, dynamicScopeVar);
+          }
         }, false); // Don't merge - each allOf subschema's unevaluated scope is isolated
+      } else if (needsItemsIsolation) {
+        itemsTracker.withScope(() => {
+          generateSchemaValidator(code, subSchema, dataVar, pathExprCode, ctx, dynamicScopeVar);
+        }, false);
       } else {
         generateSchemaValidator(code, subSchema, dataVar, pathExprCode, ctx, dynamicScopeVar);
       }
@@ -2118,40 +2270,95 @@ export function generateCompositionChecks(
     // If any schema is a no-op (true, {}), anyOf always passes
     const hasNoOpBranch = schema.anyOf.some((s) => isNoOpSchema(s));
     const propsTracker = ctx.getPropsTracker();
+    const itemsTracker = ctx.getItemsTracker();
 
-    if (hasNoOpBranch) {
+    // If we're tracking items/props and there are non-trivial branches that could evaluate items,
+    // we need to process all branches even if there's a no-op branch
+    const needsTracking =
+      (propsTracker.active || itemsTracker.active) &&
+      schema.anyOf.some((s) => !isNoOpSchema(s) && typeof s === 'object' && s !== null);
+
+    if (hasNoOpBranch && !needsTracking) {
       // Skip generating anyOf check entirely - it always passes
       // But if tracking, we need to enable dynamic mode since any branch could match
       propsTracker.enableDynamic();
+    } else if (hasNoOpBranch && needsTracking) {
+      // anyOf always passes but we need to track which branches matched for annotations
+      // Since there's a no-op, we don't need the result check, just evaluate branches
+      propsTracker.enableDynamic();
+      itemsTracker.enableDynamic();
+
+      // Ensure dynamic vars are created before branching
+      if (propsTracker.active) {
+        propsTracker.getDynamicVar();
+      }
+      if (itemsTracker.active) {
+        itemsTracker.getDynamicVar();
+      }
+
+      // Process each non-trivial branch to collect annotations
+      schema.anyOf.forEach((subSchema) => {
+        if (isNoOpSchema(subSchema)) return; // Skip no-op branches
+
+        const propsIsolate = hasRestrictiveUnevaluatedProperties(subSchema);
+        const itemsIsolate = hasRestrictiveUnevaluatedItems(subSchema);
+        const propsBranch = propsTracker.enterBranch();
+        const itemsBranch = itemsTracker.enterBranch();
+        if (propsIsolate) propsTracker.pushScope();
+        if (itemsIsolate) itemsTracker.pushScope();
+
+        const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx, dynamicScopeVar);
+
+        if (propsIsolate) propsTracker.popScope(false);
+        if (itemsIsolate) itemsTracker.popScope(false);
+        propsTracker.exitBranch();
+        itemsTracker.exitBranch();
+
+        const matchedVar = code.genVar('matched');
+        code.line(_`const ${matchedVar} = ${checkExpr};`);
+        propsTracker.mergeBranch(propsBranch, matchedVar);
+        itemsTracker.mergeBranch(itemsBranch, matchedVar);
+      });
     } else {
       const resultVar = code.genVar('anyOfResult');
       code.line(_`let ${resultVar} = false;`);
 
-      // Ensure dynamic var is created before branching (so it's in correct scope)
+      // Ensure dynamic vars are created before branching (so they're in correct scope)
       if (propsTracker.active) {
         propsTracker.getDynamicVar();
+      }
+      if (itemsTracker.active) {
+        itemsTracker.getDynamicVar();
       }
 
       schema.anyOf.forEach((subSchema, index) => {
         const generateBranchCheck = () => {
-          // If subschema has restrictive unevaluatedProperties (false or schema), it needs isolated tracking
-          // unevaluatedProperties: true doesn't need isolation - it just accepts all properties
-          const isolate = hasRestrictiveUnevaluatedProperties(subSchema);
-          const { result: checkExpr, branch } = propsTracker.withBranch(
-            () => generateSubschemaCheck(code, subSchema, dataVar, ctx, dynamicScopeVar),
-            isolate
-          );
+          // If subschema has restrictive unevaluatedProperties/Items (false or schema), it needs isolated tracking
+          const propsIsolate = hasRestrictiveUnevaluatedProperties(subSchema);
+          const itemsIsolate = hasRestrictiveUnevaluatedItems(subSchema);
+          const propsBranch = propsTracker.enterBranch();
+          const itemsBranch = itemsTracker.enterBranch();
+          if (propsIsolate) propsTracker.pushScope();
+          if (itemsIsolate) itemsTracker.pushScope();
+
+          const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx, dynamicScopeVar);
+
+          if (propsIsolate) propsTracker.popScope(false);
+          if (itemsIsolate) itemsTracker.popScope(false);
+          propsTracker.exitBranch();
+          itemsTracker.exitBranch();
 
           const matchedVar = code.genVar('matched');
           code.line(_`const ${matchedVar} = ${checkExpr};`);
           code.if(matchedVar, () => {
             code.line(_`${resultVar} = true;`);
           });
-          propsTracker.mergeBranch(branch, matchedVar);
+          propsTracker.mergeBranch(propsBranch, matchedVar);
+          itemsTracker.mergeBranch(itemsBranch, matchedVar);
         };
 
-        // Only short-circuit if NOT tracking properties
-        if (index > 0 && !propsTracker.active) {
+        // Only short-circuit if NOT tracking properties or items
+        if (index > 0 && !propsTracker.active && !itemsTracker.active) {
           code.if(_`!${resultVar}`, generateBranchCheck);
         } else {
           generateBranchCheck();
@@ -2175,21 +2382,33 @@ export function generateCompositionChecks(
   // oneOf - exactly one subschema must validate
   if (schema.oneOf && schema.oneOf.length > 0) {
     const propsTracker = ctx.getPropsTracker();
+    const itemsTracker = ctx.getItemsTracker();
     const countVar = code.genVar('oneOfCount');
     code.line(_`let ${countVar} = 0;`);
 
-    // Ensure dynamic var is created before branching (so it's in correct scope)
+    // Ensure dynamic vars are created before branching (so they're in correct scope)
     if (propsTracker.active) {
       propsTracker.getDynamicVar();
     }
+    if (itemsTracker.active) {
+      itemsTracker.getDynamicVar();
+    }
 
     schema.oneOf.forEach((subSchema) => {
-      // If subschema has restrictive unevaluatedProperties (false or schema), it needs isolated tracking
-      const isolate = hasRestrictiveUnevaluatedProperties(subSchema);
-      const { result: checkExpr, branch } = propsTracker.withBranch(
-        () => generateSubschemaCheck(code, subSchema, dataVar, ctx, dynamicScopeVar),
-        isolate
-      );
+      // If subschema has restrictive unevaluatedProperties/Items (false or schema), it needs isolated tracking
+      const propsIsolate = hasRestrictiveUnevaluatedProperties(subSchema);
+      const itemsIsolate = hasRestrictiveUnevaluatedItems(subSchema);
+      const propsBranch = propsTracker.enterBranch();
+      const itemsBranch = itemsTracker.enterBranch();
+      if (propsIsolate) propsTracker.pushScope();
+      if (itemsIsolate) itemsTracker.pushScope();
+
+      const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx, dynamicScopeVar);
+
+      if (propsIsolate) propsTracker.popScope(false);
+      if (itemsIsolate) itemsTracker.popScope(false);
+      propsTracker.exitBranch();
+      itemsTracker.exitBranch();
 
       const matchedVar = code.genVar('oneOfMatched');
       code.line(_`const ${matchedVar} = ${checkExpr};`);
@@ -2211,8 +2430,9 @@ export function generateCompositionChecks(
         );
       });
 
-      // Merge this branch's properties if it matched (conditionally)
-      propsTracker.mergeBranch(branch, matchedVar);
+      // Merge this branch's properties/items if it matched (conditionally)
+      propsTracker.mergeBranch(propsBranch, matchedVar);
+      itemsTracker.mergeBranch(itemsBranch, matchedVar);
     });
 
     // Final validation - exactly one must match
@@ -2237,6 +2457,7 @@ export function generateCompositionChecks(
   if (schema.not !== undefined) {
     const notSchema = schema.not;
     const propsTracker = ctx.getPropsTracker();
+    const itemsTracker = ctx.getItemsTracker();
 
     // Optimization: detect always-pass and always-fail patterns
     // not: true or not: {} → always fails (since true/{} matches everything)
@@ -2271,11 +2492,12 @@ export function generateCompositionChecks(
         );
       } else {
         // Not optimizable - generate normal check with isolated scope
-        // Annotations inside 'not' should NOT propagate to parent
-        const checkExpr = propsTracker.withScope(
-          () => generateSubschemaCheck(code, notSchema, dataVar, ctx, dynamicScopeVar),
-          false // Don't merge - annotations inside 'not' are discarded
-        );
+        // Annotations inside 'not' should NOT propagate to parent (for both props and items)
+        propsTracker.pushScope();
+        itemsTracker.pushScope();
+        const checkExpr = generateSubschemaCheck(code, notSchema, dataVar, ctx, dynamicScopeVar);
+        propsTracker.popScope(false); // Don't merge - annotations inside 'not' are discarded
+        itemsTracker.popScope(false);
         code.if(checkExpr, () => {
           genError(
             code,
@@ -2290,11 +2512,12 @@ export function generateCompositionChecks(
       }
     } else {
       // Not optimizable - generate normal check with isolated scope
-      // Annotations inside 'not' should NOT propagate to parent
-      const checkExpr = propsTracker.withScope(
-        () => generateSubschemaCheck(code, notSchema, dataVar, ctx, dynamicScopeVar),
-        false // Don't merge - annotations inside 'not' are discarded
-      );
+      // Annotations inside 'not' should NOT propagate to parent (for both props and items)
+      propsTracker.pushScope();
+      itemsTracker.pushScope();
+      const checkExpr = generateSubschemaCheck(code, notSchema, dataVar, ctx, dynamicScopeVar);
+      propsTracker.popScope(false); // Don't merge - annotations inside 'not' are discarded
+      itemsTracker.popScope(false);
       code.if(checkExpr, () => {
         genError(
           code,
@@ -2315,10 +2538,16 @@ export function generateCompositionChecks(
     const thenSchema = schema.then;
     const elseSchema = schema.else;
     const propsTracker = ctx.getPropsTracker();
+    const itemsTracker = ctx.getItemsTracker();
 
-    // Skip if there's no then or else AND we're not tracking properties
+    // Skip if there's no then or else AND we're not tracking properties or items
     // (if tracking, we need to process the if schema for its annotations)
-    if (thenSchema === undefined && elseSchema === undefined && !propsTracker.active) {
+    if (
+      thenSchema === undefined &&
+      elseSchema === undefined &&
+      !propsTracker.active &&
+      !itemsTracker.active
+    ) {
       return;
     }
 
@@ -2329,13 +2558,16 @@ export function generateCompositionChecks(
       // Successfully inlined - use the inlined condition variable
       const condVar = inlinedCheck.conditionVar;
 
-      // Ensure dynamic var is created before branching (so it's in correct scope)
+      // Ensure dynamic vars are created before branching (so they're in correct scope)
       // This must happen before any code.if() blocks that might use the tracker
       if (
         propsTracker.active &&
         (inlinedCheck.evaluatedProps.length > 0 || thenSchema || elseSchema)
       ) {
         propsTracker.getDynamicVar();
+      }
+      if (itemsTracker.active && (thenSchema || elseSchema)) {
+        itemsTracker.getDynamicVar();
       }
 
       // When if matches, apply then schema AND track if properties
@@ -2358,17 +2590,15 @@ export function generateCompositionChecks(
               ctx.getMainFuncName()
             );
           } else if (thenSchema !== true) {
-            // Track then properties - merge unconditionally since we're inside the if block
-            propsTracker.withMergedBranch(() => {
-              generateSchemaValidator(
-                code,
-                thenSchema,
-                dataVar,
-                pathExprCode,
-                ctx,
-                dynamicScopeVar
-              );
-            });
+            // Use branch tracking: properties only count when then branch is taken
+            const thenPropsBranch = propsTracker.enterBranch();
+            const thenItemsBranch = itemsTracker.enterBranch();
+            generateSchemaValidator(code, thenSchema, dataVar, pathExprCode, ctx, dynamicScopeVar);
+            propsTracker.exitBranch();
+            itemsTracker.exitBranch();
+            // Merge unconditionally since we're inside the if block
+            propsTracker.mergeBranch(thenPropsBranch, new Name('true'));
+            itemsTracker.mergeBranch(thenItemsBranch, new Name('true'));
           }
         }
       });
@@ -2387,17 +2617,15 @@ export function generateCompositionChecks(
               ctx.getMainFuncName()
             );
           } else if (elseSchema !== true) {
-            // Track else properties - merge unconditionally since we're inside the else block
-            propsTracker.withMergedBranch(() => {
-              generateSchemaValidator(
-                code,
-                elseSchema,
-                dataVar,
-                pathExprCode,
-                ctx,
-                dynamicScopeVar
-              );
-            });
+            // Use branch tracking: properties only count when else branch is taken
+            const elsePropsBranch = propsTracker.enterBranch();
+            const elseItemsBranch = itemsTracker.enterBranch();
+            generateSchemaValidator(code, elseSchema, dataVar, pathExprCode, ctx, dynamicScopeVar);
+            propsTracker.exitBranch();
+            itemsTracker.exitBranch();
+            // Merge unconditionally since we're inside the else block
+            propsTracker.mergeBranch(elsePropsBranch, new Name('true'));
+            itemsTracker.mergeBranch(elseItemsBranch, new Name('true'));
           }
         });
       }
@@ -2405,24 +2633,30 @@ export function generateCompositionChecks(
       // Fallback to original approach
       const condVar = code.genVar('ifCond');
 
-      // Ensure dynamic var is created before branching
+      // Ensure dynamic vars are created before branching
       if (propsTracker.active) {
         propsTracker.getDynamicVar();
       }
+      if (itemsTracker.active) {
+        itemsTracker.getDynamicVar();
+      }
 
-      // Track properties from `if` schema in a branch.
+      // Track properties/items from `if` schema in a branch.
       // According to JSON Schema spec:
       // - When `if` succeeds: `if` annotations + `then` annotations are collected
       // - When `if` fails: only `else` annotations are collected
-      const { result: checkExpr, branch: ifBranch } = propsTracker.withBranch(() =>
-        generateSubschemaCheck(code, ifSchema, dataVar, ctx, dynamicScopeVar)
-      );
+      const ifPropsBranch = propsTracker.enterBranch();
+      const ifItemsBranch = itemsTracker.enterBranch();
+      const checkExpr = generateSubschemaCheck(code, ifSchema, dataVar, ctx, dynamicScopeVar);
+      propsTracker.exitBranch();
+      itemsTracker.exitBranch();
       code.line(_`const ${condVar} = ${checkExpr};`);
 
       // When if matches, apply then schema if present AND merge if annotations
       code.if(condVar, () => {
         // Merge if annotations since if succeeded
-        propsTracker.mergeBranch(ifBranch, new Name('true'));
+        propsTracker.mergeBranch(ifPropsBranch, new Name('true'));
+        itemsTracker.mergeBranch(ifItemsBranch, new Name('true'));
         if (thenSchema !== undefined) {
           if (thenSchema === false) {
             genError(
@@ -2436,16 +2670,13 @@ export function generateCompositionChecks(
             );
           } else if (thenSchema !== true) {
             // Track then properties - merge unconditionally since we're inside the if block
-            propsTracker.withMergedBranch(() => {
-              generateSchemaValidator(
-                code,
-                thenSchema,
-                dataVar,
-                pathExprCode,
-                ctx,
-                dynamicScopeVar
-              );
-            });
+            const thenPropsBranch = propsTracker.enterBranch();
+            const thenItemsBranch = itemsTracker.enterBranch();
+            generateSchemaValidator(code, thenSchema, dataVar, pathExprCode, ctx, dynamicScopeVar);
+            propsTracker.exitBranch();
+            itemsTracker.exitBranch();
+            propsTracker.mergeBranch(thenPropsBranch, new Name('true'));
+            itemsTracker.mergeBranch(thenItemsBranch, new Name('true'));
           }
         }
       });
@@ -2465,16 +2696,13 @@ export function generateCompositionChecks(
             );
           } else if (elseSchema !== true) {
             // Track else properties - merge unconditionally since we're inside the else block
-            propsTracker.withMergedBranch(() => {
-              generateSchemaValidator(
-                code,
-                elseSchema,
-                dataVar,
-                pathExprCode,
-                ctx,
-                dynamicScopeVar
-              );
-            });
+            const elsePropsBranch = propsTracker.enterBranch();
+            const elseItemsBranch = itemsTracker.enterBranch();
+            generateSchemaValidator(code, elseSchema, dataVar, pathExprCode, ctx, dynamicScopeVar);
+            propsTracker.exitBranch();
+            itemsTracker.exitBranch();
+            propsTracker.mergeBranch(elsePropsBranch, new Name('true'));
+            itemsTracker.mergeBranch(elseItemsBranch, new Name('true'));
           }
         });
       }
@@ -2928,6 +3156,19 @@ export function generateItemsChecks(
     .filter(({ schema: s }) => !isNoOpSchema(s));
   const hasNonTrivialTuples = nonTrivialTupleSchemas.length > 0;
 
+  // Track items for unevaluatedItems support
+  const itemsTracker = ctx.getItemsTracker();
+
+  // prefixItems marks items 0..N-1 as evaluated (even if schemas are trivial like `true`)
+  if (tupleSchemas.length > 0) {
+    itemsTracker.addPrefixItems(tupleSchemas.length);
+  }
+
+  // items keyword (when not an array) marks ALL items as evaluated
+  if (afterTupleSchema !== undefined) {
+    itemsTracker.markAllItemsEvaluated();
+  }
+
   if (!hasNonTrivialTuples && !hasAfterTupleSchema) return;
 
   const genChecks = () => {
@@ -2939,7 +3180,11 @@ export function generateItemsChecks(
         const itemAccess = indexAccess(dataVar, i);
         const itemVar = code.genVar('item');
         code.line(_`const ${itemVar} = ${itemAccess};`);
+        // Push isolated scope for item schema - item's arrays/objects are different instances
+        // Don't let nested array/object tracking leak into parent's tracking
+        itemsTracker.pushScope();
         generateSchemaValidator(code, itemSchema, itemVar, itemPathExpr, ctx, dynamicScopeVar);
+        itemsTracker.popScope(false); // Don't merge - different instance
       });
     }
 
@@ -3019,6 +3264,8 @@ export function generateItemsChecks(
               const itemPathExpr = pathExprIndex(pathExprCode, iVar);
               const itemVar = code.genVar('item');
               code.line(_`const ${itemVar} = ${itemAccess};`);
+              // Push isolated scope for item schema - item's arrays/objects are different instances
+              itemsTracker.pushScope();
               generateSchemaValidator(
                 code,
                 afterTupleSchema!,
@@ -3027,6 +3274,7 @@ export function generateItemsChecks(
                 ctx,
                 dynamicScopeVar
               );
+              itemsTracker.popScope(false); // Don't merge - different instance
             },
             startIndex
           );

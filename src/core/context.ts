@@ -6,6 +6,7 @@ import type { JsonSchema, JsonSchemaBase } from '../types.js';
 import { Name } from './codegen.js';
 import type { CodeBuilder } from './codegen.js';
 import { PropsTracker } from './props-tracker.js';
+import { ItemsTracker } from './items-tracker.js';
 
 /**
  * Coercion options - can be boolean or object with per-type settings
@@ -197,7 +198,10 @@ export class CompileContext {
   /** Property tracker for unevaluatedProperties support */
   #propsTracker: PropsTracker | null = null;
 
-  /** Code builder reference (set when props tracker is initialized) */
+  /** Items tracker for unevaluatedItems support */
+  #itemsTracker: ItemsTracker | null = null;
+
+  /** Code builder reference (set when trackers are initialized) */
   #codeBuilder: CodeBuilder | null = null;
 
   constructor(rootSchema: JsonSchema, options: CompileOptions = {}) {
@@ -782,6 +786,18 @@ export class CompileContext {
   }
 
   /**
+   * Initialize the items tracker for unevaluatedItems support.
+   * Must be called before accessing the tracker.
+   *
+   * @param code - The CodeBuilder instance
+   * @param active - Whether tracking should be active (schema contains unevaluatedItems)
+   */
+  initItemsTracker(code: CodeBuilder, active: boolean): void {
+    this.#codeBuilder = code;
+    this.#itemsTracker = new ItemsTracker(code, active);
+  }
+
+  /**
    * Get the property tracker.
    * Returns an inactive tracker if not initialized.
    */
@@ -790,6 +806,17 @@ export class CompileContext {
       throw new Error('PropsTracker not initialized. Call initPropsTracker first.');
     }
     return this.#propsTracker;
+  }
+
+  /**
+   * Get the items tracker.
+   * Returns an inactive tracker if not initialized.
+   */
+  getItemsTracker(): ItemsTracker {
+    if (!this.#itemsTracker) {
+      throw new Error('ItemsTracker not initialized. Call initItemsTracker first.');
+    }
+    return this.#itemsTracker;
   }
 
   /**
