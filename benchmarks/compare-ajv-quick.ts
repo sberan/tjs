@@ -1,26 +1,26 @@
 /**
- * Compare tjs vs ajv performance using the benchmark library.
+ * Compare tjs vs ajv performance using mitata.
  *
  * Strategy from json-schema-benchmark (ebdrup):
  * - Pre-compile ALL validators for ALL schemas
  * - Run ALL tests in ONE benchmark iteration
- * - Uses benchmark.js for statistical accuracy
+ * - Uses mitata for accurate microbenchmarking
  * - Tracks compliance (pass/fail) for each validator
  * - Shows top 10 slowest tests by absolute ops/s difference
  *
  * Usage:
- *   npm run bench:compare [drafts...] [--filter <regex>]
+ *   npm run bench [drafts...] [--filter <regex>]
  *
  * Examples:
- *   npm run bench:compare draft7 --filter idn       # Only idn-* formats
- *   npm run bench:compare --filter "hostname|email" # hostname or email
- *   npm run bench:compare:all --filter uri          # All drafts, uri formats
+ *   npm run bench draft7 --filter idn       # Only idn-* formats
+ *   npm run bench --filter "hostname|email" # hostname or email
+ *   npm run bench draft2019-09              # Single draft
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
-import Benchmark from 'benchmark';
+import { measure } from 'mitata';
 import Ajv from 'ajv';
 import Ajv2019 from 'ajv/dist/2019.js';
 import Ajv2020 from 'ajv/dist/2020.js';
@@ -56,10 +56,6 @@ interface CompiledTestSuite {
 
 interface DraftResult {
   draft: string;
-  tjsHz: number;
-  ajvHz: number;
-  tjsRme: number;
-  ajvRme: number;
   testCount: number;
   tjsPass: number;
   tjsFail: number;
@@ -70,9 +66,9 @@ interface DraftResult {
 interface SuitePerf {
   description: string;
   draft: string;
-  tjsNs: number; // nanoseconds per test
+  tjsNs: number;
   ajvNs: number;
-  diffPercent: number; // (tjs - ajv) / ajv * 100
+  diffPercent: number;
 }
 
 // ANSI colors
@@ -82,7 +78,7 @@ const DIM = '\x1b[2m';
 const RESET = '\x1b[0m';
 
 // Load remote schemas
-function loadRemoteSchemas(draft: Draft): Record<string, unknown> {
+function loadRemoteSchemas(): Record<string, unknown> {
   const remotes: Record<string, unknown> = {};
   const remotesDir = path.join(__dirname, '../tests/json-schema-test-suite/remotes');
 
@@ -104,9 +100,13 @@ function loadRemoteSchemas(draft: Draft): Record<string, unknown> {
   };
 
   loadDir(remotesDir, 'http://localhost:1234/');
-  const draftRemotesDir = path.join(remotesDir, draft);
-  if (fs.existsSync(draftRemotesDir)) {
-    loadDir(draftRemotesDir, `http://localhost:1234/${draft}/`);
+
+  // Load ALL draft-specific remote directories (needed for cross-draft tests)
+  for (const entry of fs.readdirSync(remotesDir, { withFileTypes: true })) {
+    if (entry.isDirectory() && entry.name.startsWith('draft')) {
+      const draftRemotesDir = path.join(remotesDir, entry.name);
+      loadDir(draftRemotesDir, `http://localhost:1234/${entry.name}/`);
+    }
   }
 
   // Add meta-schemas (required for tests that $ref to the meta-schema)
@@ -122,6 +122,66 @@ function loadRemoteSchemas(draft: Draft): Record<string, unknown> {
     'http://json-schema.org/draft-07/schema': path.join(
       __dirname,
       '../src/meta-schemas/draft-07.json'
+    ),
+    'https://json-schema.org/draft/2019-09/schema': path.join(
+      __dirname,
+      '../src/meta-schemas/draft-2019-09.json'
+    ),
+    'https://json-schema.org/draft/2019-09/meta/core': path.join(
+      __dirname,
+      '../src/meta-schemas/draft-2019-09/core.json'
+    ),
+    'https://json-schema.org/draft/2019-09/meta/applicator': path.join(
+      __dirname,
+      '../src/meta-schemas/draft-2019-09/applicator.json'
+    ),
+    'https://json-schema.org/draft/2019-09/meta/validation': path.join(
+      __dirname,
+      '../src/meta-schemas/draft-2019-09/validation.json'
+    ),
+    'https://json-schema.org/draft/2019-09/meta/meta-data': path.join(
+      __dirname,
+      '../src/meta-schemas/draft-2019-09/meta-data.json'
+    ),
+    'https://json-schema.org/draft/2019-09/meta/format': path.join(
+      __dirname,
+      '../src/meta-schemas/draft-2019-09/format.json'
+    ),
+    'https://json-schema.org/draft/2019-09/meta/content': path.join(
+      __dirname,
+      '../src/meta-schemas/draft-2019-09/content.json'
+    ),
+    'https://json-schema.org/draft/2020-12/schema': path.join(
+      __dirname,
+      '../src/meta-schemas/draft-2020-12.json'
+    ),
+    'https://json-schema.org/draft/2020-12/meta/core': path.join(
+      __dirname,
+      '../src/meta-schemas/draft-2020-12/core.json'
+    ),
+    'https://json-schema.org/draft/2020-12/meta/applicator': path.join(
+      __dirname,
+      '../src/meta-schemas/draft-2020-12/applicator.json'
+    ),
+    'https://json-schema.org/draft/2020-12/meta/validation': path.join(
+      __dirname,
+      '../src/meta-schemas/draft-2020-12/validation.json'
+    ),
+    'https://json-schema.org/draft/2020-12/meta/meta-data': path.join(
+      __dirname,
+      '../src/meta-schemas/draft-2020-12/meta-data.json'
+    ),
+    'https://json-schema.org/draft/2020-12/meta/format-annotation': path.join(
+      __dirname,
+      '../src/meta-schemas/draft-2020-12/format-annotation.json'
+    ),
+    'https://json-schema.org/draft/2020-12/meta/content': path.join(
+      __dirname,
+      '../src/meta-schemas/draft-2020-12/content.json'
+    ),
+    'https://json-schema.org/draft/2020-12/meta/unevaluated': path.join(
+      __dirname,
+      '../src/meta-schemas/draft-2020-12/unevaluated.json'
     ),
   };
   for (const [uri, filePath] of Object.entries(metaSchemas)) {
@@ -140,15 +200,14 @@ function loadJsbBenchmarkTests(draft: Draft): Set<string> | null {
   const jsbDir = path.join(__dirname, '../../json-schema-benchmark');
   let benchmarkFile: string;
 
-  // Map our draft names to jsb folder structure
   if (draft === 'draft7') {
     benchmarkFile = path.join(jsbDir, 'draft7/benchmark-tests.txt');
   } else if (draft === 'draft6') {
-    benchmarkFile = path.join(jsbDir, 'benchmark-tests.txt'); // draft6 is the default
+    benchmarkFile = path.join(jsbDir, 'benchmark-tests.txt');
   } else if (draft === 'draft4') {
     benchmarkFile = path.join(jsbDir, 'draft4/benchmark-tests.txt');
   } else {
-    return null; // jsb doesn't support draft2019-09 or draft2020-12
+    return null;
   }
 
   if (!fs.existsSync(benchmarkFile)) {
@@ -161,7 +220,7 @@ function loadJsbBenchmarkTests(draft: Draft): Set<string> | null {
   return tests;
 }
 
-// Load all test suites for a draft (including optional tests)
+// Load all test suites for a draft
 function loadTestSuites(draft: Draft, includeOptional: boolean = true): TestGroup[] {
   const suiteDir = path.join(__dirname, '../tests/json-schema-test-suite', draft);
   const suites: TestGroup[] = [];
@@ -171,12 +230,10 @@ function loadTestSuites(draft: Draft, includeOptional: boolean = true): TestGrou
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        // Mark tests in optional/format/ directory as format tests
         const isFormat = isFormatTest || entry.name === 'format';
         loadDir(fullPath, isFormat);
       } else if (entry.name.endsWith('.json')) {
         const groups: TestGroup[] = JSON.parse(fs.readFileSync(fullPath, 'utf-8'));
-        // Mark all groups from format directory as format tests
         if (isFormatTest) {
           for (const group of groups) {
             group.isFormatTest = true;
@@ -192,12 +249,11 @@ function loadTestSuites(draft: Draft, includeOptional: boolean = true): TestGrou
     if (!filename.endsWith('.json')) continue;
     const filepath = path.join(suiteDir, filename);
     if (!fs.statSync(filepath).isFile()) continue;
-
     const groups: TestGroup[] = JSON.parse(fs.readFileSync(filepath, 'utf-8'));
     suites.push(...groups);
   }
 
-  // Load optional tests (including format tests)
+  // Load optional tests
   if (includeOptional) {
     const optionalDir = path.join(suiteDir, 'optional');
     if (fs.existsSync(optionalDir)) {
@@ -208,15 +264,12 @@ function loadTestSuites(draft: Draft, includeOptional: boolean = true): TestGrou
   return suites;
 }
 
-// Create AJV instance with format validation enabled
+// Create AJV instance
 function createAjv(
   draft: Draft,
   remotes: Record<string, unknown>,
   formatAssertion: boolean = false
 ): Ajv {
-  // For draft 2019-09/2020-12, format is annotation-only by default.
-  // Pass validateFormats: true to enable format validation for format tests.
-  // Disable strict mode to avoid rejecting valid schemas (e.g., additionalItems without array items).
   const opts = {
     allErrors: false,
     logger: false as const,
@@ -243,16 +296,13 @@ function createAjv(
   return ajv;
 }
 
-// Pre-compile all test suites for both validators
-// When freshAjvPerSchema is true, creates a fresh Ajv instance per schema (like json-schema-benchmark)
+// Pre-compile all test suites
 function compileTestSuites(
   testSuites: TestGroup[],
   draft: Draft,
   remotes: Record<string, unknown>,
   freshAjvPerSchema: boolean = false
 ): CompiledTestSuite[] {
-  // Shared Ajv instances (used when freshAjvPerSchema is false)
-  // We need two: one with format validation, one without
   const sharedAjv = freshAjvPerSchema ? null : createAjv(draft, remotes, false);
   const sharedAjvWithFormat = freshAjvPerSchema ? null : createAjv(draft, remotes, true);
 
@@ -261,7 +311,6 @@ function compileTestSuites(
     let ajvValidator: ((data: unknown) => boolean) | null = null;
 
     try {
-      // Enable formatAssertion for optional format tests (they test format validation)
       tjsValidator = createValidator(suite.schema as JsonSchema, {
         defaultMeta: draft,
         remotes: remotes as Record<string, JsonSchema>,
@@ -270,8 +319,6 @@ function compileTestSuites(
     } catch {}
 
     try {
-      // Use fresh Ajv per schema if requested (matches json-schema-benchmark)
-      // Enable format validation for format tests
       const ajv = freshAjvPerSchema
         ? createAjv(draft, remotes, suite.isFormatTest ?? false)
         : suite.isFormatTest
@@ -299,7 +346,7 @@ interface FailedTest {
   got: boolean | 'error' | 'no-validator';
 }
 
-// Check compliance for a validator
+// Check compliance
 function checkCompliance(
   compiled: CompiledTestSuite[],
   getValidator: (s: CompiledTestSuite) => ((data: unknown) => boolean) | null,
@@ -359,215 +406,68 @@ function checkCompliance(
   return { pass, fail, failures };
 }
 
-// Timing accumulator for per-suite stats during benchmark
-interface SuiteTiming {
-  tjsTotalNs: number;
-  ajvTotalNs: number;
-  testCount: number;
-  iterations: number;
-  // For variance tracking
-  tjsSamples: number[];
-  ajvSamples: number[];
-}
-
-// Calculate coefficient of variation (CV) as a percentage
-function coefficientOfVariation(samples: number[]): number {
-  if (samples.length < 2) return 0;
-  const mean = samples.reduce((a, b) => a + b, 0) / samples.length;
-  if (mean === 0) return 0;
-  const variance = samples.reduce((sum, x) => sum + (x - mean) ** 2, 0) / (samples.length - 1);
-  const stdDev = Math.sqrt(variance);
-  return (stdDev / mean) * 100;
-}
-
-// Collect per-suite timing during benchmark run
-function collectSuitePerfs(timings: Map<string, SuiteTiming>, draft: string): SuitePerf[] {
-  const results: SuitePerf[] = [];
-
-  for (const [description, timing] of timings) {
-    const tjsNsPerTest = timing.tjsTotalNs / (timing.testCount * timing.iterations);
-    const ajvNsPerTest = timing.ajvTotalNs / (timing.testCount * timing.iterations);
-    const diffPercent = ajvNsPerTest > 0 ? ((tjsNsPerTest - ajvNsPerTest) / ajvNsPerTest) * 100 : 0;
-
-    results.push({
-      description,
-      draft,
-      tjsNs: tjsNsPerTest,
-      ajvNs: ajvNsPerTest,
-      diffPercent,
-    });
-  }
-
-  return results;
-}
-
-// Re-run specific high-variance tests to get more stable results
-function rerunHighVarianceTests(
-  validSuites: CompiledTestSuite[],
-  suiteTimings: Map<string, SuiteTiming>,
-  varianceThreshold: number = 1.0, // CV threshold in percent
-  maxRetries: number = 3,
-  minSamples: number = 10
-): void {
-  for (const testSuite of validSuites) {
-    const timing = suiteTimings.get(testSuite.description)!;
-
-    // Check if we have enough samples and variance is too high
-    const tjsCV = coefficientOfVariation(timing.tjsSamples);
-    const ajvCV = coefficientOfVariation(timing.ajvSamples);
-
-    if (
-      timing.tjsSamples.length >= minSamples &&
-      (tjsCV > varianceThreshold || ajvCV > varianceThreshold)
-    ) {
-      // Retry this test multiple times
-      for (let retry = 0; retry < maxRetries; retry++) {
-        // Run tjs
-        const tjsStart = performance.now();
-        for (const test of testSuite.tests) {
-          testSuite.tjsValidator!(test.data);
-        }
-        const tjsElapsed = (performance.now() - tjsStart) * 1_000_000;
-        timing.tjsTotalNs += tjsElapsed;
-        timing.tjsSamples.push(tjsElapsed / testSuite.tests.length);
-        timing.iterations++;
-
-        // Run ajv
-        const ajvStart = performance.now();
-        for (const test of testSuite.tests) {
-          testSuite.ajvValidator!(test.data);
-        }
-        const ajvElapsed = (performance.now() - ajvStart) * 1_000_000;
-        timing.ajvTotalNs += ajvElapsed;
-        timing.ajvSamples.push(ajvElapsed / testSuite.tests.length);
-
-        // Check if variance is now acceptable
-        const newTjsCV = coefficientOfVariation(timing.tjsSamples);
-        const newAjvCV = coefficientOfVariation(timing.ajvSamples);
-        if (newTjsCV <= varianceThreshold && newAjvCV <= varianceThreshold) {
-          break;
-        }
-      }
-    }
-  }
-}
-
-// Run benchmark for a draft
-function runBenchmark(
+// Prepare benchmark for a draft
+function prepareBenchmark(
   draft: Draft,
-  allSuitePerfs: SuitePerf[],
-  filter: RegExp | null = null,
-  showFailures: boolean = false,
-  includeOptional: boolean = true,
-  jsbMode: boolean = false,
-  jsbExact: boolean = false
-): Promise<DraftResult> {
-  return new Promise((resolve) => {
-    console.log(`\nLoading ${draft}...`);
-    const remotes = loadRemoteSchemas(draft);
-    let testSuites = loadTestSuites(draft, includeOptional);
+  filter: RegExp | null,
+  showFailures: boolean,
+  includeOptional: boolean,
+  jsbMode: boolean,
+  jsbExact: boolean
+): {
+  validSuites: CompiledTestSuite[];
+  result: DraftResult;
+} {
+  console.log(`\nLoading ${draft}...`);
+  const remotes = loadRemoteSchemas();
+  let testSuites = loadTestSuites(draft, includeOptional);
 
-    // Apply filter if provided
-    if (filter) {
-      testSuites = testSuites.filter((s) => filter.test(s.description));
-      console.log(`Filtered to ${testSuites.length} schemas matching ${filter}`);
-    }
+  if (filter) {
+    testSuites = testSuites.filter((s) => filter.test(s.description));
+    console.log(`Filtered to ${testSuites.length} schemas matching ${filter}`);
+  }
 
-    console.log(`Compiling ${testSuites.length} schemas...`);
-    // In JSB exact mode, use fresh Ajv per schema to match json-schema-benchmark methodology
-    const compiled = compileTestSuites(testSuites, draft, remotes, jsbExact);
+  console.log(`Compiling ${testSuites.length} schemas...`);
+  const compiled = compileTestSuites(testSuites, draft, remotes, jsbExact);
+  const compiledSuites = compiled.filter((s) => s.tjsValidator && s.ajvValidator);
 
-    // Filter to test suites where both validators compiled successfully
-    const compiledSuites = compiled.filter((s) => s.tjsValidator && s.ajvValidator);
+  let validSuites: CompiledTestSuite[];
+  let tjsCompliance: ReturnType<typeof checkCompliance>;
+  let ajvCompliance: ReturnType<typeof checkCompliance>;
 
-    let validSuites: CompiledTestSuite[];
-    let tjsCompliance: ReturnType<typeof checkCompliance>;
-    let ajvCompliance: ReturnType<typeof checkCompliance>;
-
-    if (jsbExact) {
-      // JSB Exact mode: use exactly the tests from json-schema-benchmark's benchmark-tests.txt
-      const jsbTests = loadJsbBenchmarkTests(draft);
-      if (!jsbTests) {
-        console.log(`  Warning: No JSB benchmark tests for ${draft}, falling back to normal mode`);
-        validSuites = compiledSuites;
-        // Check compliance on all tests
-        tjsCompliance = checkCompliance(compiled, (s) => s.tjsValidator, showFailures);
-        ajvCompliance = checkCompliance(compiled, (s) => s.ajvValidator);
-      } else {
-        console.log(`  Filtering to ${jsbTests.size} exact JSB benchmark tests...`);
-        const jsbFilteredSuites: CompiledTestSuite[] = [];
-        for (const suite of compiledSuites) {
-          // Filter tests within this suite to only those in the JSB benchmark
-          const filteredTests = suite.tests.filter((test) => {
-            const testName = `${suite.description}, ${test.description}`;
-            return jsbTests.has(testName);
-          });
-          if (filteredTests.length > 0) {
-            jsbFilteredSuites.push({ ...suite, tests: filteredTests });
-          }
-        }
-        // Check compliance only on JSB-filtered tests
-        tjsCompliance = checkCompliance(jsbFilteredSuites, (s) => s.tjsValidator, showFailures);
-        ajvCompliance = checkCompliance(jsbFilteredSuites, (s) => s.ajvValidator);
-
-        // Exclude entire suites where EITHER validator fails ANY test
-        // This ensures we only compare apples-to-apples (both doing real work)
-        validSuites = [];
-        let excludedSuites = 0;
-        for (const suite of jsbFilteredSuites) {
-          let suiteValid = true;
-          for (const test of suite.tests) {
-            try {
-              const tjsResult = suite.tjsValidator!(test.data);
-              const ajvResult = suite.ajvValidator!(test.data);
-              // Exclude if either validator gets wrong result
-              if (tjsResult !== test.valid || ajvResult !== test.valid) {
-                suiteValid = false;
-                break;
-              }
-            } catch {
-              suiteValid = false;
-              break;
-            }
-          }
-          if (suiteValid) {
-            validSuites.push(suite);
-          } else {
-            excludedSuites++;
-          }
-        }
-        if (excludedSuites > 0) {
-          console.log(
-            `  Excluded ${excludedSuites} suites where either validator fails (comparing only fair tests)`
-          );
-        }
-      }
-    } else {
-      // Check compliance on all tests first
+  if (jsbExact) {
+    const jsbTests = loadJsbBenchmarkTests(draft);
+    if (!jsbTests) {
+      console.log(`  Warning: No JSB benchmark tests for ${draft}, falling back to normal mode`);
+      validSuites = compiledSuites;
       tjsCompliance = checkCompliance(compiled, (s) => s.tjsValidator, showFailures);
       ajvCompliance = checkCompliance(compiled, (s) => s.ajvValidator);
-      // Pre-test to filter out schemas where validators fail
-      // In jsb mode: only exclude tests where ajv fails (simulates json-schema-benchmark exclusion)
-      // Normal mode: exclude tests where either validator fails
-      validSuites = [];
+    } else {
+      console.log(`  Filtering to ${jsbTests.size} exact JSB benchmark tests...`);
+      const jsbFilteredSuites: CompiledTestSuite[] = [];
       for (const suite of compiledSuites) {
+        const filteredTests = suite.tests.filter((test) => {
+          const testName = `${suite.description}, ${test.description}`;
+          return jsbTests.has(testName);
+        });
+        if (filteredTests.length > 0) {
+          jsbFilteredSuites.push({ ...suite, tests: filteredTests });
+        }
+      }
+      tjsCompliance = checkCompliance(jsbFilteredSuites, (s) => s.tjsValidator, showFailures);
+      ajvCompliance = checkCompliance(jsbFilteredSuites, (s) => s.ajvValidator);
+
+      validSuites = [];
+      let excludedSuites = 0;
+      for (const suite of jsbFilteredSuites) {
         let suiteValid = true;
         for (const test of suite.tests) {
           try {
             const tjsResult = suite.tjsValidator!(test.data);
             const ajvResult = suite.ajvValidator!(test.data);
-            if (jsbMode) {
-              // JSB mode: only exclude if ajv fails (tjs failures don't exclude)
-              if (ajvResult !== test.valid) {
-                suiteValid = false;
-                break;
-              }
-            } else {
-              // Normal mode: exclude if either fails
-              if (tjsResult !== test.valid || ajvResult !== test.valid) {
-                suiteValid = false;
-                break;
-              }
+            if (tjsResult !== test.valid || ajvResult !== test.valid) {
+              suiteValid = false;
+              break;
             }
           } catch {
             suiteValid = false;
@@ -576,126 +476,74 @@ function runBenchmark(
         }
         if (suiteValid) {
           validSuites.push(suite);
+        } else {
+          excludedSuites++;
         }
       }
-    }
-
-    // Show compliance results
-    console.log(
-      `  tjs compliance: ${tjsCompliance.pass}/${tjsCompliance.pass + tjsCompliance.fail} (${tjsCompliance.fail} failures)`
-    );
-    console.log(
-      `  ajv compliance: ${ajvCompliance.pass}/${ajvCompliance.pass + ajvCompliance.fail} (${ajvCompliance.fail} failures)`
-    );
-
-    // Show tjs failures if requested
-    if (showFailures && tjsCompliance.failures.length > 0) {
-      console.log(`\n  tjs failures:`);
-      for (const f of tjsCompliance.failures) {
-        console.log(`    - ${f.suite} > ${f.test} (expected ${f.expected}, got ${f.got})`);
+      if (excludedSuites > 0) {
+        console.log(`  Excluded ${excludedSuites} suites where either validator fails`);
       }
     }
-
-    const testCount = validSuites.reduce((sum, s) => sum + s.tests.length, 0);
-
-    console.log(`Running benchmark on ${validSuites.length} schemas (${testCount} tests)...`);
-
-    let tjsHz = 0;
-    let ajvHz = 0;
-    let tjsRme = 0;
-    let ajvRme = 0;
-
-    // Track per-suite timing during benchmark
-    const suiteTimings = new Map<string, SuiteTiming>();
-    for (const testSuite of validSuites) {
-      suiteTimings.set(testSuite.description, {
-        tjsTotalNs: 0,
-        ajvTotalNs: 0,
-        testCount: testSuite.tests.length,
-        iterations: 0,
-        tjsSamples: [],
-        ajvSamples: [],
-      });
-    }
-
-    const suite = new Benchmark.Suite();
-
-    // Add tjs benchmark - runs ALL tests in one iteration, tracks per-suite timing
-    suite.add('tjs', () => {
-      for (const testSuite of validSuites) {
-        const timing = suiteTimings.get(testSuite.description)!;
-        const start = performance.now();
-        for (const test of testSuite.tests) {
-          testSuite.tjsValidator!(test.data);
+  } else {
+    tjsCompliance = checkCompliance(compiled, (s) => s.tjsValidator, showFailures);
+    ajvCompliance = checkCompliance(compiled, (s) => s.ajvValidator);
+    validSuites = [];
+    for (const suite of compiledSuites) {
+      let suiteValid = true;
+      for (const test of suite.tests) {
+        try {
+          const tjsResult = suite.tjsValidator!(test.data);
+          const ajvResult = suite.ajvValidator!(test.data);
+          if (jsbMode) {
+            if (ajvResult !== test.valid) {
+              suiteValid = false;
+              break;
+            }
+          } else {
+            if (tjsResult !== test.valid || ajvResult !== test.valid) {
+              suiteValid = false;
+              break;
+            }
+          }
+        } catch {
+          suiteValid = false;
+          break;
         }
-        const elapsed = (performance.now() - start) * 1_000_000;
-        timing.tjsTotalNs += elapsed;
-        timing.tjsSamples.push(elapsed / testSuite.tests.length); // ns per test
-        timing.iterations++;
       }
-    });
-
-    // Add ajv benchmark - runs ALL tests in one iteration, tracks per-suite timing
-    suite.add('ajv', () => {
-      for (const testSuite of validSuites) {
-        const timing = suiteTimings.get(testSuite.description)!;
-        const start = performance.now();
-        for (const test of testSuite.tests) {
-          testSuite.ajvValidator!(test.data);
-        }
-        const elapsed = (performance.now() - start) * 1_000_000;
-        timing.ajvTotalNs += elapsed;
-        timing.ajvSamples.push(elapsed / testSuite.tests.length); // ns per test
+      if (suiteValid) {
+        validSuites.push(suite);
       }
-    });
+    }
+  }
 
-    suite.on('cycle', (event: Benchmark.Event) => {
-      const bench = event.target;
-      console.log(`  ${String(bench)}`);
-      if (bench.name === 'tjs') {
-        tjsHz = bench.hz ?? 0;
-        tjsRme = bench.stats?.rme ?? 0;
-      } else if (bench.name === 'ajv') {
-        ajvHz = bench.hz ?? 0;
-        ajvRme = bench.stats?.rme ?? 0;
-      }
-    });
+  console.log(
+    `  tjs compliance: ${tjsCompliance.pass}/${tjsCompliance.pass + tjsCompliance.fail} (${tjsCompliance.fail} failures)`
+  );
+  console.log(
+    `  ajv compliance: ${ajvCompliance.pass}/${ajvCompliance.pass + ajvCompliance.fail} (${ajvCompliance.fail} failures)`
+  );
 
-    suite.on('error', (event: Benchmark.Event) => {
-      console.error(`  Error in ${event.target.name}: ${(event.target as any).error}`);
-    });
+  if (showFailures && tjsCompliance.failures.length > 0) {
+    console.log(`\n  tjs failures:`);
+    for (const f of tjsCompliance.failures) {
+      console.log(`    - ${f.suite} > ${f.test} (expected ${f.expected}, got ${f.got})`);
+    }
+  }
 
-    suite.on('complete', function (this: Benchmark.Suite) {
-      const fastest = this.filter('fastest').map('name');
-      console.log(`  Fastest: ${fastest}`);
+  const testCount = validSuites.reduce((sum, s) => sum + s.tests.length, 0);
+  console.log(`Running benchmark on ${validSuites.length} schemas (${testCount} tests)...`);
 
-      // Re-run high variance tests to get more stable results
-      rerunHighVarianceTests(validSuites, suiteTimings);
-
-      // Collect per-suite performance data
-      const suitePerfs = collectSuitePerfs(suiteTimings, draft);
-      allSuitePerfs.push(...suitePerfs);
-
-      resolve({
-        draft,
-        tjsHz,
-        ajvHz,
-        tjsRme,
-        ajvRme,
-        testCount,
-        tjsPass: tjsCompliance.pass,
-        tjsFail: tjsCompliance.fail,
-        ajvPass: ajvCompliance.pass,
-        ajvFail: ajvCompliance.fail,
-      });
-    });
-
-    suite.run({ async: false });
-  });
-}
-
-function formatHz(n: number): string {
-  return Math.round(n).toLocaleString();
+  return {
+    validSuites,
+    result: {
+      draft,
+      testCount,
+      tjsPass: tjsCompliance.pass,
+      tjsFail: tjsCompliance.fail,
+      ajvPass: ajvCompliance.pass,
+      ajvFail: ajvCompliance.fail,
+    },
+  };
 }
 
 async function main() {
@@ -708,6 +556,8 @@ async function main() {
   let includeOptional = true;
   let jsbMode = false;
   let jsbExact = false;
+  let quickMode = false;
+  let complianceOnly = false;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -724,14 +574,23 @@ async function main() {
       jsbMode = true;
     } else if (arg === '--jsb-exact') {
       jsbExact = true;
+    } else if (arg === '--quick' || arg === '-q') {
+      quickMode = true;
+    } else if (arg === '--compliance-only' || arg === '-c') {
+      complianceOnly = true;
+      showFailures = true;
     } else if (['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'].includes(arg)) {
       drafts.push(arg as Draft);
     }
   }
-  if (drafts.length === 0)
+  if (drafts.length === 0) {
     drafts.push('draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12');
+  }
 
-  console.log('tjs vs ajv Benchmark Comparison');
+  console.log('tjs vs ajv Benchmark Comparison (using mitata)');
+  if (quickMode) {
+    console.log('Quick mode: reduced iterations for faster feedback');
+  }
   if (filter) {
     console.log(`Filter: ${filter}`);
   }
@@ -741,38 +600,115 @@ async function main() {
   if (jsbExact) {
     console.log('JSB Exact mode: using exact tests from json-schema-benchmark');
   } else if (jsbMode) {
-    console.log('JSB mode: only excluding tests where ajv fails (like json-schema-benchmark)');
+    console.log('JSB mode: only excluding tests where ajv fails');
   }
   console.log('='.repeat(100));
 
   const results: DraftResult[] = [];
   const allSuitePerfs: SuitePerf[] = [];
 
+  // Measure options: quick mode uses fewer samples
+  const measureOpts = quickMode
+    ? { min_cpu_time: 10 * 1e6, min_samples: 5 } // 10ms, 5 samples
+    : { min_cpu_time: 500 * 1e6, min_samples: 10 }; // 500ms, 10 samples
+
+  // First pass: prepare all drafts and count total suites
+  const preparedDrafts: Array<{ draft: Draft; prepared: ReturnType<typeof prepareBenchmark> }> = [];
+  let totalSuites = 0;
   for (const draft of drafts) {
-    const result = await runBenchmark(
+    const prepared = prepareBenchmark(
       draft,
-      allSuitePerfs,
       filter,
       showFailures,
       includeOptional,
       jsbMode,
       jsbExact
     );
-    results.push(result);
+    preparedDrafts.push({ draft, prepared });
+    results.push(prepared.result);
+    totalSuites += prepared.validSuites.length;
   }
 
-  // Compute totals
-  const totalTests = results.reduce((sum, r) => sum + r.testCount, 0);
-  const totalTjsPass = results.reduce((sum, r) => sum + r.tjsPass, 0);
-  const totalTjsFail = results.reduce((sum, r) => sum + r.tjsFail, 0);
-  const totalAjvPass = results.reduce((sum, r) => sum + r.ajvPass, 0);
-  const totalAjvFail = results.reduce((sum, r) => sum + r.ajvFail, 0);
+  // In compliance-only mode, skip benchmarking
+  if (complianceOnly) {
+    console.log('\nCompliance check complete (benchmark skipped).');
+    return;
+  }
 
-  // Weighted ops/s
-  const weightedTjs = results.reduce((sum, r) => sum + r.tjsHz * r.testCount, 0) / totalTests;
-  const weightedAjv = results.reduce((sum, r) => sum + r.ajvHz * r.testCount, 0) / totalTests;
-  const overallDiff =
-    weightedAjv > 0 ? Math.round(((weightedTjs - weightedAjv) / weightedAjv) * 100) : 0;
+  // Second pass: measure with progress
+  let completedSuites = 0;
+  const startTime = Date.now();
+
+  for (const { draft, prepared } of preparedDrafts) {
+    for (const testSuite of prepared.validSuites) {
+      const tjsValidator = testSuite.tjsValidator!;
+      const ajvValidator = testSuite.ajvValidator!;
+      const tests = testSuite.tests;
+
+      // Show progress
+      completedSuites++;
+      const percent = Math.round((completedSuites / totalSuites) * 100);
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+      process.stdout.write(
+        `\r  [${percent}%] ${completedSuites}/${totalSuites} suites (${elapsed}s) - ${draft}: ${testSuite.description.slice(0, 40).padEnd(40)}`
+      );
+
+      const tjsStats = await measure(() => {
+        for (const test of tests) {
+          tjsValidator(test.data);
+        }
+      }, measureOpts);
+
+      const ajvStats = await measure(() => {
+        for (const test of tests) {
+          ajvValidator(test.data);
+        }
+      }, measureOpts);
+
+      const tjsNs = tjsStats.avg / tests.length;
+      const ajvNs = ajvStats.avg / tests.length;
+      const diffPercent = ajvNs > 0 ? ((tjsNs - ajvNs) / ajvNs) * 100 : 0;
+
+      allSuitePerfs.push({
+        description: testSuite.description,
+        draft,
+        tjsNs,
+        ajvNs,
+        diffPercent,
+      });
+    }
+  }
+  // Clear progress line
+  process.stdout.write('\r' + ' '.repeat(100) + '\r');
+
+  // Compute per-draft performance from per-suite timing
+  interface DraftPerf {
+    draft: string;
+    testCount: number;
+    tjsTotalNs: number;
+    ajvTotalNs: number;
+    tjsPass: number;
+    tjsFail: number;
+    ajvPass: number;
+    ajvFail: number;
+  }
+
+  const draftPerfs: DraftPerf[] = [];
+  for (const r of results) {
+    const draftSuites = allSuitePerfs.filter((s) => s.draft === r.draft);
+    const tjsTotalNs = draftSuites.reduce((sum, s) => sum + s.tjsNs, 0);
+    const ajvTotalNs = draftSuites.reduce((sum, s) => sum + s.ajvNs, 0);
+    draftPerfs.push({
+      draft: r.draft,
+      testCount: r.testCount,
+      tjsTotalNs,
+      ajvTotalNs,
+      tjsPass: r.tjsPass,
+      tjsFail: r.tjsFail,
+      ajvPass: r.ajvPass,
+      ajvFail: r.ajvFail,
+    });
+  }
 
   // Summary table
   console.log('\n' + '='.repeat(100));
@@ -782,8 +718,8 @@ async function main() {
     'Draft'.padEnd(14) +
       'Tests'.padStart(6) +
       ' │' +
-      'tjs ops/s'.padStart(11) +
-      'ajv ops/s'.padStart(11) +
+      'tjs ns/test'.padStart(12) +
+      'ajv ns/test'.padStart(12) +
       'Diff'.padStart(8) +
       ' │' +
       'tjs pass'.padStart(10) +
@@ -793,10 +729,21 @@ async function main() {
   );
   console.log('─'.repeat(100));
 
-  for (const r of results) {
-    const diff = r.ajvHz > 0 ? Math.round(((r.tjsHz - r.ajvHz) / r.ajvHz) * 100) : 0;
-    const color = diff >= 0 ? GREEN : RED;
-    const sign = diff >= 0 ? '+' : '';
+  let totalTjsNs = 0;
+  let totalAjvNs = 0;
+  let totalTests = 0;
+  let totalTjsPass = 0;
+  let totalTjsFail = 0;
+  let totalAjvPass = 0;
+  let totalAjvFail = 0;
+
+  for (const r of draftPerfs) {
+    const tjsNsPerTest = r.tjsTotalNs / r.testCount;
+    const ajvNsPerTest = r.ajvTotalNs / r.testCount;
+    const diff =
+      ajvNsPerTest > 0 ? Math.round(((tjsNsPerTest - ajvNsPerTest) / ajvNsPerTest) * 100) : 0;
+    const color = diff <= 0 ? GREEN : RED;
+    const sign = diff <= 0 ? '' : '+';
 
     const tjsFailColor = r.tjsFail > 0 ? RED : DIM;
     const ajvFailColor = r.ajvFail > 0 ? RED : DIM;
@@ -805,8 +752,8 @@ async function main() {
       r.draft.padEnd(14) +
         r.testCount.toString().padStart(6) +
         ' │' +
-        formatHz(r.tjsHz).padStart(11) +
-        formatHz(r.ajvHz).padStart(11) +
+        Math.round(tjsNsPerTest).toLocaleString().padStart(12) +
+        Math.round(ajvNsPerTest).toLocaleString().padStart(12) +
         `${color}${sign}${diff}%${RESET}`.padStart(17) +
         ' │' +
         `${GREEN}${r.tjsPass}${RESET}`.padStart(19) +
@@ -814,12 +761,26 @@ async function main() {
         `${GREEN}${r.ajvPass}${RESET}`.padStart(19) +
         `${ajvFailColor}${r.ajvFail}${RESET}`.padStart(19)
     );
+
+    totalTjsNs += r.tjsTotalNs;
+    totalAjvNs += r.ajvTotalNs;
+    totalTests += r.testCount;
+    totalTjsPass += r.tjsPass;
+    totalTjsFail += r.tjsFail;
+    totalAjvPass += r.ajvPass;
+    totalAjvFail += r.ajvFail;
   }
 
-  // Overall row
+  // Total row
   console.log('─'.repeat(100));
-  const totalColor = overallDiff >= 0 ? GREEN : RED;
-  const totalSign = overallDiff >= 0 ? '+' : '';
+  const totalTjsNsPerTest = totalTjsNs / totalTests;
+  const totalAjvNsPerTest = totalAjvNs / totalTests;
+  const totalDiff =
+    totalAjvNsPerTest > 0
+      ? Math.round(((totalTjsNsPerTest - totalAjvNsPerTest) / totalAjvNsPerTest) * 100)
+      : 0;
+  const totalColor = totalDiff <= 0 ? GREEN : RED;
+  const totalSign = totalDiff <= 0 ? '' : '+';
   const tjsTotalFailColor = totalTjsFail > 0 ? RED : DIM;
   const ajvTotalFailColor = totalAjvFail > 0 ? RED : DIM;
 
@@ -827,9 +788,9 @@ async function main() {
     'TOTAL'.padEnd(14) +
       totalTests.toString().padStart(6) +
       ' │' +
-      formatHz(weightedTjs).padStart(11) +
-      formatHz(weightedAjv).padStart(11) +
-      `${totalColor}${totalSign}${overallDiff}%${RESET}`.padStart(17) +
+      Math.round(totalTjsNsPerTest).toLocaleString().padStart(12) +
+      Math.round(totalAjvNsPerTest).toLocaleString().padStart(12) +
+      `${totalColor}${totalSign}${totalDiff}%${RESET}`.padStart(17) +
       ' │' +
       `${GREEN}${totalTjsPass}${RESET}`.padStart(19) +
       `${tjsTotalFailColor}${totalTjsFail}${RESET}`.padStart(19) +
@@ -839,9 +800,7 @@ async function main() {
   console.log('─'.repeat(100));
 
   // Top 10 slowest tests by absolute tjs time
-  const slowest = [...allSuitePerfs]
-    .sort((a, b) => b.tjsNs - a.tjsNs) // sort by tjs time descending
-    .slice(0, 10);
+  const slowest = [...allSuitePerfs].sort((a, b) => b.tjsNs - a.tjsNs).slice(0, 10);
 
   if (slowest.length > 0) {
     console.log('\nTop 10 Slowest Tests (by tjs execution time)');
@@ -863,10 +822,10 @@ async function main() {
     console.log('─'.repeat(100));
   }
 
-  // Top 10 slowest tests compared to ajv (by absolute ns difference)
+  // Top 10 slowest tests compared to ajv
   const slowestVsAjv = [...allSuitePerfs]
-    .filter((s) => s.tjsNs > s.ajvNs) // tjs is slower
-    .sort((a, b) => b.tjsNs - b.ajvNs - (a.tjsNs - a.ajvNs)) // sort by ns difference
+    .filter((s) => s.tjsNs > s.ajvNs)
+    .sort((a, b) => b.tjsNs - b.ajvNs - (a.tjsNs - a.ajvNs))
     .slice(0, 10);
 
   if (slowestVsAjv.length > 0) {
