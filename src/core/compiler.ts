@@ -32,7 +32,10 @@ import {
   isNoOpSchema,
   getSimpleType,
 } from './keywords/utils.js';
-import { hasRestrictiveUnevaluatedProperties } from './props-tracker.js';
+import {
+  hasRestrictiveUnevaluatedProperties,
+  containsUnevaluatedProperties,
+} from './props-tracker.js';
 
 /**
  * Compile error type for internal use (AJV-compatible format)
@@ -61,8 +64,10 @@ export function compile(schema: JsonSchema, options: CompileOptions = {}): Valid
   const ctx = new CompileContext(schema, options);
   const code = new CodeBuilder();
 
-  // Initialize property tracker for unevaluatedProperties support (activated lazily)
-  ctx.initPropsTracker(code, false);
+  // Initialize property tracker for unevaluatedProperties support
+  // Pre-scan schema to activate tracking if any nested schema has unevaluatedProperties
+  const needsPropsTracking = containsUnevaluatedProperties(schema);
+  ctx.initPropsTracker(code, needsPropsTracking);
 
   // Add runtime functions
   ctx.addRuntimeFunction('deepEqual', createDeepEqual());
@@ -2132,7 +2137,7 @@ export function generateCompositionChecks(
           // If subschema has restrictive unevaluatedProperties (false or schema), it needs isolated tracking
           // unevaluatedProperties: true doesn't need isolation - it just accepts all properties
           const isolate = hasRestrictiveUnevaluatedProperties(subSchema);
-          const { result: checkExpr, branchVar } = propsTracker.withBranch(
+          const { result: checkExpr, branch } = propsTracker.withBranch(
             () => generateSubschemaCheck(code, subSchema, dataVar, ctx, dynamicScopeVar),
             isolate
           );
@@ -2142,7 +2147,7 @@ export function generateCompositionChecks(
           code.if(matchedVar, () => {
             code.line(_`${resultVar} = true;`);
           });
-          propsTracker.mergeBranch(branchVar, matchedVar);
+          propsTracker.mergeBranch(branch, matchedVar);
         };
 
         // Only short-circuit if NOT tracking properties
@@ -2181,7 +2186,7 @@ export function generateCompositionChecks(
     schema.oneOf.forEach((subSchema) => {
       // If subschema has restrictive unevaluatedProperties (false or schema), it needs isolated tracking
       const isolate = hasRestrictiveUnevaluatedProperties(subSchema);
-      const { result: checkExpr, branchVar } = propsTracker.withBranch(
+      const { result: checkExpr, branch } = propsTracker.withBranch(
         () => generateSubschemaCheck(code, subSchema, dataVar, ctx, dynamicScopeVar),
         isolate
       );
@@ -2207,7 +2212,7 @@ export function generateCompositionChecks(
       });
 
       // Merge this branch's properties if it matched (conditionally)
-      propsTracker.mergeBranch(branchVar, matchedVar);
+      propsTracker.mergeBranch(branch, matchedVar);
     });
 
     // Final validation - exactly one must match
@@ -2409,7 +2414,7 @@ export function generateCompositionChecks(
       // According to JSON Schema spec:
       // - When `if` succeeds: `if` annotations + `then` annotations are collected
       // - When `if` fails: only `else` annotations are collected
-      const { result: checkExpr, branchVar: ifBranchVar } = propsTracker.withBranch(() =>
+      const { result: checkExpr, branch: ifBranch } = propsTracker.withBranch(() =>
         generateSubschemaCheck(code, ifSchema, dataVar, ctx, dynamicScopeVar)
       );
       code.line(_`const ${condVar} = ${checkExpr};`);
@@ -2417,7 +2422,7 @@ export function generateCompositionChecks(
       // When if matches, apply then schema if present AND merge if annotations
       code.if(condVar, () => {
         // Merge if annotations since if succeeded
-        propsTracker.mergeBranch(ifBranchVar, new Name('true'));
+        propsTracker.mergeBranch(ifBranch, new Name('true'));
         if (thenSchema !== undefined) {
           if (thenSchema === false) {
             genError(
