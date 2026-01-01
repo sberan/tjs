@@ -2238,29 +2238,41 @@ export function generateCompositionChecks(
   // allOf - all subschemas must validate
   // Property tracking is automatic - generatePropertiesChecks handles it
   if (schema.allOf && schema.allOf.length > 0) {
-    const propsTracker = ctx.getPropsTracker();
-    const itemsTracker = ctx.getItemsTracker();
-    for (const subSchema of schema.allOf) {
-      // If subschema has restrictive unevaluatedProperties/unevaluatedItems, it needs isolated tracking
-      // so it doesn't see sibling annotations (cousins can't see each other)
-      const needsPropsIsolation = hasRestrictiveUnevaluatedProperties(subSchema);
-      const needsItemsIsolation = hasRestrictiveUnevaluatedItems(subSchema);
-      if (needsPropsIsolation) {
-        propsTracker.withScope(() => {
-          if (needsItemsIsolation) {
-            itemsTracker.withScope(() => {
+    // Filter out no-op schemas (true, {}) - they always pass and add no constraints
+    const nonNoOpSchemas = schema.allOf.filter((s) => !isNoOpSchema(s));
+
+    if (nonNoOpSchemas.length > 0) {
+      const propsTracker = ctx.getPropsTracker();
+      const itemsTracker = ctx.getItemsTracker();
+      for (const subSchema of nonNoOpSchemas) {
+        // If subschema has restrictive unevaluatedProperties/unevaluatedItems, it needs isolated tracking
+        // so it doesn't see sibling annotations (cousins can't see each other)
+        const needsPropsIsolation = hasRestrictiveUnevaluatedProperties(subSchema);
+        const needsItemsIsolation = hasRestrictiveUnevaluatedItems(subSchema);
+        if (needsPropsIsolation) {
+          propsTracker.withScope(() => {
+            if (needsItemsIsolation) {
+              itemsTracker.withScope(() => {
+                generateSchemaValidator(
+                  code,
+                  subSchema,
+                  dataVar,
+                  pathExprCode,
+                  ctx,
+                  dynamicScopeVar
+                );
+              }, false);
+            } else {
               generateSchemaValidator(code, subSchema, dataVar, pathExprCode, ctx, dynamicScopeVar);
-            }, false);
-          } else {
+            }
+          }, false); // Don't merge - each allOf subschema's unevaluated scope is isolated
+        } else if (needsItemsIsolation) {
+          itemsTracker.withScope(() => {
             generateSchemaValidator(code, subSchema, dataVar, pathExprCode, ctx, dynamicScopeVar);
-          }
-        }, false); // Don't merge - each allOf subschema's unevaluated scope is isolated
-      } else if (needsItemsIsolation) {
-        itemsTracker.withScope(() => {
+          }, false);
+        } else {
           generateSchemaValidator(code, subSchema, dataVar, pathExprCode, ctx, dynamicScopeVar);
-        }, false);
-      } else {
-        generateSchemaValidator(code, subSchema, dataVar, pathExprCode, ctx, dynamicScopeVar);
+        }
       }
     }
   }
