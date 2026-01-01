@@ -90,7 +90,9 @@ export function compile(schema: JsonSchema, options: CompileOptions = {}): Valid
 
   // In legacy mode (draft-07 and earlier), skip dynamic scope entirely for better performance
   // Also skip if schema has no dynamic anchors (common case - significant perf improvement)
-  const hasDynamicFeatures = !ctx.options.legacyRef && ctx.hasAnyDynamicAnchors();
+  // Include $recursiveAnchor (draft 2019-09) in the check
+  const hasDynamicFeatures =
+    !ctx.options.legacyRef && (ctx.hasAnyDynamicAnchors() || ctx.hasAnyRecursiveAnchors());
   const dynamicScopeVar = hasDynamicFeatures ? new Name('dynamicScope') : undefined;
 
   // Collect dynamic anchors from the root resource to add to scope at startup
@@ -234,6 +236,7 @@ function generateSchemaValidator(
   // If so, we need to push its dynamic anchors to scope
   // Skip this in legacy mode ($dynamicAnchor is a draft-2020-12 feature)
   let resourceAnchors: Array<{ anchor: string; schema: JsonSchema }> = [];
+  let hasRecursiveAnchor = false;
   if (scopeVar && schema.$id) {
     const schemaResourceId = ctx.getBaseUri(schema);
     resourceAnchors = schemaResourceId ? ctx.getResourceDynamicAnchors(schemaResourceId) : [];
@@ -246,6 +249,14 @@ function generateSchemaValidator(
           _`${scopeVar}.push({ anchor: ${stringify(anchor)}, validate: ${anchorFuncName} });`
         );
       }
+    }
+
+    // Handle $recursiveAnchor: true (draft 2019-09)
+    // Push this schema to scope with '__recursive__' anchor
+    if (schema.$recursiveAnchor === true) {
+      hasRecursiveAnchor = true;
+      const recursiveFuncName = ctx.getCompiledName(schema) ?? ctx.queueCompile(schema);
+      code.line(_`${scopeVar}.push({ anchor: '__recursive__', validate: ${recursiveFuncName} });`);
     }
   }
 
@@ -268,6 +279,7 @@ function generateSchemaValidator(
     generateCompositionChecks(code, schema, dataVar, pathExprCode, ctx, scopeVar);
     generateRefCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
     generateDynamicRefCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
+    generateRecursiveRefCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
     generateContainsCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
     generateDependentRequiredCheck(code, schema, dataVar, pathExprCode, ctx);
     generatePropertyNamesCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
@@ -283,6 +295,11 @@ function generateSchemaValidator(
     for (let i = 0; i < resourceAnchors.length; i++) {
       code.line(_`${scopeVar}.pop();`);
     }
+  }
+
+  // Pop recursive anchor if we pushed one (draft 2019-09)
+  if (hasRecursiveAnchor && scopeVar) {
+    code.line(_`${scopeVar}.pop();`);
   }
 }
 
@@ -2293,6 +2310,38 @@ export function generateRefCheck(
       ? extractStaticProperties(refSchema)
       : new Set<string>();
 
+  // DRAFT 2019-09: If $ref: "#" resolves to a schema with $recursiveAnchor: true,
+  // search the dynamic scope for a schema with $recursiveAnchor: true
+  const isRecursiveRef =
+    schema.$ref === '#' &&
+    typeof refSchema === 'object' &&
+    refSchema !== null &&
+    refSchema.$recursiveAnchor === true;
+
+  if (isRecursiveRef && dynamicScopeVar) {
+    // This $ref behaves like $recursiveRef - search dynamic scope
+    code.block(_``, () => {
+      code.line(_`let dynamicValidator = null;`);
+      code.line(_`for (let i = 0; i < ${dynamicScopeVar}.length; i++) {`);
+      code.line(_`  if (${dynamicScopeVar}[i].anchor === '__recursive__') {`);
+      code.line(_`    dynamicValidator = ${dynamicScopeVar}[i].validate;`);
+      code.line(_`    break;`);
+      code.line(_`  }`);
+      code.line(_`}`);
+      // Use dynamic validator if found, otherwise use static fallback
+      const pathArg = pathExprCode.toString() === "''" ? _`''` : _`errors ? ${pathExprCode} : ''`;
+      code.line(_`const validator = dynamicValidator || ${funcName};`);
+      code.if(_`!validator(${dataVar}, errors, ${pathArg}, ${dynamicScopeVar})`, () => {
+        genSubschemaExit(code, ctx);
+      });
+    });
+    // Track ref's static properties after successful validation
+    if (refStaticProps.size > 0) {
+      propsTracker.addProperties([...refStaticProps]);
+    }
+    return;
+  }
+
   // In legacy mode, dynamicScopeVar is undefined - simpler function call
   if (!dynamicScopeVar) {
     // Optimization: only compute path when errors array is present (deferred path construction)
@@ -3507,6 +3556,117 @@ export function generateDynamicRefCheck(
     const scopeArg = dynamicScopeVar || _`[]`;
     code.if(_`!${funcName}(${dataVar}, errors, ${pathExprCode}, ${scopeArg})`, () => {
       genSubschemaExit(code, ctx);
+    });
+  }
+}
+
+/**
+ * Generate $recursiveRef check code (draft 2019-09)
+ * $recursiveRef is always "#" and works with $recursiveAnchor: true (boolean, not named)
+ */
+export function generateRecursiveRefCheck(
+  code: CodeBuilder,
+  schema: JsonSchemaBase,
+  dataVar: Name,
+  pathExprCode: Code,
+  ctx: CompileContext,
+  dynamicScopeVar?: Name
+): void {
+  if (!schema.$recursiveRef) return;
+
+  const ref = schema.$recursiveRef;
+
+  // $recursiveRef should always be "#" in draft 2019-09
+  if (ref !== '#') {
+    genError(
+      code,
+      pathExprCode,
+      '#/$recursiveRef',
+      '$recursiveRef',
+      `$recursiveRef must be "#" (got "${ref}")`,
+      { $ref: ref },
+      ctx
+    );
+    return;
+  }
+
+  // Resolve "#" to get the current resource root schema
+  const staticSchema = ctx.resolveRef(ref, schema);
+  if (!staticSchema) {
+    genError(
+      code,
+      pathExprCode,
+      '#/$recursiveRef',
+      '$recursiveRef',
+      `can't resolve reference ${ref}`,
+      { $ref: ref },
+      ctx
+    );
+    return;
+  }
+
+  const staticFuncName = ctx.queueCompile(staticSchema);
+
+  // Check if the statically resolved schema has $recursiveAnchor: true
+  // If not, $recursiveRef behaves like a regular $ref
+  const hasRecursiveAnchor = ctx.hasRecursiveAnchor(staticSchema);
+
+  // For unevaluatedProperties/Items: track properties/items from the static schema
+  // and any schemas with $recursiveAnchor: true
+  const propsTracker = ctx.getPropsTracker();
+  const itemsTracker = ctx.getItemsTracker();
+
+  if (hasRecursiveAnchor) {
+    // Track properties from the static schema with $recursiveAnchor: true
+    if (
+      propsTracker.active &&
+      typeof staticSchema === 'object' &&
+      staticSchema !== null &&
+      staticSchema.properties
+    ) {
+      propsTracker.emitAddProperties(Object.keys(staticSchema.properties));
+    }
+
+    // Track items from all positions for the static schema
+    if (itemsTracker.active && typeof staticSchema === 'object' && staticSchema !== null) {
+      if (Array.isArray(staticSchema.items)) {
+        // Tuple items - track by count
+        itemsTracker.addPrefixItems(staticSchema.items.length);
+      } else if (staticSchema.items) {
+        // Single schema for all items - mark all as evaluated
+        itemsTracker.markAllItemsEvaluated();
+      }
+      if (Array.isArray(staticSchema.prefixItems)) {
+        itemsTracker.addPrefixItems(staticSchema.prefixItems.length);
+      }
+    }
+  }
+
+  // If no dynamic scope var (legacy mode or empty), just call static validator
+  if (!dynamicScopeVar) {
+    code.if(_`!${staticFuncName}(${dataVar}, errors, ${pathExprCode}, [])`, () => {
+      genSubschemaExit(code, ctx);
+    });
+  } else if (!hasRecursiveAnchor) {
+    // No $recursiveAnchor - behave like a regular $ref
+    code.if(_`!${staticFuncName}(${dataVar}, errors, ${pathExprCode}, ${dynamicScopeVar})`, () => {
+      genSubschemaExit(code, ctx);
+    });
+  } else {
+    // Has $recursiveAnchor: true - search dynamic scope for '__recursive__' anchor
+    code.block(_``, () => {
+      code.line(_`let dynamicValidator = null;`);
+      code.line(_`for (let i = 0; i < ${dynamicScopeVar}.length; i++) {`);
+      code.line(_`  if (${dynamicScopeVar}[i].anchor === '__recursive__') {`);
+      code.line(_`    dynamicValidator = ${dynamicScopeVar}[i].validate;`);
+      code.line(_`    break;`);
+      code.line(_`  }`);
+      code.line(_`}`);
+      // Use dynamic validator if found, otherwise use static fallback
+      code.line(_`const validator = dynamicValidator || ${staticFuncName};`);
+      code.if(_`!validator(${dataVar}, errors, ${pathExprCode}, ${dynamicScopeVar})`, () => {
+        genSubschemaExit(code, ctx);
+      });
     });
   }
 }
