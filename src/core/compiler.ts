@@ -482,22 +482,43 @@ export function generateEnumCheck(
   }
 
   if (complexValues.length === 0) {
-    // All primitives - use Set for O(1) lookup
-    const setName = new Name(ctx.genRuntimeName('enumSet'));
-    ctx.addRuntimeFunction(setName.str, new Set(primitives));
-    code.if(_`!${setName}.has(${dataVar})`, () => {
-      genError(
-        code,
-        pathExprCode,
-        '#/enum',
-        'enum',
-        'must be equal to one of the allowed values',
-        {
-          allowedValues: schema.enum,
-        },
-        ctx
-      );
-    });
+    // All primitives - use inline === checks for small enums, Set for larger ones
+    // Inline === is faster for small enums (like AJV does)
+    if (primitives.length <= 5) {
+      // Generate inline checks: !(data === v1 || data === v2 || ...)
+      const checks = primitives.map((val) => _`${dataVar} === ${stringify(val)}`);
+      const condition = checks.length === 1 ? _`!(${checks[0]})` : _`!(${or(...checks)})`;
+      code.if(condition, () => {
+        genError(
+          code,
+          pathExprCode,
+          '#/enum',
+          'enum',
+          'must be equal to one of the allowed values',
+          {
+            allowedValues: schema.enum,
+          },
+          ctx
+        );
+      });
+    } else {
+      // Use Set for larger enums (better O(1) performance)
+      const setName = new Name(ctx.genRuntimeName('enumSet'));
+      ctx.addRuntimeFunction(setName.str, new Set(primitives));
+      code.if(_`!${setName}.has(${dataVar})`, () => {
+        genError(
+          code,
+          pathExprCode,
+          '#/enum',
+          'enum',
+          'must be equal to one of the allowed values',
+          {
+            allowedValues: schema.enum,
+          },
+          ctx
+        );
+      });
+    }
   } else if (primitives.length === 0) {
     // All complex - use inline loop with deepEqual
     const arrName = new Name(ctx.genRuntimeName('enumArr'));
@@ -527,17 +548,25 @@ export function generateEnumCheck(
       );
     });
   } else {
-    // Mixed: check primitives with Set, complex with inline loop
-    const setName = new Name(ctx.genRuntimeName('enumSet'));
-    ctx.addRuntimeFunction(setName.str, new Set(primitives));
+    // Mixed: check primitives inline (fast path), then complex with deepEqual
     const arrName = new Name(ctx.genRuntimeName('enumArr'));
     ctx.addRuntimeFunction(arrName.str, complexValues);
 
-    // Fast path: check Set first (common case for primitives)
+    // Fast path: inline === checks for primitives (like AJV does)
     const checkedVar = code.genVar('checked');
-    code.line(_`let ${checkedVar} = ${setName}.has(${dataVar});`);
+    if (primitives.length <= 5) {
+      // Inline primitive checks
+      const checks = primitives.map((val) => _`${dataVar} === ${stringify(val)}`);
+      code.line(_`let ${checkedVar} = ${or(...checks)};`);
+    } else {
+      // Use Set for many primitives
+      const setName = new Name(ctx.genRuntimeName('enumSet'));
+      ctx.addRuntimeFunction(setName.str, new Set(primitives));
+      code.line(_`let ${checkedVar} = ${setName}.has(${dataVar});`);
+    }
+
+    // Slow path: check complex values only if needed
     code.if(_`!${checkedVar} && typeof ${dataVar} === 'object' && ${dataVar} !== null`, () => {
-      // Only check complex values if data is an object
       const iVar = code.genVar('i');
       code.line(_`for (let ${iVar} = 0; ${iVar} < ${arrName}.length; ${iVar}++) {`);
       code.line(_`  if (deepEqual(${dataVar}, ${arrName}[${iVar}])) {`);
