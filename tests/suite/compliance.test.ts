@@ -20,18 +20,12 @@ const SKIPPED_OPTIONAL_FILES: string[] = [
 
 // Keywords that are not implemented
 const SKIPPED_KEYWORDS: string[] = [
-  'unevaluatedItems', // Not implemented yet
+  // unevaluatedItems is now implemented
 ];
 
 // Specific test descriptions to skip
 const SKIPPED_TEST_DESCRIPTIONS: string[] = [
-  // These tests require annotation collection inside 'not' which is complex
-  'unevaluated property', // not > collect annotations inside a 'not'
-  "referenced subschema doesn't see annotations from properties", // ref > ref creates new scope
-  // This test requires $dynamicRef with unevaluatedProperties across schema resources
-  'instance with misspelled field', // dynamicRef > strict-tree schema
-  'instance with correct field', // dynamicRef > strict-tree schema
-  "annotations are still collected inside a 'not'", // not > collect annotations inside a 'not'
+  // All tests now pass!
 ];
 
 // Remotes directory for the test suite

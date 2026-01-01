@@ -37,6 +37,7 @@ import {
   containsUnevaluatedProperties,
 } from './props-tracker.js';
 import { hasRestrictiveUnevaluatedItems, containsUnevaluatedItems } from './items-tracker.js';
+import { extractStaticProperties } from './schema-utils.js';
 
 /**
  * Compile error type for internal use (AJV-compatible format)
@@ -2146,12 +2147,33 @@ export function generateRefCheck(
     (shouldInlineRef(refSchema, ctx, dynamicScopeVar) || forceInlineForTracking)
   ) {
     // Inline the schema validation directly
+    // Per JSON Schema spec, $ref creates a new scope for annotations.
+    // If the referenced schema has unevaluatedProperties/Items, it should NOT see
+    // annotations from sibling keywords in the referrer schema.
+    const refHasUnevalProps = hasRestrictiveUnevaluatedProperties(refSchema);
+    const refHasUnevalItems = hasRestrictiveUnevaluatedItems(refSchema);
+
+    if (refHasUnevalProps) propsTracker.pushScope();
+    if (refHasUnevalItems) itemsTracker.pushScope();
+
     generateSchemaValidator(code, refSchema, dataVar, pathExprCode, ctx, dynamicScopeVar);
+
+    // Pop scope but DON'T merge - referenced schema's annotations stay in its own scope
+    if (refHasUnevalProps) propsTracker.popScope(false);
+    if (refHasUnevalItems) itemsTracker.popScope(false);
     return;
   }
 
   // Get the function name (queue for compilation if needed)
   const funcName = ctx.getCompiledName(refSchema) ?? ctx.queueCompile(refSchema);
+
+  // When property tracking is active and we're calling into a ref function,
+  // we need to track the properties that the ref schema statically defines.
+  // This allows unevaluatedProperties in the parent to see what the ref evaluates.
+  const refStaticProps =
+    propsTracker.active && !hasRestrictiveUnevaluatedProperties(refSchema)
+      ? extractStaticProperties(refSchema)
+      : new Set<string>();
 
   // In legacy mode, dynamicScopeVar is undefined - simpler function call
   if (!dynamicScopeVar) {
@@ -2161,6 +2183,10 @@ export function generateRefCheck(
     code.if(_`!${funcName}(${dataVar}, errors, ${pathArg})`, () => {
       code.line(_`return false;`);
     });
+    // Track ref's static properties after successful validation
+    if (refStaticProps.size > 0) {
+      propsTracker.addProperties([...refStaticProps]);
+    }
     return;
   }
 
@@ -2212,6 +2238,10 @@ export function generateRefCheck(
           code.line(_`${dynamicScopeVar}.pop();`);
         }
       });
+      // Track ref's static properties after successful validation
+      if (refStaticProps.size > 0) {
+        propsTracker.addProperties([...refStaticProps]);
+      }
       return;
     }
   }
@@ -2222,6 +2252,10 @@ export function generateRefCheck(
   code.if(_`!${funcName}(${dataVar}, errors, ${pathArg}, ${dynamicScopeVar})`, () => {
     code.line(_`return false;`);
   });
+  // Track ref's static properties after successful validation
+  if (refStaticProps.size > 0) {
+    propsTracker.addProperties([...refStaticProps]);
+  }
 }
 
 /**
