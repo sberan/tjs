@@ -237,6 +237,9 @@ function generateSchemaValidator(
   // Skip this in legacy mode ($dynamicAnchor is a draft-2020-12 feature)
   let resourceAnchors: Array<{ anchor: string; schema: JsonSchema }> = [];
   let hasRecursiveAnchor = false;
+  let needsItemsScopeIsolation = false;
+  let needsPropsScopeIsolation = false;
+
   if (scopeVar && schema.$id) {
     const schemaResourceId = ctx.getBaseUri(schema);
     resourceAnchors = schemaResourceId ? ctx.getResourceDynamicAnchors(schemaResourceId) : [];
@@ -257,6 +260,19 @@ function generateSchemaValidator(
       hasRecursiveAnchor = true;
       const recursiveFuncName = ctx.getCompiledName(schema) ?? ctx.queueCompile(schema);
       code.line(_`${scopeVar}.push({ anchor: '__recursive__', validate: ${recursiveFuncName} });`);
+    }
+
+    // When entering a new schema resource (one with $id), we need to isolate
+    // tracking scopes for unevaluated* keywords if this schema doesn't have them.
+    // This prevents the parent's unevaluated* constraints from leaking into the child resource.
+    needsItemsScopeIsolation = itemsTracker.active && !hasRestrictiveUnevaluatedItems(schema);
+    needsPropsScopeIsolation = propsTracker.active && !hasRestrictiveUnevaluatedProperties(schema);
+
+    if (needsItemsScopeIsolation) {
+      itemsTracker.pushScope();
+    }
+    if (needsPropsScopeIsolation) {
+      propsTracker.pushScope();
     }
   }
 
@@ -288,6 +304,14 @@ function generateSchemaValidator(
     // unevaluated* must be checked LAST after all other keywords
     generateUnevaluatedPropertiesCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
     generateUnevaluatedItemsCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
+  }
+
+  // Pop unevaluated tracking scopes if we pushed them
+  if (needsPropsScopeIsolation) {
+    propsTracker.popScope(false);
+  }
+  if (needsItemsScopeIsolation) {
+    itemsTracker.popScope(false);
   }
 
   // Pop dynamic anchors after validation (if we pushed any)
@@ -2310,19 +2334,39 @@ export function generateRefCheck(
       ? extractStaticProperties(refSchema)
       : new Set<string>();
 
+  // Check if the ref target has $recursiveAnchor: true
+  const hasRecursiveAnchor =
+    typeof refSchema === 'object' && refSchema !== null && refSchema.$recursiveAnchor === true;
+
+  // If the ref target has $recursiveAnchor, track properties/items from ALL schemas
+  // with $recursiveAnchor: true, because any of them could be the runtime resolution target
+  // (This is needed when the ref can't be inlined due to $id or recursion)
+  if (hasRecursiveAnchor && (propsTracker.active || itemsTracker.active)) {
+    for (const dynSchema of ctx.getAllRecursiveAnchorSchemas()) {
+      if (typeof dynSchema === 'object' && dynSchema !== null) {
+        // Track properties
+        if (propsTracker.active && dynSchema.properties) {
+          propsTracker.addProperties(Object.keys(dynSchema.properties));
+        }
+        // Track items - only track tuple items, not schema items
+        if (itemsTracker.active && Array.isArray(dynSchema.items)) {
+          itemsTracker.addPrefixItems(dynSchema.items.length);
+        }
+      }
+    }
+  }
+
   // DRAFT 2019-09: If $ref: "#" resolves to a schema with $recursiveAnchor: true,
   // search the dynamic scope for a schema with $recursiveAnchor: true
-  const isRecursiveRef =
-    schema.$ref === '#' &&
-    typeof refSchema === 'object' &&
-    refSchema !== null &&
-    refSchema.$recursiveAnchor === true;
+  const isRecursiveRef = schema.$ref === '#' && hasRecursiveAnchor;
 
   if (isRecursiveRef && dynamicScopeVar) {
-    // This $ref behaves like $recursiveRef - search dynamic scope
+    // DRAFT 2019-09: $ref: "#" with $recursiveAnchor: true
+    // Searches dynamic scope from END to find the most recent (innermost) match
+    // This is different from $recursiveRef which searches from beginning (outermost)
     code.block(_``, () => {
       code.line(_`let dynamicValidator = null;`);
-      code.line(_`for (let i = 0; i < ${dynamicScopeVar}.length; i++) {`);
+      code.line(_`for (let i = ${dynamicScopeVar}.length - 1; i >= 0; i--) {`);
       code.line(_`  if (${dynamicScopeVar}[i].anchor === '__recursive__') {`);
       code.line(_`    dynamicValidator = ${dynamicScopeVar}[i].validate;`);
       code.line(_`    break;`);
@@ -2335,10 +2379,6 @@ export function generateRefCheck(
         genSubschemaExit(code, ctx);
       });
     });
-    // Track ref's static properties after successful validation
-    if (refStaticProps.size > 0) {
-      propsTracker.addProperties([...refStaticProps]);
-    }
     return;
   }
 
@@ -3611,33 +3651,22 @@ export function generateRecursiveRefCheck(
   // If not, $recursiveRef behaves like a regular $ref
   const hasRecursiveAnchor = ctx.hasRecursiveAnchor(staticSchema);
 
-  // For unevaluatedProperties/Items: track properties/items from the static schema
-  // and any schemas with $recursiveAnchor: true
-  const propsTracker = ctx.getPropsTracker();
-  const itemsTracker = ctx.getItemsTracker();
-
+  // Track properties/items from ALL schemas with $recursiveAnchor: true
+  // because any of them could be the runtime resolution target
   if (hasRecursiveAnchor) {
-    // Track properties from the static schema with $recursiveAnchor: true
-    if (
-      propsTracker.active &&
-      typeof staticSchema === 'object' &&
-      staticSchema !== null &&
-      staticSchema.properties
-    ) {
-      propsTracker.emitAddProperties(Object.keys(staticSchema.properties));
-    }
+    const propsTracker = ctx.getPropsTracker();
+    const itemsTracker = ctx.getItemsTracker();
 
-    // Track items from all positions for the static schema
-    if (itemsTracker.active && typeof staticSchema === 'object' && staticSchema !== null) {
-      if (Array.isArray(staticSchema.items)) {
-        // Tuple items - track by count
-        itemsTracker.addPrefixItems(staticSchema.items.length);
-      } else if (staticSchema.items) {
-        // Single schema for all items - mark all as evaluated
-        itemsTracker.markAllItemsEvaluated();
-      }
-      if (Array.isArray(staticSchema.prefixItems)) {
-        itemsTracker.addPrefixItems(staticSchema.prefixItems.length);
+    for (const dynSchema of ctx.getAllRecursiveAnchorSchemas()) {
+      if (typeof dynSchema === 'object' && dynSchema !== null) {
+        // Track properties
+        if (propsTracker.active && dynSchema.properties) {
+          propsTracker.addProperties(Object.keys(dynSchema.properties));
+        }
+        // Track items - only track tuple items, not schema items
+        if (itemsTracker.active && Array.isArray(dynSchema.items)) {
+          itemsTracker.addPrefixItems(dynSchema.items.length);
+        }
       }
     }
   }
