@@ -143,7 +143,7 @@ describe('dependentSchemas', () => {
   });
 });
 
-describe.skip('unevaluatedProperties', () => {
+describe('unevaluatedProperties', () => {
   // Basic unevaluatedProperties: false - no extra properties allowed
   const Strict = schema({
     type: 'object',
@@ -314,7 +314,7 @@ describe.skip('unevaluatedProperties', () => {
   });
 });
 
-describe.skip('unevaluatedItems', () => {
+describe('unevaluatedItems', () => {
   // Basic tuple with unevaluatedItems: false - strict tuple
   const StrictTuple = schema({
     type: 'array',
