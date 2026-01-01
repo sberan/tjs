@@ -540,74 +540,121 @@ export function generateEnumCheck(
       });
     }
   } else if (primitives.length === 0) {
-    // All complex - use inline loop with deepEqual
+    // All complex - AJV-style inline expressions for small enums
     const arrName = new Name(ctx.genRuntimeName('enumArr'));
     ctx.addRuntimeFunction(arrName.str, complexValues);
 
-    // Generate inline loop instead of using .some() to reduce overhead
-    const matchVar = code.genVar('match');
-    const iVar = code.genVar('i');
-    code.line(_`let ${matchVar} = false;`);
-    code.line(_`for (let ${iVar} = 0; ${iVar} < ${arrName}.length; ${iVar}++) {`);
-    code.line(_`  if (deepEqual(${dataVar}, ${arrName}[${iVar}])) {`);
-    code.line(_`    ${matchVar} = true;`);
-    code.line(_`    break;`);
-    code.line(_`  }`);
-    code.line(_`}`);
-    code.if(_`!${matchVar}`, () => {
-      genError(
-        code,
-        pathExprCode,
-        '#/enum',
-        'enum',
-        'must be equal to one of the allowed values',
-        {
-          allowedValues: schema.enum,
-        },
-        ctx
-      );
-    });
-  } else {
-    // Mixed: check primitives inline (fast path), then complex with deepEqual
-    const arrName = new Name(ctx.genRuntimeName('enumArr'));
-    ctx.addRuntimeFunction(arrName.str, complexValues);
-
-    // Fast path: inline === checks for primitives (like AJV does)
-    const checkedVar = code.genVar('checked');
-    if (primitives.length <= 5) {
-      // Inline primitive checks
-      const checks = primitives.map((val) => _`${dataVar} === ${stringify(val)}`);
-      code.line(_`let ${checkedVar} = ${or(...checks)};`);
+    if (complexValues.length <= 10) {
+      // Small enum: generate inline expression (no loop overhead)
+      // deepEqual(data, arr[0]) || deepEqual(data, arr[1]) || ...
+      const checks = complexValues.map((_val, i) => _`deepEqual(${dataVar}, ${arrName}[${i}])`);
+      const condition = checks.length === 1 ? _`!(${checks[0]})` : _`!(${or(...checks)})`;
+      code.if(condition, () => {
+        genError(
+          code,
+          pathExprCode,
+          '#/enum',
+          'enum',
+          'must be equal to one of the allowed values',
+          {
+            allowedValues: schema.enum,
+          },
+          ctx
+        );
+      });
     } else {
-      // Use Set for many primitives
-      const setName = new Name(ctx.genRuntimeName('enumSet'));
-      ctx.addRuntimeFunction(setName.str, new Set(primitives));
-      code.line(_`let ${checkedVar} = ${setName}.has(${dataVar});`);
-    }
-
-    // Slow path: check complex values only if needed
-    code.if(_`!${checkedVar} && typeof ${dataVar} === 'object' && ${dataVar} !== null`, () => {
+      // Large enum: use loop
+      const matchVar = code.genVar('match');
       const iVar = code.genVar('i');
+      code.line(_`let ${matchVar} = false;`);
       code.line(_`for (let ${iVar} = 0; ${iVar} < ${arrName}.length; ${iVar}++) {`);
       code.line(_`  if (deepEqual(${dataVar}, ${arrName}[${iVar}])) {`);
-      code.line(_`    ${checkedVar} = true;`);
+      code.line(_`    ${matchVar} = true;`);
       code.line(_`    break;`);
       code.line(_`  }`);
       code.line(_`}`);
-    });
-    code.if(_`!${checkedVar}`, () => {
-      genError(
-        code,
-        pathExprCode,
-        '#/enum',
-        'enum',
-        'must be equal to one of the allowed values',
-        {
-          allowedValues: schema.enum,
-        },
-        ctx
-      );
-    });
+      code.if(_`!${matchVar}`, () => {
+        genError(
+          code,
+          pathExprCode,
+          '#/enum',
+          'enum',
+          'must be equal to one of the allowed values',
+          {
+            allowedValues: schema.enum,
+          },
+          ctx
+        );
+      });
+    }
+  } else {
+    // Mixed: AJV-style single expression for small enums
+    const totalLen = primitives.length + complexValues.length;
+
+    if (totalLen <= 10) {
+      // Small mixed enum: generate single expression
+      // data === v1 || data === v2 || deepEqual(data, arr[0]) || ...
+      const arrName = new Name(ctx.genRuntimeName('enumArr'));
+      ctx.addRuntimeFunction(arrName.str, complexValues);
+
+      const checks: Code[] = [];
+      // Add primitive checks first (faster)
+      for (const val of primitives) {
+        checks.push(_`${dataVar} === ${stringify(val)}`);
+      }
+      // Add complex checks
+      for (let i = 0; i < complexValues.length; i++) {
+        checks.push(_`deepEqual(${dataVar}, ${arrName}[${i}])`);
+      }
+
+      const condition = _`!(${or(...checks)})`;
+      code.if(condition, () => {
+        genError(
+          code,
+          pathExprCode,
+          '#/enum',
+          'enum',
+          'must be equal to one of the allowed values',
+          {
+            allowedValues: schema.enum,
+          },
+          ctx
+        );
+      });
+    } else {
+      // Large mixed enum: use Set for primitives + loop for complex
+      const arrName = new Name(ctx.genRuntimeName('enumArr'));
+      ctx.addRuntimeFunction(arrName.str, complexValues);
+
+      const checkedVar = code.genVar('checked');
+      const setName = new Name(ctx.genRuntimeName('enumSet'));
+      ctx.addRuntimeFunction(setName.str, new Set(primitives));
+      code.line(_`let ${checkedVar} = ${setName}.has(${dataVar});`);
+
+      // Check complex values only if needed
+      code.if(_`!${checkedVar} && typeof ${dataVar} === 'object' && ${dataVar} !== null`, () => {
+        const iVar = code.genVar('i');
+        code.line(_`for (let ${iVar} = 0; ${iVar} < ${arrName}.length; ${iVar}++) {`);
+        code.line(_`  if (deepEqual(${dataVar}, ${arrName}[${iVar}])) {`);
+        code.line(_`    ${checkedVar} = true;`);
+        code.line(_`    break;`);
+        code.line(_`  }`);
+        code.line(_`}`);
+      });
+      code.if(_`!${checkedVar}`, () => {
+        genError(
+          code,
+          pathExprCode,
+          '#/enum',
+          'enum',
+          'must be equal to one of the allowed values',
+          {
+            allowedValues: schema.enum,
+          },
+          ctx
+        );
+      });
+    }
   }
 }
 
