@@ -802,6 +802,22 @@ export class CompileContext {
   }
 
   /**
+   * Get all schemas with $recursiveAnchor: true (draft 2019-09)
+   */
+  getRecursiveAnchors(): JsonSchema[] {
+    return Array.from(this.#resourceRecursiveAnchors.values());
+  }
+
+  /**
+   * Get all schemas with $recursiveAnchor: true
+   * Used for tracking all possible properties/items that could be evaluated
+   * when $recursiveRef dynamically resolves
+   */
+  getAllRecursiveAnchorSchemas(): JsonSchema[] {
+    return Array.from(this.#resourceRecursiveAnchors.values());
+  }
+
+  /**
    * Check if a schema has $recursiveAnchor: true (draft 2019-09)
    */
   hasRecursiveAnchor(schema: JsonSchema): boolean {
