@@ -30,6 +30,8 @@ export interface JsonSchemaBase {
   $anchor?: string;
   $dynamicAnchor?: string;
   $dynamicRef?: string;
+  $recursiveAnchor?: boolean; // draft 2019-09
+  $recursiveRef?: string; // draft 2019-09 - always "#"
   items?: boolean | JsonSchema | readonly JsonSchema[];
   prefixItems?: readonly JsonSchema[];
   anyOf?: readonly JsonSchema[];

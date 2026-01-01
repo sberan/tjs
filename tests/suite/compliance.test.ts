@@ -311,5 +311,6 @@ describe('JSON Schema Test Suite Compliance', () => {
   testDraft('draft4');
   testDraft('draft6');
   testDraft('draft7');
+  testDraft('draft2019-09');
   testDraft('draft2020-12');
 });

@@ -178,6 +178,9 @@ export class CompileContext {
     Array<{ anchor: string; schema: JsonSchema }>
   >();
 
+  /** Map of schema resource (by $id) -> schema with $recursiveAnchor: true (draft 2019-09) */
+  readonly #resourceRecursiveAnchors = new Map<string, JsonSchema>();
+
   /** Runtime functions/values that will be available in generated code */
   readonly #runtimeFunctions: Map<string, unknown> = new Map();
 
@@ -289,12 +292,36 @@ export class CompileContext {
 
     // Build set of enabled vocabularies
     const enabled = new Set<string>();
-    for (const [vocabUri] of Object.entries(vocabulary)) {
-      // Include vocabulary regardless of true/false value
-      // true = required (implementation MUST support or refuse)
-      // false = optional (implementation MAY support)
-      // We support format-assertion, so we enable it in both cases
-      enabled.add(vocabUri);
+
+    // List of vocabularies we implement
+    const implementedVocabs = new Set([
+      'https://json-schema.org/draft/2019-09/vocab/core',
+      'https://json-schema.org/draft/2019-09/vocab/applicator',
+      'https://json-schema.org/draft/2019-09/vocab/validation',
+      'https://json-schema.org/draft/2019-09/vocab/meta-data',
+      'https://json-schema.org/draft/2019-09/vocab/format',
+      'https://json-schema.org/draft/2019-09/vocab/content',
+      'https://json-schema.org/draft/2020-12/vocab/core',
+      'https://json-schema.org/draft/2020-12/vocab/applicator',
+      'https://json-schema.org/draft/2020-12/vocab/validation',
+      'https://json-schema.org/draft/2020-12/vocab/meta-data',
+      'https://json-schema.org/draft/2020-12/vocab/format-annotation',
+      'https://json-schema.org/draft/2020-12/vocab/format-assertion',
+      'https://json-schema.org/draft/2020-12/vocab/content',
+      'https://json-schema.org/draft/2020-12/vocab/unevaluated',
+    ]);
+
+    for (const [vocabUri, required] of Object.entries(vocabulary)) {
+      if (required && !implementedVocabs.has(vocabUri)) {
+        // Required vocabulary we don't implement - this is an error
+        throw new Error(`Required vocabulary not implemented: ${vocabUri}`);
+      }
+
+      if (implementedVocabs.has(vocabUri)) {
+        // We implement this vocabulary, enable it
+        enabled.add(vocabUri);
+      }
+      // If not implemented and not required (false), just ignore it
     }
 
     return { vocabularies: enabled, hasCustomVocabulary: true };
@@ -360,6 +387,11 @@ export class CompileContext {
         resourceAnchors.push({ anchor: schema.$dynamicAnchor, schema });
         this.#resourceDynamicAnchors.set(currentResourceId, resourceAnchors);
       }
+    }
+
+    // Track $recursiveAnchor: true (draft 2019-09)
+    if (schema.$recursiveAnchor === true && currentResourceId) {
+      this.#resourceRecursiveAnchors.set(currentResourceId, schema);
     }
 
     // Recurse into subschemas
@@ -699,7 +731,7 @@ export class CompileContext {
 
   /**
    * Check if a vocabulary is enabled for this schema
-   * @param vocabularyUri - The vocabulary URI to check
+   * @param vocabularyUri - The vocabulary URI to check (typically a 2020-12 vocab URI)
    * @returns true if the vocabulary is enabled
    */
   isVocabularyEnabled(vocabularyUri: string): boolean {
@@ -707,7 +739,37 @@ export class CompileContext {
     if (this.#enabledVocabularies === null) {
       return true;
     }
-    return this.#enabledVocabularies.has(vocabularyUri);
+
+    // Check the exact URI first
+    if (this.#enabledVocabularies.has(vocabularyUri)) {
+      return true;
+    }
+
+    // If checking a 2020-12 vocabulary, also check for the 2019-09 equivalent
+    // The vocabulary keywords are the same, just the URIs changed
+    const vocab2019Map: Record<string, string> = {
+      'https://json-schema.org/draft/2020-12/vocab/core':
+        'https://json-schema.org/draft/2019-09/vocab/core',
+      'https://json-schema.org/draft/2020-12/vocab/applicator':
+        'https://json-schema.org/draft/2019-09/vocab/applicator',
+      'https://json-schema.org/draft/2020-12/vocab/validation':
+        'https://json-schema.org/draft/2019-09/vocab/validation',
+      'https://json-schema.org/draft/2020-12/vocab/meta-data':
+        'https://json-schema.org/draft/2019-09/vocab/meta-data',
+      'https://json-schema.org/draft/2020-12/vocab/format-annotation':
+        'https://json-schema.org/draft/2019-09/vocab/format',
+      'https://json-schema.org/draft/2020-12/vocab/format-assertion':
+        'https://json-schema.org/draft/2019-09/vocab/format',
+      'https://json-schema.org/draft/2020-12/vocab/content':
+        'https://json-schema.org/draft/2019-09/vocab/content',
+    };
+
+    const equiv2019 = vocab2019Map[vocabularyUri];
+    if (equiv2019 && this.#enabledVocabularies.has(equiv2019)) {
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -723,6 +785,27 @@ export class CompileContext {
    */
   hasAnyDynamicAnchors(): boolean {
     return this.#dynamicAnchors.size > 0;
+  }
+
+  /**
+   * Check if the schema tree has any $recursiveAnchor definitions (draft 2019-09)
+   */
+  hasAnyRecursiveAnchors(): boolean {
+    return this.#resourceRecursiveAnchors.size > 0;
+  }
+
+  /**
+   * Get the schema with $recursiveAnchor: true for a given resource ID (draft 2019-09)
+   */
+  getResourceRecursiveAnchor(resourceId: string): JsonSchema | undefined {
+    return this.#resourceRecursiveAnchors.get(resourceId);
+  }
+
+  /**
+   * Check if a schema has $recursiveAnchor: true (draft 2019-09)
+   */
+  hasRecursiveAnchor(schema: JsonSchema): boolean {
+    return typeof schema === 'object' && schema !== null && schema.$recursiveAnchor === true;
   }
 
   /**
