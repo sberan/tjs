@@ -3,9 +3,9 @@
 ## Summary
 
 - **Total Tests**: 1990
-- **Passed**: 1985 (99.7%)
+- **Passed**: 1990 (100.0%)
 - **Failed**: 0
-- **Skipped**: 5
+- **Skipped**: 0
 
 ## By Keyword
 
@@ -29,7 +29,7 @@
 | dependentRequired | 20 | 0 | 0 | 100% |
 | dependentSchemas | 20 | 0 | 0 | 100% |
 | duration | 26 | 0 | 0 | 100% |
-| dynamicRef | 44 | 0 | 2 | 100% |
+| dynamicRef | 46 | 0 | 0 | 100% |
 | ecmascript-regex | 75 | 0 | 0 | 100% |
 | email | 24 | 0 | 0 | 100% |
 | enum | 45 | 0 | 0 | 100% |
@@ -63,14 +63,14 @@
 | multipleOf | 10 | 0 | 0 | 100% |
 | no-schema | 3 | 0 | 0 | 100% |
 | non-bmp-regex | 12 | 0 | 0 | 100% |
-| not | 38 | 0 | 2 | 100% |
+| not | 40 | 0 | 0 | 100% |
 | oneOf | 27 | 0 | 0 | 100% |
 | pattern | 9 | 0 | 0 | 100% |
 | patternProperties | 23 | 0 | 0 | 100% |
 | prefixItems | 11 | 0 | 0 | 100% |
 | properties | 28 | 0 | 0 | 100% |
 | propertyNames | 20 | 0 | 0 | 100% |
-| ref | 78 | 0 | 1 | 100% |
+| ref | 79 | 0 | 0 | 100% |
 | refOfUnknownKeyword | 10 | 0 | 0 | 100% |
 | refRemote | 31 | 0 | 0 | 100% |
 | regex | 8 | 0 | 0 | 100% |
