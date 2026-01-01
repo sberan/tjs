@@ -39,7 +39,7 @@ interface ScopeState {
  * Branch state for tracking properties during branch execution.
  * Uses static collection by default, falls back to dynamic when needed.
  */
-interface BranchState {
+export interface BranchState {
   /** Static properties collected during branch execution (compile-time) */
   staticProps: Set<string>;
   /** Runtime variable for dynamic tracking (created on demand) */

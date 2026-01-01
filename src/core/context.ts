@@ -7,6 +7,7 @@ import { Name } from './codegen.js';
 import type { CodeBuilder } from './codegen.js';
 import { PropsTracker } from './props-tracker.js';
 import { ItemsTracker } from './items-tracker.js';
+import { AnnotationTracker } from './annotation-tracker.js';
 
 /**
  * Coercion options - can be boolean or object with per-type settings
@@ -824,5 +825,12 @@ export class CompileContext {
    */
   hasActivePropsTracking(): boolean {
     return this.#propsTracker?.active ?? false;
+  }
+
+  /**
+   * Get a unified annotation tracker that coordinates both props and items tracking.
+   */
+  getAnnotationTracker(): AnnotationTracker {
+    return new AnnotationTracker(this.getPropsTracker(), this.getItemsTracker());
   }
 }
