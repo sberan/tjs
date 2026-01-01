@@ -1959,7 +1959,7 @@ export function generateCompositionChecks(
 
       schema.anyOf.forEach((subSchema, index) => {
         const generateBranchCheck = () => {
-          const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx);
+          const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx, dynamicScopeVar);
           code.if(checkExpr, () => {
             code.line(_`${resultVar} = true;`);
           });
@@ -1993,7 +1993,7 @@ export function generateCompositionChecks(
     code.line(_`let ${countVar} = 0;`);
 
     schema.oneOf.forEach((subSchema) => {
-      const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx);
+      const checkExpr = generateSubschemaCheck(code, subSchema, dataVar, ctx, dynamicScopeVar);
       code.if(checkExpr, () => {
         code.line(_`${countVar}++;`);
       });
@@ -2061,7 +2061,7 @@ export function generateCompositionChecks(
         );
       } else {
         // Not optimizable - generate normal check
-        const checkExpr = generateSubschemaCheck(code, notSchema, dataVar, ctx);
+        const checkExpr = generateSubschemaCheck(code, notSchema, dataVar, ctx, dynamicScopeVar);
         code.if(checkExpr, () => {
           genError(
             code,
@@ -2076,7 +2076,7 @@ export function generateCompositionChecks(
       }
     } else {
       // Not optimizable - generate normal check
-      const checkExpr = generateSubschemaCheck(code, notSchema, dataVar, ctx);
+      const checkExpr = generateSubschemaCheck(code, notSchema, dataVar, ctx, dynamicScopeVar);
       code.if(checkExpr, () => {
         genError(
           code,
@@ -2149,7 +2149,7 @@ export function generateCompositionChecks(
     } else {
       // Fallback to original approach
       const condVar = code.genVar('ifCond');
-      const checkExpr = generateSubschemaCheck(code, ifSchema, dataVar, ctx);
+      const checkExpr = generateSubschemaCheck(code, ifSchema, dataVar, ctx, dynamicScopeVar);
       code.line(_`const ${condVar} = ${checkExpr};`);
 
       // When if matches, apply then schema if present
@@ -2421,15 +2421,17 @@ function generateTypeCheckInline(valueVar: Name, type: unknown): Code | undefine
 
 /**
  * Generate a subschema check expression.
- * Compiles the schema to a separate function and returns a call expression.
+ * Generates inline validation code and returns an expression that evaluates to
+ * whether the validation passed (true) or failed (false).
  *
- * This is used for checking if a subschema matches.
+ * This is used for checking if a subschema matches in anyOf, oneOf, not, if/then/else.
  */
 function generateSubschemaCheck(
-  _code: CodeBuilder,
+  code: CodeBuilder,
   schema: JsonSchema,
   dataVar: Name,
-  ctx: CompileContext
+  ctx: CompileContext,
+  dynamicScopeVar?: Name
 ): Code {
   // Handle no-op schemas (true, {}) - always pass
   if (schema === true) return _`true`;
@@ -2555,24 +2557,42 @@ function generateSubschemaCheck(
     }
   }
 
-  // Fall back to function call for complex schemas
-  // OPTIMIZATION: If the original schema was JUST a $ref (no other keywords),
-  // and we've resolved it, queue the resolved schema directly to avoid wrapper functions.
-  // This eliminates function call indirection like validate1 -> validate3.
+  // For complex schemas, generate inline validation code
+  // Save current errors, run validation, check if errors were set
+  const mainFuncName = ctx.getMainFuncName();
+  const savedErrorsVar = code.genVar('savedErrors');
+  code.line(_`const ${savedErrorsVar} = ${mainFuncName}.errors;`);
+  code.line(_`${mainFuncName}.errors = undefined;`);
+
+  // Generate inline validation code (this sets mainFuncName.errors if invalid)
+  // Use the resolved schema if we followed $ref chains
   const isRefOnly =
     typeof schema === 'object' &&
     schema !== null &&
     schema.$ref &&
     Object.keys(schema).filter((k) => k !== '$ref' && k !== '$schema' && k !== '$comment')
       .length === 0;
-  const schemaToCompile = isRefOnly && resolvedSchema !== schema ? resolvedSchema : schema;
+  const schemaToValidate = isRefOnly && resolvedSchema !== schema ? resolvedSchema : schema;
 
-  const funcName = ctx.queueCompile(schemaToCompile);
-  // Skip dynamicScope in legacy mode OR when there are no dynamic anchors
-  if (ctx.options.legacyRef || !ctx.hasAnyDynamicAnchors()) {
-    return _`${funcName}(${dataVar}, null, '')`;
-  }
-  return _`${funcName}(${dataVar}, null, '', dynamicScope)`;
+  // Generate the validation inline
+  // We need to wrap this in a try-catch style approach since generateSchemaValidator
+  // calls genError which does `return false`
+  // Instead, generate in a block and capture the result
+
+  // Create a result variable
+  const resultVar = code.genVar('subschemaValid');
+  code.line(_`let ${resultVar} = true;`);
+
+  // Generate validation as an IIFE that returns true/false
+  code.line(_`${resultVar} = (function() {`);
+  generateSchemaValidator(code, schemaToValidate, dataVar, _`''`, ctx, dynamicScopeVar);
+  code.line(_`return true;`);
+  code.line(_`})();`);
+
+  // Restore saved errors (discard any errors from the subschema check)
+  code.line(_`${mainFuncName}.errors = ${savedErrorsVar};`);
+
+  return _`${resultVar}`;
 }
 
 /**

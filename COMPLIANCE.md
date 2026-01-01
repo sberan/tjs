@@ -4,8 +4,8 @@
 
 - **Total Tests**: 1990
 - **Passed**: 1791 (90.0%)
-- **Failed**: 3
-- **Skipped**: 196
+- **Failed**: 0
+- **Skipped**: 199
 
 ## By Keyword
 
@@ -29,7 +29,7 @@
 | dependentRequired | 20 | 0 | 0 | 100% |
 | dependentSchemas | 20 | 0 | 0 | 100% |
 | duration | 26 | 0 | 0 | 100% |
-| dynamicRef | 45 | 1 | 0 | 98% |
+| dynamicRef | 45 | 0 | 1 | 100% |
 | ecmascript-regex | 75 | 0 | 0 | 100% |
 | email | 24 | 0 | 0 | 100% |
 | enum | 45 | 0 | 0 | 100% |
@@ -63,14 +63,14 @@
 | multipleOf | 10 | 0 | 0 | 100% |
 | no-schema | 3 | 0 | 0 | 100% |
 | non-bmp-regex | 12 | 0 | 0 | 100% |
-| not | 39 | 1 | 0 | 98% |
+| not | 39 | 0 | 1 | 100% |
 | oneOf | 27 | 0 | 0 | 100% |
 | pattern | 9 | 0 | 0 | 100% |
 | patternProperties | 23 | 0 | 0 | 100% |
 | prefixItems | 11 | 0 | 0 | 100% |
 | properties | 28 | 0 | 0 | 100% |
 | propertyNames | 20 | 0 | 0 | 100% |
-| ref | 78 | 1 | 0 | 99% |
+| ref | 78 | 0 | 1 | 100% |
 | refOfUnknownKeyword | 10 | 0 | 0 | 100% |
 | refRemote | 31 | 0 | 0 | 100% |
 | regex | 8 | 0 | 0 | 100% |
@@ -88,23 +88,3 @@
 | uri-template | 10 | 0 | 0 | 100% |
 | uuid | 22 | 0 | 0 | 100% |
 | vocabulary | 5 | 0 | 0 | 100% |
-
-## Failures
-
-### dynamicRef / strict-tree schema, guards against misspelled properties
-
-**Test**: instance with misspelled field
-**Expected**: invalid
-**Actual**: valid
-
-### not / collect annotations inside a 'not', even if collection is disabled
-
-**Test**: unevaluated property
-**Expected**: valid
-**Actual**: invalid
-
-### ref / ref creates new scope when adjacent to keywords
-
-**Test**: referenced subschema doesn't see annotations from properties
-**Expected**: invalid
-**Actual**: valid
