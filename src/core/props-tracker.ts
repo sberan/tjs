@@ -32,7 +32,20 @@ interface ScopeState {
   patterns: string[];
   dynamicVar: Name | undefined;
   needsDynamic: boolean;
-  branchStack: Name[];
+  branchStack: BranchState[];
+}
+
+/**
+ * Branch state for tracking properties during branch execution.
+ * Uses static collection by default, falls back to dynamic when needed.
+ */
+interface BranchState {
+  /** Static properties collected during branch execution (compile-time) */
+  staticProps: Set<string>;
+  /** Runtime variable for dynamic tracking (created on demand) */
+  dynamicVar: Name | undefined;
+  /** Whether this branch needs dynamic tracking */
+  needsDynamic: boolean;
 }
 
 /**
@@ -44,6 +57,83 @@ export function hasRestrictiveUnevaluatedProperties(schema: unknown): boolean {
   const unevalProps = (schema as Record<string, unknown>).unevaluatedProperties;
   // Only isolate if unevaluatedProperties is false or a schema (not true)
   return unevalProps !== undefined && unevalProps !== true;
+}
+
+/**
+ * Check if a schema tree contains any restrictive unevaluatedProperties.
+ * Used to determine if property tracking should be activated from the start.
+ */
+export function containsUnevaluatedProperties(
+  schema: unknown,
+  visited = new Set<unknown>()
+): boolean {
+  if (typeof schema !== 'object' || schema === null) return false;
+  if (visited.has(schema)) return false; // Avoid cycles
+  visited.add(schema);
+
+  const s = schema as Record<string, unknown>;
+
+  // Check current schema
+  if (hasRestrictiveUnevaluatedProperties(schema)) return true;
+
+  // Check nested schemas in composition keywords
+  const checkArray = (arr: unknown) => {
+    if (Array.isArray(arr)) {
+      return arr.some((item) => containsUnevaluatedProperties(item, visited));
+    }
+    return false;
+  };
+
+  if (checkArray(s.allOf)) return true;
+  if (checkArray(s.anyOf)) return true;
+  if (checkArray(s.oneOf)) return true;
+  if (containsUnevaluatedProperties(s.not, visited)) return true;
+  if (containsUnevaluatedProperties(s.if, visited)) return true;
+  if (containsUnevaluatedProperties(s.then, visited)) return true;
+  if (containsUnevaluatedProperties(s.else, visited)) return true;
+
+  // Check $ref and $dynamicRef targets would require resolving refs, skip for now
+  // The lazy activation in generateSchemaValidator handles those cases
+
+  // Check property schemas
+  if (s.properties && typeof s.properties === 'object') {
+    for (const prop of Object.values(s.properties)) {
+      if (containsUnevaluatedProperties(prop, visited)) return true;
+    }
+  }
+  if (s.patternProperties && typeof s.patternProperties === 'object') {
+    for (const prop of Object.values(s.patternProperties)) {
+      if (containsUnevaluatedProperties(prop, visited)) return true;
+    }
+  }
+  if (containsUnevaluatedProperties(s.additionalProperties, visited)) return true;
+
+  // Check item schemas
+  if (containsUnevaluatedProperties(s.items, visited)) return true;
+  if (checkArray(s.prefixItems)) return true;
+  if (containsUnevaluatedProperties(s.contains, visited)) return true;
+  if (containsUnevaluatedProperties(s.additionalItems, visited)) return true;
+
+  // Check dependent schemas
+  if (s.dependentSchemas && typeof s.dependentSchemas === 'object') {
+    for (const dep of Object.values(s.dependentSchemas)) {
+      if (containsUnevaluatedProperties(dep, visited)) return true;
+    }
+  }
+
+  // Check definitions
+  if (s.$defs && typeof s.$defs === 'object') {
+    for (const def of Object.values(s.$defs)) {
+      if (containsUnevaluatedProperties(def, visited)) return true;
+    }
+  }
+  if (s.definitions && typeof s.definitions === 'object') {
+    for (const def of Object.values(s.definitions)) {
+      if (containsUnevaluatedProperties(def, visited)) return true;
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -67,10 +157,10 @@ export class PropsTracker {
   #needsDynamic = false;
 
   /**
-   * Stack of branch context variables.
-   * When non-empty, addProperties() writes to the top branch var instead of static props.
+   * Stack of branch contexts.
+   * When non-empty, addProperties() collects to the top branch instead of static props.
    */
-  #branchStack: Name[] = [];
+  #branchStack: BranchState[] = [];
 
   /**
    * Stack of saved scope states for nested unevaluatedProperties.
@@ -114,16 +204,16 @@ export class PropsTracker {
   }
   /**
    * Mark specific property names as evaluated (from `properties` keyword)
-   * When inside a branch context, writes to the branch var instead.
+   * When inside a branch context, collects to the branch's static props.
    */
   addProperties(names: string[]): void {
     if (!this.#active || this.#staticProps === true) return;
 
-    // If inside a branch, write to the branch var instead of static props
+    // If inside a branch, collect to branch's static props
     if (this.#branchStack.length > 0) {
-      const branchVar = this.#branchStack[this.#branchStack.length - 1];
+      const branch = this.#branchStack[this.#branchStack.length - 1];
       for (const name of names) {
-        this.#code.line(_`${branchVar}[${stringify(name)}] = true;`);
+        branch.staticProps.add(name);
       }
       return;
     }
@@ -140,19 +230,21 @@ export class PropsTracker {
 
   /**
    * Enter a branch context (anyOf/oneOf/if-then-else).
-   * Creates a branch tracking variable and pushes it onto the stack.
-   * Returns the branch var for later merging.
+   * Creates a branch state for collecting properties.
+   * Returns the branch state for later merging.
    */
-  enterBranch(): Name {
+  enterBranch(): BranchState {
+    const branch: BranchState = {
+      staticProps: new Set(),
+      dynamicVar: undefined,
+      needsDynamic: false,
+    };
     if (!this.#active || this.#staticProps === true) {
-      // Return a no-op name - other methods will skip work when inactive
-      return new Name('__noop__');
+      // Return empty branch - methods will handle inactive state
+      return branch;
     }
-    this.#needsDynamic = true;
-    const branchVar = this.#code.genVar('branchProps');
-    this.#code.line(_`const ${branchVar} = {};`);
-    this.#branchStack.push(branchVar);
-    return branchVar;
+    this.#branchStack.push(branch);
+    return branch;
   }
 
   /**
@@ -268,10 +360,17 @@ export class PropsTracker {
       conditions.push(_`!${this.#dynamicVar}[${keyVar}]`);
     }
 
-    // Check current branch var (if inside a branch context)
+    // Check current branch's properties (if inside a branch context)
     if (this.#branchStack.length > 0) {
-      const branchVar = this.#branchStack[this.#branchStack.length - 1];
-      conditions.push(_`!${branchVar}[${keyVar}]`);
+      const branch = this.#branchStack[this.#branchStack.length - 1];
+      // Check branch's static props
+      for (const prop of branch.staticProps) {
+        conditions.push(_`${keyVar} !== ${stringify(prop)}`);
+      }
+      // Check branch's dynamic var if it exists
+      if (branch.dynamicVar) {
+        conditions.push(_`!${branch.dynamicVar}[${keyVar}]`);
+      }
     }
 
     if (conditions.length === 0) {
@@ -324,6 +423,7 @@ export class PropsTracker {
     });
 
     // Reset to fresh state for new scope
+    // The nested unevaluatedProperties should NOT see properties from parent/sibling applicators
     this.#staticProps = undefined;
     this.#patterns = [];
     this.#dynamicVar = undefined;
@@ -367,39 +467,55 @@ export class PropsTracker {
   }
 
   /**
-   * Merge a branch tracker back into main tracker.
+   * Merge a branch back into main tracker.
    * Called when a branch validates successfully.
+   * Emits property additions directly - no intermediate objects needed.
    */
-  mergeBranch(branchVar: Name, validVar: Name): void {
-    // Skip if inactive, all evaluated, or branchVar is the no-op placeholder
-    if (!this.#active || this.#staticProps === true || branchVar.str === '__noop__') return;
+  mergeBranch(branch: BranchState, validVar: Name): void {
+    if (!this.#active || this.#staticProps === true) return;
+
+    // Check if branch has anything to merge
+    const hasStaticProps = branch.staticProps.size > 0;
+    const hasDynamicVar = branch.dynamicVar !== undefined;
+
+    if (!hasStaticProps && !hasDynamicVar) return;
+
+    // Get or create main dynamic var
     const mainVar = this.getDynamicVar();
+
     this.#code.if(validVar, () => {
-      this.#code.line(_`Object.assign(${mainVar}, ${branchVar});`);
+      // Emit static property additions directly
+      for (const prop of branch.staticProps) {
+        this.#code.line(_`${mainVar}[${stringify(prop)}] = true;`);
+      }
+      // If branch has dynamic var, merge it
+      if (hasDynamicVar) {
+        this.#code.line(_`Object.assign(${mainVar}, ${branch.dynamicVar});`);
+      }
     });
   }
 
   /**
    * Execute a callback within a branch context.
-   * Returns the branch var for merging after the callback completes.
+   * Returns the branch state for merging after the callback completes.
    *
    * @param fn - The callback to execute
    * @param isolate - If true, push a new scope so the branch has isolated tracking
    *                  (used when subschema has its own unevaluatedProperties)
    */
-  withBranch<T>(fn: () => T, isolate = false): { result: T; branchVar: Name } {
+  withBranch<T>(fn: () => T, isolate = false): { result: T; branch: BranchState } {
     if (isolate) {
       // Activate tracking - isolate is used when subschema has unevaluatedProperties
       this.#active = true;
       this.pushScope();
     }
-    const branchVar = this.enterBranch();
+    const branch = this.enterBranch();
     const result = fn();
     this.exitBranch();
     if (isolate) {
-      this.popScope(false); // Don't merge - the branch var handles it
+      this.popScope(false); // Don't merge - the branch handles it
     }
-    return { result, branchVar };
+    return { result, branch };
   }
 
   /**
@@ -411,8 +527,8 @@ export class PropsTracker {
     if (!this.#active || this.#staticProps === true) {
       return fn();
     }
-    const { result, branchVar } = this.withBranch(fn);
-    this.mergeBranch(branchVar, new Name('true'));
+    const { result, branch } = this.withBranch(fn);
+    this.mergeBranch(branch, new Name('true'));
     return result;
   }
 }
