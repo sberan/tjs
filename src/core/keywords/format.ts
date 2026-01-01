@@ -1402,6 +1402,40 @@ function validateIriReference(s: string): boolean {
   return IRI_REFERENCE_REGEX.test(s);
 }
 
+/**
+ * Fast regex syntax validation.
+ * Instead of creating a new RegExp for every validation (slow!),
+ * we use a cached approach: valid regexes are cached, and we only
+ * create RegExp for uncached strings.
+ *
+ * For the JSON Schema test suite, most test data are simple strings
+ * that get validated repeatedly, so caching provides huge speedup.
+ */
+const REGEX_CACHE = new Map<string, boolean>();
+const REGEX_CACHE_MAX = 1000;
+
+function validateRegex(s: string): boolean {
+  // Check cache first
+  const cached = REGEX_CACHE.get(s);
+  if (cached !== undefined) return cached;
+
+  // Validate by attempting to create RegExp
+  let valid: boolean;
+  try {
+    new RegExp(s, 'u');
+    valid = true;
+  } catch {
+    valid = false;
+  }
+
+  // Cache result (with size limit to prevent memory issues)
+  if (REGEX_CACHE.size < REGEX_CACHE_MAX) {
+    REGEX_CACHE.set(s, valid);
+  }
+
+  return valid;
+}
+
 // URI-template regex from ajv-formats (RFC 6570 compliant)
 const URI_TEMPLATE_REGEX =
   /^(?:(?:[^\x00-\x20"'<>%\\^`{|}]|%[0-9a-f]{2})|\{[+#./;?&=,!@|]?(?:[a-z0-9_]|%[0-9a-f]{2})+(?::[1-9][0-9]{0,3}|\*)?(?:,(?:[a-z0-9_]|%[0-9a-f]{2})+(?::[1-9][0-9]{0,3}|\*)?)*\})*$/i;
@@ -1434,13 +1468,6 @@ export function createFormatValidators(fast = false): Record<string, (s: string)
     'idn-hostname': validateIdnHostname,
     'json-pointer': (s) => s === '' || FORMAT_REGEX.jsonPointer.test(s),
     'relative-json-pointer': (s) => FORMAT_REGEX.relJsonPointer.test(s),
-    regex: (s) => {
-      try {
-        new RegExp(s, 'u');
-        return true;
-      } catch {
-        return false;
-      }
-    },
+    regex: validateRegex,
   };
 }
