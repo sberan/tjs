@@ -1349,15 +1349,16 @@ export function generatePropertiesChecks(
             const addPropsSchema = schema.additionalProperties!;
 
             // Build condition: not a defined prop and not matching any pattern
-            // Use inline comparisons for small numbers of properties (faster than Set.has)
+            // Use inline comparisons for small numbers of properties, Set for larger
             const conditions: Code[] = [];
 
-            // For defined properties, use inline comparison for up to ~10 props
-            if (definedProps.length > 0 && definedProps.length <= 10) {
+            // For defined properties, use inline comparison for up to 3 props, Set for more
+            // Modern JS engines optimize Set.has() very well, and it reduces code size
+            if (definedProps.length > 0 && definedProps.length <= 3) {
               const propChecks = definedProps.map((p) => _`${keyVar} !== ${p}`);
               conditions.push(_`(${and(...propChecks)})`);
-            } else if (definedProps.length > 10) {
-              // Use Set for larger number of properties
+            } else if (definedProps.length > 3) {
+              // Use Set for 4+ properties - faster and smaller code
               const propsSetName = new Name(ctx.genRuntimeName('propsSet'));
               ctx.addRuntimeFunction(propsSetName.str, new Set(definedProps));
               conditions.push(_`!${propsSetName}.has(${keyVar})`);
