@@ -1102,14 +1102,18 @@ export function generateArrayChecks(
         itemTypes.length > 0 && !itemTypes.some((t) => t === 'object' || t === 'array');
 
       const iVar = code.genVar('i');
-      const jVar = code.genVar('j');
 
       if (canOptimize) {
-        // Fast path: items are primitives, use simple === comparison in O(n²) loop
-        // This is faster than deepEqual for primitives
-        code.block(_`outer: for (let ${iVar} = ${dataVar}.length; ${iVar}--;)`, () => {
-          code.block(_`for (let ${jVar} = ${iVar}; ${jVar}--;)`, () => {
-            code.if(_`${dataVar}[${iVar}] === ${dataVar}[${jVar}]`, () => {
+        // Fast path: items are primitives, use Set for O(n) uniqueness check
+        const seenVar = code.genVar('seen');
+        const lenVar = code.genVar('len');
+        const itemVar = code.genVar('item');
+        code.line(_`const ${seenVar} = new Set();`);
+        code.block(
+          _`for (let ${iVar} = 0, ${lenVar} = ${dataVar}.length; ${iVar} < ${lenVar}; ${iVar}++)`,
+          () => {
+            code.line(_`const ${itemVar} = ${dataVar}[${iVar}];`);
+            code.if(_`${seenVar}.has(${itemVar})`, () => {
               genError(
                 code,
                 pathExprCode,
@@ -1120,10 +1124,12 @@ export function generateArrayChecks(
                 ctx
               );
             });
-          });
-        });
+            code.line(_`${seenVar}.add(${itemVar});`);
+          }
+        );
       } else {
         // Slow path: O(n²) comparison using deepEqual
+        const jVar = code.genVar('j');
         code.block(_`outer: for (let ${iVar} = ${dataVar}.length; ${iVar}--;)`, () => {
           code.block(_`for (let ${jVar} = ${iVar}; ${jVar}--;)`, () => {
             code.if(_`deepEqual(${dataVar}[${iVar}], ${dataVar}[${jVar}])`, () => {
