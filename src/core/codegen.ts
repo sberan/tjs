@@ -499,16 +499,17 @@ export class CodeBuilder {
 
   /**
    * Add a for loop iterating over array indices.
-   * Common pattern: for (let i = start; i < arr.length; i++)
+   * Common pattern: for (let i = start, len = arr.length; i < len; i++)
    * @param indexVar - The loop index variable name
    * @param array - The array expression to iterate over
    * @param body - Loop body callback
    * @param start - Starting index (default 0)
    */
   forArray(indexVar: Name, array: Code | Name, body: () => void, start: number = 0): this {
+    const lenVar = this.genVar('len');
     return this.for(
-      _`let ${indexVar} = ${start}`,
-      _`${indexVar} < ${array}.length`,
+      _`let ${indexVar} = ${start}, ${lenVar} = ${array}.length`,
+      _`${indexVar} < ${lenVar}`,
       _`${indexVar}++`,
       body
     );
