@@ -1982,7 +1982,7 @@ export function generatePropertyNamesCheck(
  */
 function shouldInlineRef(
   refSchema: JsonSchema,
-  _ctx: CompileContext,
+  ctx: CompileContext,
   _dynamicScopeVar?: Name
 ): boolean {
   // Only inline object schemas (not boolean or string)
@@ -2005,27 +2005,76 @@ function shouldInlineRef(
   if (refSchema.unevaluatedProperties !== undefined || refSchema.unevaluatedItems !== undefined)
     return false;
 
-  // Don't inline schemas with complex object validation
-  if (refSchema.properties || refSchema.patternProperties || refSchema.additionalProperties)
-    return false;
-  if (refSchema.dependentSchemas || refSchema.dependencies) return false;
-
-  // Don't inline schemas with complex array validation
-  if (refSchema.prefixItems || refSchema.items || refSchema.contains) return false;
+  // Don't inline if already compiled (cyclic reference)
+  if (ctx.isCompiled(refSchema)) return false;
 
   // Don't inline schemas with $defs or definitions (they may have nested refs)
   // These should be compiled as separate functions to allow proper ref resolution
   if (refSchema.$defs || refSchema.definitions) return false;
 
-  // Count the number of simple validation keywords
+  // Don't inline schemas with patternProperties or dependentSchemas (complex)
+  if (refSchema.patternProperties || refSchema.dependentSchemas || refSchema.dependencies)
+    return false;
+
+  // Helper to check if a schema is complex
+  const isComplexSchema = (s: JsonSchema): boolean => {
+    if (typeof s !== 'object' || s === null || Array.isArray(s)) return false;
+    return !!(
+      s.properties ||
+      s.patternProperties ||
+      s.prefixItems ||
+      s.items ||
+      s.contains ||
+      s.allOf ||
+      s.anyOf ||
+      s.oneOf ||
+      s.not ||
+      s.if
+    );
+  };
+
+  // Allow inlining simple object schemas with a small number of properties
+  if (
+    refSchema.properties &&
+    typeof refSchema.properties === 'object' &&
+    !Array.isArray(refSchema.properties)
+  ) {
+    const propCount = Object.keys(refSchema.properties).length;
+    // Only inline if we have 5 or fewer properties
+    if (propCount > 5) return false;
+
+    // Check that property schemas are simple (no nested complexity)
+    for (const propSchema of Object.values(refSchema.properties)) {
+      if (isComplexSchema(propSchema)) {
+        return false;
+      }
+    }
+  }
+
+  // Allow inlining simple array schemas with simple items
+  // But not if items is an array (tuple schema) or if the items schema is complex
+  if (refSchema.items) {
+    // Don't inline tuple schemas (items is an array)
+    if (Array.isArray(refSchema.items)) return false;
+    // Don't inline if items is complex (after ruling out array, items is JsonSchema)
+    const itemsSchema = refSchema.items as JsonSchema;
+    if (isComplexSchema(itemsSchema)) {
+      return false;
+    }
+  }
+
+  // Don't inline prefixItems or contains (more complex)
+  if (refSchema.prefixItems || refSchema.contains) return false;
+
+  // Count the number of validation keywords
   const keywords = Object.keys(refSchema).filter(
     (k) =>
       k !== '$schema' && k !== '$comment' && k !== 'title' && k !== 'description' && k !== '$anchor'
   );
 
-  // Inline if it has only a few simple keywords (type, const, enum, format, etc.)
-  // This catches the common case of { type: "string" }, { type: "integer" }, etc.
-  return keywords.length <= 5;
+  // Inline if it has a reasonable number of keywords
+  // Allow more keywords now that we can inline properties/items
+  return keywords.length <= 8;
 }
 
 /**
