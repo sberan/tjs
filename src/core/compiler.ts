@@ -29,6 +29,7 @@ import {
   genBatchedRequiredChecks,
   hasTypeConstraint,
   getTypeCheck,
+  getOptimizedUnionTypeCheck,
   getItemTypes,
   isNoOpSchema,
   getSimpleType,
@@ -390,22 +391,41 @@ export function generateTypeCheck(
       genError(code, pathExprCode, '#/type', 'type', `must be ${type}`, { type }, ctx);
     });
   } else {
-    // Multiple types - need OR
-    const checks = types.map((t) => getTypeCheck(dataVar, t));
-    code.if(not(or(...checks)), () => {
-      const typeList = types.join(',');
-      genError(
-        code,
-        pathExprCode,
-        '#/type',
-        'type',
-        `must be ${types.join(' or ')}`,
-        {
-          type: typeList,
-        },
-        ctx
-      );
-    });
+    // Multiple types - try optimized union check first
+    const optimizedCheck = getOptimizedUnionTypeCheck(dataVar, types);
+    if (optimizedCheck) {
+      code.if(not(optimizedCheck), () => {
+        const typeList = types.join(',');
+        genError(
+          code,
+          pathExprCode,
+          '#/type',
+          'type',
+          `must be ${types.join(' or ')}`,
+          {
+            type: typeList,
+          },
+          ctx
+        );
+      });
+    } else {
+      // Fallback: generate individual OR checks
+      const checks = types.map((t) => getTypeCheck(dataVar, t));
+      code.if(not(or(...checks)), () => {
+        const typeList = types.join(',');
+        genError(
+          code,
+          pathExprCode,
+          '#/type',
+          'type',
+          `must be ${types.join(' or ')}`,
+          {
+            type: typeList,
+          },
+          ctx
+        );
+      });
+    }
   }
 }
 
@@ -2975,7 +2995,12 @@ function generateSubschemaCheck(
       if (types.length === 1) {
         return getTypeCheck(dataVar, types[0]);
       } else {
-        // Multiple types - need OR
+        // Multiple types - try optimized union check first
+        const optimizedCheck = getOptimizedUnionTypeCheck(dataVar, types);
+        if (optimizedCheck) {
+          return optimizedCheck;
+        }
+        // Fallback: generate individual OR checks
         const checks = types.map((t) => getTypeCheck(dataVar, t));
         return or(...checks);
       }
