@@ -599,9 +599,14 @@ export function generateEnumCheck(
   if (complexValues.length === 0) {
     // All primitives - use inline === checks for small enums, Set for larger ones
     // Inline === is faster for small enums (like AJV does)
-    if (primitives.length <= 5) {
+    // Benchmarking shows inline is faster up to ~15 values due to Set.has() overhead
+    if (primitives.length <= 15) {
       // Generate inline checks: !(data === v1 || data === v2 || ...)
-      const checks = primitives.map((val) => _`${dataVar} === ${stringify(val)}`);
+      // Build checks array without map for micro-optimization
+      const checks: Code[] = [];
+      for (let i = 0; i < primitives.length; i++) {
+        checks.push(_`${dataVar} === ${stringify(primitives[i])}`);
+      }
       const condition = checks.length === 1 ? _`!(${checks[0]})` : _`!(${or(...checks)})`;
       code.if(condition, () => {
         genError(
@@ -686,7 +691,7 @@ export function generateEnumCheck(
     // Mixed: AJV-style single expression for small enums
     const totalLen = primitives.length + complexValues.length;
 
-    if (totalLen <= 10) {
+    if (totalLen <= 15) {
       // Small mixed enum: generate single expression
       // data === v1 || data === v2 || deepEqual(data, arr[0]) || ...
       const arrName = new Name(ctx.genRuntimeName('enumArr'));

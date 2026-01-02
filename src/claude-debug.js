@@ -1,36 +1,16 @@
 import { createValidator } from '../dist/core/index.js';
 
-// Test case 1: object type
-const s1 = createValidator({
-  type: 'object',
-});
+// Test different enum patterns
+const schemas = [
+  { name: '3 primitives', def: { enum: [1, 2, 3] } },
+  { name: '6 primitives', def: { enum: [1, 2, 3, 4, 5, 6] } },
+  { name: '3 strings', def: { enum: ['a', 'b', 'c'] } },
+  { name: '6 strings', def: { enum: ['a', 'b', 'c', 'd', 'e', 'f'] } },
+  { name: '10 strings', def: { enum: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'] } },
+];
 
-console.log('=== OBJECT ===');
-console.log(s1.toString());
-console.log('\n');
-
-// Test case 2: string type
-const s2 = createValidator({
-  type: 'string',
-});
-
-console.log('=== STRING ===');
-console.log(s2.toString());
-console.log('\n');
-
-// Test case 3: integer type
-const s3 = createValidator({
-  type: 'integer',
-});
-
-console.log('=== INTEGER ===');
-console.log(s3.toString());
-console.log('\n');
-
-// Test case 4: array type
-const s4 = createValidator({
-  type: 'array',
-});
-
-console.log('=== ARRAY ===');
-console.log(s4.toString());
+for (const { name, def } of schemas) {
+  const v = createValidator(def);
+  console.log(`\n=== ${name} ===`);
+  console.log(v.toString());
+}
