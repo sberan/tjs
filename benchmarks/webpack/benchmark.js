@@ -66,33 +66,55 @@ function runBenchmark() {
   console.log('└─────────────────┴────────────────┴────────────────┘');
   console.log();
 
-  // Summary statistics
-  const minBundle = results.reduce((a, b) => a.gzipSize < b.gzipSize ? a : b);
-  const maxBundle = results.reduce((a, b) => a.gzipSize > b.gzipSize ? a : b);
+  // Separate runtime and precompiled
+  const runtimeBundles = results.filter(r => r.name !== 'precompiled');
+  const precompiledBundle = results.find(r => r.name === 'precompiled');
 
   console.log('═══════════════════════════════════════════════════════════════════');
   console.log('                           SUMMARY');
   console.log('═══════════════════════════════════════════════════════════════════');
   console.log();
-  console.log(`  Minimum bundle size (gzipped): ${formatBytes(minBundle.gzipSize)} (${minBundle.name})`);
-  console.log(`  Maximum bundle size (gzipped): ${formatBytes(maxBundle.gzipSize)} (${maxBundle.name})`);
-  console.log();
+
+  if (runtimeBundles.length > 0) {
+    const minRuntime = runtimeBundles.reduce((a, b) => a.gzipSize < b.gzipSize ? a : b);
+    const maxRuntime = runtimeBundles.reduce((a, b) => a.gzipSize > b.gzipSize ? a : b);
+    console.log('  RUNTIME COMPILATION (includes tjs compiler):');
+    console.log(`    Min: ${formatBytes(minRuntime.gzipSize)} (${minRuntime.name})`);
+    console.log(`    Max: ${formatBytes(maxRuntime.gzipSize)} (${maxRuntime.name})`);
+    console.log();
+  }
+
+  if (precompiledBundle) {
+    console.log('  BUILD-TIME COMPILATION (no compiler):');
+    console.log(`    Size: ${formatBytes(precompiledBundle.gzipSize)} (${precompiledBundle.name})`);
+    console.log();
+
+    if (runtimeBundles.length > 0) {
+      const avgRuntime = runtimeBundles.reduce((s, r) => s + r.gzipSize, 0) / runtimeBundles.length;
+      const savings = ((avgRuntime - precompiledBundle.gzipSize) / avgRuntime * 100).toFixed(1);
+      console.log(`  SAVINGS: ${savings}% smaller than runtime compilation!`);
+      console.log();
+    }
+  }
 
   // Analysis
   console.log('═══════════════════════════════════════════════════════════════════');
   console.log('                          ANALYSIS');
   console.log('═══════════════════════════════════════════════════════════════════');
   console.log();
-  console.log('  Bundle breakdown:');
-  console.log('  ─────────────────');
-  console.log('  • minimal  - Simple string schema (baseline)');
+  console.log('  Runtime compilation (includes ~87KB compiler):');
+  console.log('  ───────────────────────────────────────────────');
+  console.log('  • minimal  - Simple string schema');
   console.log('  • medium   - Object with format validation');
   console.log('  • complex  - Nested objects, $refs, conditionals');
   console.log('  • full     - All exports including meta-schemas');
   console.log();
-  console.log('  Note: All bundles include the TJS compiler since schema');
-  console.log('  compilation happens at runtime. For pre-compiled schemas,');
-  console.log('  consider using a build-time compilation approach.');
+  console.log('  Build-time compilation (no compiler needed):');
+  console.log('  ────────────────────────────────────────────');
+  console.log('  • precompiled - Pre-generated validator, only ~3-5KB');
+  console.log();
+  console.log('  Use `tjs compile schema.json -o validator.js` to generate');
+  console.log('  standalone validators at build time.');
   console.log();
 
   // Return results for programmatic use

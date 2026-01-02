@@ -9,14 +9,16 @@ export default (env, argv) => {
 
   return {
     entry: {
-      // Minimal: simple string schema
+      // Minimal: simple string schema (runtime compilation)
       minimal: './src/minimal.js',
-      // Medium: object with a few properties
+      // Medium: object with a few properties (runtime compilation)
       medium: './src/medium.js',
-      // Complex: nested objects, arrays, refs
+      // Complex: nested objects, arrays, refs (runtime compilation)
       complex: './src/complex.js',
-      // Full: includes meta-schemas and all features
+      // Full: includes meta-schemas and all features (runtime compilation)
       full: './src/full.js',
+      // Pre-compiled: validator generated at build time (NO COMPILER)
+      precompiled: './src/precompiled.js',
     },
     output: {
       path: path.resolve(__dirname, 'dist'),

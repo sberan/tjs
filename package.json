@@ -14,10 +14,17 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "tjs": "./dist/cli.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./standalone": {
+      "types": "./dist/core/standalone.d.ts",
+      "import": "./dist/core/standalone.js"
     }
   },
   "files": [

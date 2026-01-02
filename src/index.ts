@@ -45,3 +45,7 @@ export { metaSchemas, draft04Schema, draft06Schema, draft07Schema } from './meta
 
 // Export struct helper
 export { struct, type StructPropertyDef, type StructSchema } from './struct.js';
+
+// Export standalone compilation (for build-time compilation)
+export { compileToModule, compileMultipleToModule, type StandaloneOptions } from './core/standalone.js';
+export { compileToCode, type CompileToCodeResult } from './core/compiler.js';
