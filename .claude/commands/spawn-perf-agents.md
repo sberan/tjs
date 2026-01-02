@@ -236,6 +236,10 @@ At the end, print:
 - **Clean Up**: Remove worktrees and branches after processing
 - **Only Merge Winners**: >10% improvement AND tests pass
 
+## Related Commands
+
+- **`/spawn-overall-perf-agents`**: For cross-cutting optimizations that affect all validators (codegen hot paths, error handling, type checking, property access, array validation, compile-time work). Use this when keyword-specific optimizations have been exhausted or when looking for systemic improvements.
+
 ## Common Slow Validators
 
 Based on typical benchmark results, these are often the slowest:

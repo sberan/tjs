@@ -5,12 +5,13 @@
  * keyword-level insights with minimal overhead.
  *
  * Usage:
- *   npm run bench [drafts...] [--filter <regex>]
+ *   npm run bench [drafts...] [--filter <regex>] [--per-test]
  *
  * Examples:
  *   npm run bench draft7 --filter ref        # Only ref-related files
  *   npm run bench --filter "format|pattern"  # format or pattern files
  *   npm run bench draft2019-09               # Single draft
+ *   npm run bench draft7 --filter unevaluatedItems --per-test  # Per-test breakdown
  */
 
 import * as fs from 'fs';
@@ -47,9 +48,25 @@ interface CompiledTest {
   data: unknown;
 }
 
-interface FileResult {
+interface CompiledTestWithDesc extends CompiledTest {
+  groupDesc: string;
+  testDesc: string;
+  valid: boolean;
+}
+
+interface PerTestResult {
   draft: string;
   file: string;
+  groupDesc: string;
+  testDesc: string;
+  valid: boolean;
+  tjsNs: number;
+  ajvNs: number;
+}
+
+interface FileResult {
+  draft: string;
+  file: string; // relative path from suite dir (e.g., "optional/format/date.json")
   testCount: number;
   tjsNs: number;
   ajvNs: number;
@@ -201,32 +218,100 @@ function createAjv(draft: Draft, remotes: Record<string, unknown>, formatAsserti
 }
 
 // Get all test files for a draft (including optional subdirectories)
-function getTestFiles(draft: Draft): { file: string; isFormat: boolean }[] {
+function getTestFiles(draft: Draft): { file: string; relativePath: string; isFormat: boolean }[] {
   const suiteDir = path.join(__dirname, '../tests/json-schema-test-suite', draft);
-  const files: { file: string; isFormat: boolean }[] = [];
+  const files: { file: string; relativePath: string; isFormat: boolean }[] = [];
 
   // Main directory files
   for (const entry of fs.readdirSync(suiteDir, { withFileTypes: true })) {
     if (entry.isFile() && entry.name.endsWith('.json')) {
-      files.push({ file: path.join(suiteDir, entry.name), isFormat: false });
+      files.push({
+        file: path.join(suiteDir, entry.name),
+        relativePath: entry.name,
+        isFormat: false,
+      });
     }
   }
 
   // Optional directory (recursive)
-  const loadOptional = (dir: string, isFormat: boolean) => {
+  const loadOptional = (dir: string, relPrefix: string, isFormat: boolean) => {
     if (!fs.existsSync(dir)) return;
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const fullPath = path.join(dir, entry.name);
+      const relPath = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
-        loadOptional(fullPath, isFormat || entry.name === 'format');
+        loadOptional(fullPath, relPath, isFormat || entry.name === 'format');
       } else if (entry.name.endsWith('.json')) {
-        files.push({ file: fullPath, isFormat });
+        files.push({ file: fullPath, relativePath: relPath, isFormat });
       }
     }
   };
-  loadOptional(path.join(suiteDir, 'optional'), false);
+  loadOptional(path.join(suiteDir, 'optional'), 'optional', false);
 
   return files;
+}
+
+// Compile all tests from a file with descriptions preserved (for --per-test mode)
+function compileFileTestsWithDesc(
+  filePath: string,
+  draft: Draft,
+  remotes: Record<string, unknown>,
+  isFormat: boolean
+): CompiledTestWithDesc[] {
+  const groups: TestGroup[] = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  const sharedAjv = createAjv(draft, remotes, false);
+  const sharedAjvWithFormat = createAjv(draft, remotes, true);
+
+  const compiledTests: CompiledTestWithDesc[] = [];
+
+  for (const group of groups) {
+    let tjsValidator: ((data: unknown) => boolean) | null = null;
+    let ajvValidator: ((data: unknown) => boolean) | null = null;
+
+    try {
+      tjsValidator = createValidator(group.schema as JsonSchema, {
+        defaultMeta: draft,
+        remotes: remotes as Record<string, JsonSchema>,
+        ...(isFormat && { formatAssertion: true }),
+      });
+    } catch {}
+
+    try {
+      const ajv = isFormat ? sharedAjvWithFormat : sharedAjv;
+      const fn = ajv.compile(group.schema as object);
+      ajvValidator = (data: unknown) => fn(data) as boolean;
+    } catch {}
+
+    for (const test of group.tests) {
+      // Check compliance
+      let tjsOk = false,
+        ajvOk = false;
+      if (tjsValidator) {
+        try {
+          tjsOk = tjsValidator(test.data) === test.valid;
+        } catch {}
+      }
+      if (ajvValidator) {
+        try {
+          ajvOk = ajvValidator(test.data) === test.valid;
+        } catch {}
+      }
+
+      // Only include in benchmark if both pass
+      if (tjsOk && ajvOk && tjsValidator && ajvValidator) {
+        compiledTests.push({
+          tjsValidator,
+          ajvValidator,
+          data: test.data,
+          groupDesc: group.description,
+          testDesc: test.description,
+          valid: test.valid,
+        });
+      }
+    }
+  }
+
+  return compiledTests;
 }
 
 // Compile all tests from a file into a flat array ready for benchmarking
@@ -304,12 +389,202 @@ function compileFileTests(
   return { compiledTests, tjsPass, tjsFail, ajvPass, ajvFail };
 }
 
+// Per-test benchmark mode: benchmarks each test case individually
+async function runPerTestBenchmark(
+  drafts: Draft[],
+  filter: RegExp | null,
+  remotes: Record<string, unknown>,
+  quickMode: boolean,
+  measureOpts: { min_cpu_time: number; min_samples: number }
+): Promise<void> {
+  console.log(`\n${'═'.repeat(100)}`);
+  console.log('PER-TEST BENCHMARK MODE');
+  console.log('═'.repeat(100));
+
+  // Collect all tests with descriptions
+  interface PreparedTest {
+    draft: Draft;
+    file: string;
+    test: CompiledTestWithDesc;
+  }
+
+  const allTests: PreparedTest[] = [];
+
+  for (const draft of drafts) {
+    let testFiles = getTestFiles(draft);
+    if (filter) {
+      testFiles = testFiles.filter((f) => filter!.test(f.relativePath));
+    }
+
+    for (const { file, relativePath, isFormat } of testFiles) {
+      const tests = compileFileTestsWithDesc(file, draft, remotes, isFormat);
+      for (const test of tests) {
+        allTests.push({ draft, file: relativePath, test });
+      }
+    }
+  }
+
+  if (allTests.length === 0) {
+    console.log('\nNo tests found matching filter.');
+    return;
+  }
+
+  console.log(`\nBenchmarking ${allTests.length} individual tests...\n`);
+
+  // Warmup
+  const WARMUP_ITERATIONS = quickMode ? 100 : 1000;
+  console.log(`Warming up (${WARMUP_ITERATIONS} iterations per test)...`);
+  for (const { test } of allTests) {
+    for (let w = 0; w < WARMUP_ITERATIONS; w++) {
+      test.tjsValidator(test.data);
+      test.ajvValidator(test.data);
+    }
+  }
+  console.log('Warmup complete.\n');
+
+  // Benchmark each test
+  const results: PerTestResult[] = [];
+
+  for (let i = 0; i < allTests.length; i++) {
+    const { draft, file, test } = allTests[i];
+
+    const tjsResult = await measure(() => {
+      test.tjsValidator(test.data);
+    }, measureOpts);
+
+    const ajvResult = await measure(() => {
+      test.ajvValidator(test.data);
+    }, measureOpts);
+
+    const tjsNs = (tjsResult as any).p50 ?? tjsResult.avg;
+    const ajvNs = (ajvResult as any).p50 ?? ajvResult.avg;
+
+    results.push({
+      draft,
+      file,
+      groupDesc: test.groupDesc,
+      testDesc: test.testDesc,
+      valid: test.valid,
+      tjsNs,
+      ajvNs,
+    });
+
+    // Progress
+    const percent = Math.round(((i + 1) / allTests.length) * 100);
+    const ratio = ajvNs > 0 ? tjsNs / ajvNs : 0;
+    const status =
+      ratio > 1
+        ? `${RED}+${Math.round((ratio - 1) * 100)}%${RESET}`
+        : `${GREEN}-${Math.round((1 - ratio) * 100)}%${RESET}`;
+    const desc = `${test.groupDesc}: ${test.testDesc}`.slice(0, 50);
+    console.log(`${percent.toString().padStart(3)}% ${status} ${desc}`);
+  }
+
+  console.log('');
+
+  // Sort by slowest vs AJV
+  const slowest = results
+    .filter((r) => r.tjsNs > r.ajvNs)
+    .sort((a, b) => b.tjsNs - b.ajvNs - (a.tjsNs - a.ajvNs))
+    .slice(0, 20);
+
+  const fastest = results
+    .filter((r) => r.tjsNs < r.ajvNs)
+    .sort((a, b) => b.ajvNs - b.tjsNs - (a.ajvNs - a.tjsNs))
+    .slice(0, 20);
+
+  // Print slowest
+  console.log('═'.repeat(140));
+  console.log('Top 20 Slowest vs AJV (where tjs loses)');
+  console.log('─'.repeat(140));
+  console.log(
+    '#'.padEnd(4) +
+      'Draft'.padEnd(14) +
+      'File'.padEnd(30) +
+      'Group'.padEnd(35) +
+      'Test'.padEnd(30) +
+      'tjs ns'.padStart(9) +
+      'ajv ns'.padStart(9) +
+      'ratio'.padStart(8)
+  );
+  console.log('─'.repeat(140));
+
+  for (let i = 0; i < slowest.length; i++) {
+    const r = slowest[i];
+    const file = r.file.length > 28 ? r.file.slice(0, 25) + '...' : r.file;
+    const group = r.groupDesc.length > 33 ? r.groupDesc.slice(0, 30) + '...' : r.groupDesc;
+    const test = r.testDesc.length > 28 ? r.testDesc.slice(0, 25) + '...' : r.testDesc;
+    const ratio = r.ajvNs > 0 ? (r.tjsNs / r.ajvNs).toFixed(1) + 'x' : '∞';
+    console.log(
+      `${i + 1}`.padEnd(4) +
+        r.draft.padEnd(14) +
+        file.padEnd(30) +
+        group.padEnd(35) +
+        test.padEnd(30) +
+        Math.round(r.tjsNs).toLocaleString().padStart(9) +
+        Math.round(r.ajvNs).toLocaleString().padStart(9) +
+        `${RED}${ratio}${RESET}`.padStart(17)
+    );
+  }
+  console.log('─'.repeat(140));
+
+  // Print fastest
+  if (fastest.length > 0) {
+    console.log('\nTop 20 Fastest vs AJV (where tjs wins)');
+    console.log('─'.repeat(140));
+    console.log(
+      '#'.padEnd(4) +
+        'Draft'.padEnd(14) +
+        'File'.padEnd(30) +
+        'Group'.padEnd(35) +
+        'Test'.padEnd(30) +
+        'tjs ns'.padStart(9) +
+        'ajv ns'.padStart(9) +
+        'ratio'.padStart(8)
+    );
+    console.log('─'.repeat(140));
+
+    for (let i = 0; i < fastest.length; i++) {
+      const r = fastest[i];
+      const file = r.file.length > 28 ? r.file.slice(0, 25) + '...' : r.file;
+      const group = r.groupDesc.length > 33 ? r.groupDesc.slice(0, 30) + '...' : r.groupDesc;
+      const test = r.testDesc.length > 28 ? r.testDesc.slice(0, 25) + '...' : r.testDesc;
+      const ratio = r.tjsNs > 0 ? (r.ajvNs / r.tjsNs).toFixed(1) + 'x' : '∞';
+      console.log(
+        `${i + 1}`.padEnd(4) +
+          r.draft.padEnd(14) +
+          file.padEnd(30) +
+          group.padEnd(35) +
+          test.padEnd(30) +
+          Math.round(r.tjsNs).toLocaleString().padStart(9) +
+          Math.round(r.ajvNs).toLocaleString().padStart(9) +
+          `${GREEN}${ratio}${RESET}`.padStart(17)
+      );
+    }
+    console.log('─'.repeat(140));
+  }
+
+  // Summary
+  const totalTjsNs = results.reduce((sum, r) => sum + r.tjsNs, 0);
+  const totalAjvNs = results.reduce((sum, r) => sum + r.ajvNs, 0);
+  const avgTjsNs = totalTjsNs / results.length;
+  const avgAjvNs = totalAjvNs / results.length;
+  const diffPercent = avgAjvNs > 0 ? ((avgTjsNs - avgAjvNs) / avgAjvNs) * 100 : 0;
+  const color = diffPercent <= 0 ? GREEN : RED;
+  const sign = diffPercent <= 0 ? '' : '+';
+
+  console.log(
+    `\nSummary: ${results.length} tests, avg tjs: ${Math.round(avgTjsNs)}ns, avg ajv: ${Math.round(avgAjvNs)}ns (${color}${sign}${Math.round(diffPercent)}%${RESET})`
+  );
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const drafts: Draft[] = [];
   let filter: RegExp | null = null;
   let complianceOnly = false;
   let quickMode = false;
+  let perTestMode = false;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -320,6 +595,8 @@ async function main() {
       complianceOnly = true;
     } else if (arg === '--quick' || arg === '-q') {
       quickMode = true;
+    } else if (arg === '--per-test' || arg === '-t') {
+      perTestMode = true;
     } else if (['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'].includes(arg)) {
       drafts.push(arg as Draft);
     }
@@ -343,7 +620,7 @@ async function main() {
   // Prepare all files across all drafts
   interface PreparedFile {
     draft: Draft;
-    fileName: string;
+    filePath: string; // relative path like "optional/format/date.json"
     compiledTests: CompiledTest[];
     tjsPass: number;
     tjsFail: number;
@@ -358,12 +635,11 @@ async function main() {
     let testFiles = getTestFiles(draft);
 
     if (filter) {
-      testFiles = testFiles.filter((f) => filter!.test(path.basename(f.file)));
+      testFiles = testFiles.filter((f) => filter!.test(f.relativePath));
       console.log(`  Filtered to ${testFiles.length} files`);
     }
 
-    for (const { file, isFormat } of testFiles) {
-      const fileName = path.basename(file, '.json');
+    for (const { file, relativePath, isFormat } of testFiles) {
       const { compiledTests, tjsPass, tjsFail, ajvPass, ajvFail } = compileFileTests(
         file,
         draft,
@@ -374,7 +650,7 @@ async function main() {
       if (compiledTests.length > 0) {
         allPrepared.push({
           draft,
-          fileName,
+          filePath: relativePath,
           compiledTests,
           tjsPass,
           tjsFail,
@@ -401,6 +677,12 @@ async function main() {
     return;
   }
 
+  // Per-test mode: benchmark each test individually
+  if (perTestMode) {
+    await runPerTestBenchmark(drafts, filter, remotes, quickMode, measureOpts);
+    return;
+  }
+
   const totalTests = allPrepared.reduce((sum, f) => sum + f.compiledTests.length, 0);
   console.log(`\nBenchmarking ${allPrepared.length} files (${totalTests} tests)...\n`);
 
@@ -421,7 +703,7 @@ async function main() {
   const results: FileResult[] = [];
 
   for (let i = 0; i < allPrepared.length; i++) {
-    const { draft, fileName, compiledTests, tjsPass, tjsFail, ajvPass, ajvFail } = allPrepared[i];
+    const { draft, filePath, compiledTests, tjsPass, tjsFail, ajvPass, ajvFail } = allPrepared[i];
 
     // Benchmark tjs
     const tjsResult = await measure(() => {
@@ -443,7 +725,7 @@ async function main() {
 
     results.push({
       draft,
-      file: fileName,
+      file: filePath,
       testCount: compiledTests.length,
       tjsNs,
       ajvNs,
@@ -460,7 +742,7 @@ async function main() {
       ratio > 1
         ? `${RED}+${Math.round((ratio - 1) * 100)}%${RESET}`
         : `${GREEN}-${Math.round((1 - ratio) * 100)}%${RESET}`;
-    console.log(`${percent}% ${draft} ${fileName} ${status}`);
+    console.log(`${percent}% ${draft} ${filePath} ${status}`);
   }
 
   console.log('');
@@ -477,13 +759,13 @@ async function main() {
     .slice(0, 15);
 
   // Top slowest vs AJV
-  console.log('═'.repeat(100));
+  console.log('═'.repeat(120));
   console.log('Top 15 Slowest vs AJV (where tjs loses) - sorted by total impact');
-  console.log('─'.repeat(105));
+  console.log('─'.repeat(120));
   console.log(
     '#'.padEnd(4) +
       'Draft'.padEnd(14) +
-      'File'.padEnd(28) +
+      'File'.padEnd(40) +
       'Tests'.padStart(6) +
       'tjs ns'.padStart(9) +
       'ajv ns'.padStart(9) +
@@ -491,18 +773,18 @@ async function main() {
       'total diff'.padStart(12) +
       'ratio'.padStart(8)
   );
-  console.log('─'.repeat(105));
+  console.log('─'.repeat(120));
 
   for (let i = 0; i < slowestVsAjv.length; i++) {
     const r = slowestVsAjv[i];
-    const name = r.file.length > 26 ? r.file.slice(0, 23) + '...' : r.file;
+    const name = r.file.length > 38 ? r.file.slice(0, 35) + '...' : r.file;
     const diffPerTest = Math.round(r.tjsNs - r.ajvNs);
     const totalDiff = Math.round((r.tjsNs - r.ajvNs) * r.testCount);
     const ratio = r.ajvNs > 0 ? (r.tjsNs / r.ajvNs).toFixed(1) + 'x' : '∞';
     console.log(
       `${i + 1}`.padEnd(4) +
         r.draft.padEnd(14) +
-        name.padEnd(28) +
+        name.padEnd(40) +
         r.testCount.toString().padStart(6) +
         Math.round(r.tjsNs).toLocaleString().padStart(9) +
         Math.round(r.ajvNs).toLocaleString().padStart(9) +
@@ -511,16 +793,16 @@ async function main() {
         ratio.padStart(8)
     );
   }
-  console.log('─'.repeat(105));
+  console.log('─'.repeat(120));
 
   // Top fastest vs AJV
   if (fastestVsAjv.length > 0) {
     console.log('\nTop 15 Fastest vs AJV (where tjs wins) - sorted by total impact');
-    console.log('─'.repeat(105));
+    console.log('─'.repeat(120));
     console.log(
       '#'.padEnd(4) +
         'Draft'.padEnd(14) +
-        'File'.padEnd(28) +
+        'File'.padEnd(40) +
         'Tests'.padStart(6) +
         'tjs ns'.padStart(9) +
         'ajv ns'.padStart(9) +
@@ -528,18 +810,18 @@ async function main() {
         'total saved'.padStart(12) +
         'ratio'.padStart(8)
     );
-    console.log('─'.repeat(105));
+    console.log('─'.repeat(120));
 
     for (let i = 0; i < fastestVsAjv.length; i++) {
       const r = fastestVsAjv[i];
-      const name = r.file.length > 26 ? r.file.slice(0, 23) + '...' : r.file;
+      const name = r.file.length > 38 ? r.file.slice(0, 35) + '...' : r.file;
       const savedPerTest = Math.round(r.ajvNs - r.tjsNs);
       const totalSaved = Math.round((r.ajvNs - r.tjsNs) * r.testCount);
       const ratio = r.tjsNs > 0 ? (r.ajvNs / r.tjsNs).toFixed(1) + 'x' : '∞';
       console.log(
         `${i + 1}`.padEnd(4) +
           r.draft.padEnd(14) +
-          name.padEnd(28) +
+          name.padEnd(40) +
           r.testCount.toString().padStart(6) +
           Math.round(r.tjsNs).toLocaleString().padStart(9) +
           Math.round(r.ajvNs).toLocaleString().padStart(9) +
@@ -548,7 +830,7 @@ async function main() {
           ratio.padStart(8)
       );
     }
-    console.log('─'.repeat(105));
+    console.log('─'.repeat(120));
   }
 
   // Overall summary by draft
