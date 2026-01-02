@@ -44,6 +44,10 @@ const user = User.assert(data);
 
 ## Why tjs?
 
+ * Bridge the gap between json-schema and TypeScript types with no code duplication.
+ * Types are guaranteed to be correct at compile time and run time.
+ * Sticking to json-schema means your schema can be published to third parties with no translation layer.
+
 ### 100% JSON Schema Compliance 🎯
 
 tjs passes the entire [JSON Schema Test Suite](https://github.com/json-schema-org/JSON-Schema-Test-Suite) — the official compliance benchmark:
