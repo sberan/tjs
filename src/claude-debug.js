@@ -1,11 +1,35 @@
-const { schema } = require('./index');
+import { createValidator } from '../dist/core/index.js';
 
-// Simple pattern test
-const validator = schema({ pattern: '^a*$' });
+// Test case 1: unevaluatedItems with tuple (worst case: 6.3x slower)
+const s1 = createValidator({
+  type: 'array',
+  prefixItems: [{ type: 'string' }],
+  unevaluatedItems: false,
+});
 
-console.log('Generated function:');
-console.log(validator.validate.toString());
+console.log('=== unevaluatedItems with tuple ===');
+console.log(s1.toString());
+console.log('\n');
 
-console.log('\n\nTesting:');
-console.log(validator.validate('aaa'));
-console.log(validator.validate('abc'));
+// Test case 2: unevaluatedItems with $recursiveRef (2.9x slower)
+const s2 = createValidator({
+  $recursiveAnchor: true,
+  type: 'array',
+  prefixItems: [{ type: 'string' }],
+  items: { $recursiveRef: '#' },
+  unevaluatedItems: false,
+});
+
+console.log('=== unevaluatedItems with $recursiveRef ===');
+console.log(s2.toString());
+console.log('\n');
+
+// Test case 3: unevaluatedItems with anyOf (1.2x slower)
+const s3 = createValidator({
+  type: 'array',
+  anyOf: [{ prefixItems: [{ const: 'foo' }] }, { prefixItems: [{ const: 'bar' }] }],
+  unevaluatedItems: false,
+});
+
+console.log('=== unevaluatedItems with anyOf ===');
+console.log(s3.toString());

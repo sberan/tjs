@@ -263,6 +263,14 @@ export class ItemsTracker {
   }
 
   /**
+   * Get the dynamic tracking variable if it exists, without creating it.
+   * Returns undefined if not created yet.
+   */
+  peekDynamicVar(): Name | undefined {
+    return this.#dynamicVar;
+  }
+
+  /**
    * Generate code to mark an item index as evaluated at runtime.
    * Used by contains to track which indices matched.
    */
