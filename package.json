@@ -25,8 +25,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "prepare": "husky",
-    "bench": "node --expose-gc node_modules/.bin/tsx benchmarks/compare-ajv-quick.ts",
-    "bench:quick": "node --expose-gc node_modules/.bin/tsx benchmarks/compare-ajv-quick.ts --quick"
+    "bench": "tsx benchmarks/bench.ts"
   },
   "keywords": [
     "json-schema",
