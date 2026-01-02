@@ -22,6 +22,8 @@ import Ajv from 'ajv';
 import Ajv2019 from 'ajv/dist/2019.js';
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
+// @ts-ignore - no types available
+import addFormats2019 from 'ajv-formats-draft2019';
 import { createValidator } from '../src/core/index.js';
 import type { JsonSchema } from '../src/types.js';
 
@@ -209,6 +211,10 @@ function createAjv(draft: Draft, remotes: Record<string, unknown>, formatAsserti
   else if (draft === 'draft2019-09') ajv = new Ajv2019(opts);
   else ajv = new Ajv(opts);
   addFormats(ajv);
+  // Add draft-2019-09 formats (idn-email, idn-hostname, iri, iri-reference, duration)
+  if (draft === 'draft2019-09' || draft === 'draft2020-12') {
+    addFormats2019(ajv);
+  }
   for (const [uri, schema] of Object.entries(remotes)) {
     try {
       ajv.addSchema(schema as object, uri);
@@ -265,6 +271,8 @@ function compileFileTestsWithDesc(
   const compiledTests: CompiledTestWithDesc[] = [];
 
   for (const group of groups) {
+    const ajv = isFormat ? sharedAjvWithFormat : sharedAjv;
+
     let tjsValidator: ((data: unknown) => boolean) | null = null;
     let ajvValidator: ((data: unknown) => boolean) | null = null;
 
@@ -277,10 +285,20 @@ function compileFileTestsWithDesc(
     } catch {}
 
     try {
-      const ajv = isFormat ? sharedAjvWithFormat : sharedAjv;
       const fn = ajv.compile(group.schema as object);
       ajvValidator = (data: unknown) => fn(data) as boolean;
     } catch {}
+
+    // First pass: check compliance for all tests in this group
+    const groupResults: {
+      tjsOk: boolean;
+      ajvOk: boolean;
+      data: unknown;
+      testDesc: string;
+      valid: boolean;
+    }[] = [];
+    let groupAjvAllPass = true;
+    let groupTjsAllPass = true;
 
     for (const test of group.tests) {
       // Check compliance
@@ -297,15 +315,30 @@ function compileFileTestsWithDesc(
         } catch {}
       }
 
-      // Only include in benchmark if both pass
-      if (tjsOk && ajvOk && tjsValidator && ajvValidator) {
+      if (!tjsOk) groupTjsAllPass = false;
+      if (!ajvOk) groupAjvAllPass = false;
+
+      groupResults.push({
+        tjsOk,
+        ajvOk,
+        data: test.data,
+        testDesc: test.description,
+        valid: test.valid,
+      });
+    }
+
+    // Second pass: only add tests to benchmark if AJV passes ALL tests in this group
+    // This ensures we don't benchmark against a validator that doesn't fully implement
+    // the validation (e.g., AJV's hostname format doesn't validate punycode)
+    if (groupAjvAllPass && groupTjsAllPass && tjsValidator && ajvValidator) {
+      for (const result of groupResults) {
         compiledTests.push({
           tjsValidator,
           ajvValidator,
-          data: test.data,
+          data: result.data,
           groupDesc: group.description,
-          testDesc: test.description,
-          valid: test.valid,
+          testDesc: result.testDesc,
+          valid: result.valid,
         });
       }
     }
@@ -338,9 +371,9 @@ function compileFileTests(
     ajvFail = 0;
 
   for (const group of groups) {
-    let tjsValidator: ((data: unknown) => boolean) | null = null;
-    let ajvValidator: ((data: unknown) => boolean) | null = null;
+    const ajv = isFormat ? sharedAjvWithFormat : sharedAjv;
 
+    let tjsValidator: ((data: unknown) => boolean) | null = null;
     try {
       tjsValidator = createValidator(group.schema as JsonSchema, {
         defaultMeta: draft,
@@ -349,38 +382,56 @@ function compileFileTests(
       });
     } catch {}
 
+    let ajvValidator: ((data: unknown) => boolean) | null = null;
     try {
-      const ajv = isFormat ? sharedAjvWithFormat : sharedAjv;
       const fn = ajv.compile(group.schema as object);
       ajvValidator = (data: unknown) => fn(data) as boolean;
     } catch {}
 
+    // First pass: check compliance for all tests in this group
+    const groupResults: { tjsOk: boolean; ajvOk: boolean; data: unknown }[] = [];
+    let groupAjvAllPass = true;
+    let groupTjsAllPass = true;
+
     for (const test of group.tests) {
-      // Check compliance
-      let tjsOk = false,
-        ajvOk = false;
+      // Check tjs compliance
+      let tjsOk = false;
       if (tjsValidator) {
         try {
           tjsOk = tjsValidator(test.data) === test.valid;
         } catch {}
       }
+      if (tjsOk) tjsPass++;
+      else {
+        tjsFail++;
+        groupTjsAllPass = false;
+      }
+
+      // Check AJV compliance
+      let ajvOk = false;
       if (ajvValidator) {
         try {
           ajvOk = ajvValidator(test.data) === test.valid;
         } catch {}
       }
-
-      if (tjsOk) tjsPass++;
-      else tjsFail++;
       if (ajvOk) ajvPass++;
-      else ajvFail++;
+      else {
+        ajvFail++;
+        groupAjvAllPass = false;
+      }
 
-      // Only include in benchmark if both pass
-      if (tjsOk && ajvOk && tjsValidator && ajvValidator) {
+      groupResults.push({ tjsOk, ajvOk, data: test.data });
+    }
+
+    // Second pass: only add tests to benchmark if both pass ALL tests in this group
+    // This ensures we don't benchmark against a validator that doesn't fully implement
+    // the validation (e.g., AJV's hostname format doesn't validate punycode)
+    if (groupAjvAllPass && groupTjsAllPass && tjsValidator && ajvValidator) {
+      for (const result of groupResults) {
         compiledTests.push({
           tjsValidator,
           ajvValidator,
-          data: test.data,
+          data: result.data,
         });
       }
     }
@@ -630,6 +681,15 @@ async function main() {
 
   const allPrepared: PreparedFile[] = [];
 
+  // Track compliance across ALL tests (not just benchmarkable ones)
+  interface DraftCompliance {
+    tjsPass: number;
+    tjsFail: number;
+    ajvPass: number;
+    ajvFail: number;
+  }
+  const draftCompliance: Record<Draft, DraftCompliance> = {} as Record<Draft, DraftCompliance>;
+
   for (const draft of drafts) {
     console.log(`\nLoading ${draft}...`);
     let testFiles = getTestFiles(draft);
@@ -639,6 +699,9 @@ async function main() {
       console.log(`  Filtered to ${testFiles.length} files`);
     }
 
+    // Initialize compliance counters for this draft
+    draftCompliance[draft] = { tjsPass: 0, tjsFail: 0, ajvPass: 0, ajvFail: 0 };
+
     for (const { file, relativePath, isFormat } of testFiles) {
       const { compiledTests, tjsPass, tjsFail, ajvPass, ajvFail } = compileFileTests(
         file,
@@ -646,6 +709,12 @@ async function main() {
         remotes,
         isFormat
       );
+
+      // Always track compliance counts (even if no benchmarkable tests)
+      draftCompliance[draft].tjsPass += tjsPass;
+      draftCompliance[draft].tjsFail += tjsFail;
+      draftCompliance[draft].ajvPass += ajvPass;
+      draftCompliance[draft].ajvFail += ajvFail;
 
       if (compiledTests.length > 0) {
         allPrepared.push({
@@ -660,15 +729,12 @@ async function main() {
       }
     }
 
-    // Print compliance summary for this draft
-    const draftFiles = allPrepared.filter((f) => f.draft === draft);
-    const tjsPass = draftFiles.reduce((sum, f) => sum + f.tjsPass, 0);
-    const tjsFail = draftFiles.reduce((sum, f) => sum + f.tjsFail, 0);
-    const ajvPass = draftFiles.reduce((sum, f) => sum + f.ajvPass, 0);
-    const ajvFail = draftFiles.reduce((sum, f) => sum + f.ajvFail, 0);
+    // Print compliance summary for this draft (from total counts, not just benchmarkable files)
+    const { tjsPass, tjsFail, ajvPass, ajvFail } = draftCompliance[draft];
     console.log(
       `  tjs: ${tjsPass}/${tjsPass + tjsFail} (${tjsFail} failures), ajv: ${ajvPass}/${ajvPass + ajvFail} (${ajvFail} failures)`
     );
+    const draftFiles = allPrepared.filter((f) => f.draft === draft);
     console.log(`  ${draftFiles.length} files ready for benchmark`);
   }
 
@@ -866,9 +932,12 @@ async function main() {
     const testCount = draftResults.reduce((sum, r) => sum + r.testCount, 0);
     const tjsTotalNs = draftResults.reduce((sum, r) => sum + r.tjsNs * r.testCount, 0);
     const ajvTotalNs = draftResults.reduce((sum, r) => sum + r.ajvNs * r.testCount, 0);
-    const tjsPass = draftResults.reduce((sum, r) => sum + r.tjsPass, 0);
-    const tjsFail = draftResults.reduce((sum, r) => sum + r.tjsFail, 0);
-    const ajvFail = draftResults.reduce((sum, r) => sum + r.ajvFail, 0);
+
+    // Use draftCompliance for pass/fail counts (includes ALL tests, not just benchmarkable ones)
+    const compliance = draftCompliance[draft] || { tjsPass: 0, tjsFail: 0, ajvPass: 0, ajvFail: 0 };
+    const tjsPass = compliance.tjsPass;
+    const tjsFail = compliance.tjsFail;
+    const ajvFail = compliance.ajvFail;
 
     const tjsNsPerTest = testCount > 0 ? tjsTotalNs / testCount : 0;
     const ajvNsPerTest = testCount > 0 ? ajvTotalNs / testCount : 0;
