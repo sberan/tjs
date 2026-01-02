@@ -1809,7 +1809,7 @@ export function generateContainsCheck(
 
     // When tracking items for unevaluatedItems, we can't use early exit
     // because we need to find ALL matching indices
-    const canEarlyExit = !needsItemsTracking && maxContains === undefined;
+    const canEarlyExit = !needsItemsTracking;
 
     // Try to inline simple type checks for better performance
     // Check if schema is a simple type-only schema that can be inlined
@@ -1859,11 +1859,19 @@ export function generateContainsCheck(
           }
         });
 
-        // Early exit if we've found enough and no maxContains and no items tracking
+        // Early exit optimizations
         if (canEarlyExit) {
-          code.if(_`${countVar} >= ${minContains}`, () => {
-            code.line(_`break;`);
-          });
+          if (maxContains === undefined) {
+            // If only minContains matters, exit when satisfied
+            code.if(_`${countVar} >= ${minContains}`, () => {
+              code.line(_`break;`);
+            });
+          } else {
+            // If maxContains is defined, exit when we exceed it (no point continuing)
+            code.if(_`${countVar} > ${maxContains}`, () => {
+              code.line(_`break;`);
+            });
+          }
         }
       });
     } else {
@@ -1882,11 +1890,19 @@ export function generateContainsCheck(
           }
         });
 
-        // Early exit if we've found enough and no maxContains and no items tracking
+        // Early exit optimizations
         if (canEarlyExit) {
-          code.if(_`${countVar} >= ${minContains}`, () => {
-            code.line(_`break;`);
-          });
+          if (maxContains === undefined) {
+            // If only minContains matters, exit when satisfied
+            code.if(_`${countVar} >= ${minContains}`, () => {
+              code.line(_`break;`);
+            });
+          } else {
+            // If maxContains is defined, exit when we exceed it (no point continuing)
+            code.if(_`${countVar} > ${maxContains}`, () => {
+              code.line(_`break;`);
+            });
+          }
         }
       });
     }
