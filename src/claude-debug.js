@@ -1,15 +1,11 @@
-import { createValidator } from '../dist/core/index.js';
+const { schema } = require('./index');
 
-const s = createValidator({
-  type: 'object',
-  properties: {
-    foo: { type: 'string' },
-    bar: { type: 'number' },
-    baz: { type: 'boolean' },
-    qux: { type: 'string' },
-    quux: { type: 'number' },
-  },
-  unevaluatedProperties: false,
-});
+// Simple pattern test
+const validator = schema({ pattern: '^a*$' });
 
-console.log(s.toString());
+console.log('Generated function:');
+console.log(validator.validate.toString());
+
+console.log('\n\nTesting:');
+console.log(validator.validate('aaa'));
+console.log(validator.validate('abc'));
