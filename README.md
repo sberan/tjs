@@ -46,30 +46,30 @@ Compare to other validators:
 
 ![Benchmark](assets/benchmark.svg)
 
-tjs uses JIT compilation to generate optimized validation code — **48% faster than ajv** overall:
+tjs uses JIT compilation to generate optimized validation code — **40% faster than ajv** overall:
 
 ```
 Performance vs ajv (JSON Schema Test Suite):
 ────────────────────────────────────────────────────────────────────────────
 Draft          Files   Tests │ tjs ns/test  ajv ns/test      Diff
 ────────────────────────────────────────────────────────────────────────────
-draft-04          38     820 │          35           54      -35%
-draft-06          49    1150 │          34           49      -31%
-draft-07          56    1348 │          41           56      -27%
-draft-2019-09     74    1848 │          54          123      -56%
-draft-2020-12     74    1853 │          53          117      -55%
+draft-04          38     790 │          36           53      -31%
+draft-06          49    1120 │          34           46      -26%
+draft-07          54    1324 │          39           53      -26%
+draft-2019-09     69    1703 │          50           95      -47%
+draft-2020-12     68    1665 │          49           90      -46%
 ────────────────────────────────────────────────────────────────────────────
-TOTAL            291    7019 │          46           89      -48%
+TOTAL            278    6602 │          43           72      -40%
 ────────────────────────────────────────────────────────────────────────────
 ```
 
-Format validation is where tjs really shines — up to **133× faster** for complex formats:
+Format validation is where tjs really shines — up to **124× faster** for complex formats:
 
 ```
-idn-email validation      133× faster than ajv
-regex syntax validation    45× faster than ajv
-iri-reference validation   24× faster than ajv
-iri validation             15× faster than ajv
+idn-email validation      124× faster than ajv
+regex syntax validation    44× faster than ajv
+date-time validation        5× faster than ajv
+ipv6 validation             3× faster than ajv
 ```
 
 ### True Type Inference
