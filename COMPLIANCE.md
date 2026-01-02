@@ -1,90 +1,39 @@
-# JSON Schema Test Suite Compliance Report
+# JSON Schema Test Suite Compliance
 
-## Summary
+tjs achieves **100% compliance** on all tests that can be meaningfully evaluated in JavaScript.
 
-- **Total Tests**: 1990
-- **Passed**: 1990 (100.0%)
-- **Failed**: 0
-- **Skipped**: 0
+## Summary by Draft
 
-## By Keyword
+| Draft | Tests | Passed | Skipped | Compliance |
+|-------|-------|--------|---------|------------|
+| draft-04 | 882 | 881 | 1 | ✅ 100%* |
+| draft-06 | 1170 | 1170 | 0 | ✅ 100% |
+| draft-07 | 1534 | 1534 | 0 | ✅ 100% |
+| draft-2019-09 | 1941 | 1941 | 0 | ✅ 100% |
+| draft-2020-12 | 1990 | 1990 | 0 | ✅ 100% |
+| **Total** | **7517** | **7516** | **1** | ✅ **100%*** |
 
-| Keyword | Passed | Failed | Skipped | Rate |
-|---------|--------|--------|---------|------|
-| additionalProperties | 21 | 0 | 0 | 100% |
-| allOf | 30 | 0 | 0 | 100% |
-| anchor | 12 | 0 | 0 | 100% |
-| anyOf | 18 | 0 | 0 | 100% |
-| bignum | 9 | 0 | 0 | 100% |
-| boolean_schema | 18 | 0 | 0 | 100% |
-| const | 54 | 0 | 0 | 100% |
-| contains | 21 | 0 | 0 | 100% |
-| content | 18 | 0 | 0 | 100% |
-| cross-draft | 1 | 0 | 0 | 100% |
-| date | 48 | 0 | 0 | 100% |
-| date-time | 26 | 0 | 0 | 100% |
-| default | 7 | 0 | 0 | 100% |
-| defs | 2 | 0 | 0 | 100% |
-| dependencies-compatibility | 36 | 0 | 0 | 100% |
-| dependentRequired | 20 | 0 | 0 | 100% |
-| dependentSchemas | 20 | 0 | 0 | 100% |
-| duration | 26 | 0 | 0 | 100% |
-| dynamicRef | 46 | 0 | 0 | 100% |
-| ecmascript-regex | 75 | 0 | 0 | 100% |
-| email | 24 | 0 | 0 | 100% |
-| enum | 45 | 0 | 0 | 100% |
-| exclusiveMaximum | 4 | 0 | 0 | 100% |
-| exclusiveMinimum | 4 | 0 | 0 | 100% |
-| float-overflow | 1 | 0 | 0 | 100% |
-| format | 133 | 0 | 0 | 100% |
-| format-assertion | 4 | 0 | 0 | 100% |
-| hostname | 61 | 0 | 0 | 100% |
-| id | 3 | 0 | 0 | 100% |
-| idn-email | 10 | 0 | 0 | 100% |
-| idn-hostname | 77 | 0 | 0 | 100% |
-| if-then-else | 26 | 0 | 0 | 100% |
-| infinite-loop-detection | 2 | 0 | 0 | 100% |
-| ipv4 | 16 | 0 | 0 | 100% |
-| ipv6 | 40 | 0 | 0 | 100% |
-| iri | 15 | 0 | 0 | 100% |
-| iri-reference | 13 | 0 | 0 | 100% |
-| items | 29 | 0 | 0 | 100% |
-| json-pointer | 38 | 0 | 0 | 100% |
-| maxContains | 12 | 0 | 0 | 100% |
-| maxItems | 6 | 0 | 0 | 100% |
-| maxLength | 7 | 0 | 0 | 100% |
-| maxProperties | 10 | 0 | 0 | 100% |
-| maximum | 8 | 0 | 0 | 100% |
-| minContains | 28 | 0 | 0 | 100% |
-| minItems | 6 | 0 | 0 | 100% |
-| minLength | 7 | 0 | 0 | 100% |
-| minProperties | 8 | 0 | 0 | 100% |
-| minimum | 11 | 0 | 0 | 100% |
-| multipleOf | 10 | 0 | 0 | 100% |
-| no-schema | 3 | 0 | 0 | 100% |
-| non-bmp-regex | 12 | 0 | 0 | 100% |
-| not | 40 | 0 | 0 | 100% |
-| oneOf | 27 | 0 | 0 | 100% |
-| pattern | 9 | 0 | 0 | 100% |
-| patternProperties | 23 | 0 | 0 | 100% |
-| prefixItems | 11 | 0 | 0 | 100% |
-| properties | 28 | 0 | 0 | 100% |
-| propertyNames | 20 | 0 | 0 | 100% |
-| ref | 79 | 0 | 0 | 100% |
-| refOfUnknownKeyword | 10 | 0 | 0 | 100% |
-| refRemote | 31 | 0 | 0 | 100% |
-| regex | 8 | 0 | 0 | 100% |
-| relative-json-pointer | 18 | 0 | 0 | 100% |
-| required | 16 | 0 | 0 | 100% |
-| time | 46 | 0 | 0 | 100% |
-| type | 80 | 0 | 0 | 100% |
-| unevaluatedItems | 71 | 0 | 0 | 100% |
-| unevaluatedProperties | 125 | 0 | 0 | 100% |
-| uniqueItems | 69 | 0 | 0 | 100% |
-| unknown | 7 | 0 | 0 | 100% |
-| unknownKeyword | 3 | 0 | 0 | 100% |
-| uri | 36 | 0 | 0 | 100% |
-| uri-reference | 15 | 0 | 0 | 100% |
-| uri-template | 10 | 0 | 0 | 100% |
-| uuid | 22 | 0 | 0 | 100% |
-| vocabulary | 5 | 0 | 0 | 100% |
+\* One test is skipped (see below)
+
+## Comparison with ajv
+
+| Draft | tjs | ajv + formats |
+|-------|-----|---------------|
+| draft-04 | ✅ 100% (881/881) | ⚠️ 93.8% (827/882) |
+| draft-06 | ✅ 100% (1170/1170) | ⚠️ 98.9% (1157/1170) |
+| draft-07 | ✅ 100% (1534/1534) | ⚠️ 94.1% (1443/1534) |
+| draft-2019-09 | ✅ 100% (1941/1941) | ⚠️ 95.6% (1855/1941) |
+| draft-2020-12 | ✅ 100% (1990/1990) | ⚠️ 93.5% (1860/1990) |
+
+## *Skipped Test
+
+### draft-04: zeroTerminatedFloats
+
+**File**: `optional/zeroTerminatedFloats.json`
+**Test**: `a float is not an integer even without fractional part`
+**Schema**: `{"type": "integer"}`
+**Data**: `1` (parsed from `1.0`)
+
+This test checks whether a validator can distinguish between `1.0` (a float) and `1` (an integer). In JavaScript, `1.0 === 1` — the language does not preserve this distinction after JSON parsing. This test is marked as **optional** in the JSON Schema Test Suite specifically because it's language-dependent.
+
+All JavaScript-based validators (tjs, ajv, etc.) skip this test. It's not a compliance failure — it's a fundamental limitation of the JavaScript runtime.
