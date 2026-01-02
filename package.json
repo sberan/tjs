@@ -1,7 +1,16 @@
 {
   "name": "tjs",
-  "version": "0.0.1",
-  "description": "JSON Schema validator with TypeScript type inference",
+  "version": "7.0.0",
+  "description": "The world's fastest and most accurate JSON Schema validator, with magical typescript inference",
+  "author": "Sam Beran <sberan@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sberan/tjs.git"
+  },
+  "homepage": "https://github.com/sberan/tjs#readme",
+  "bugs": {
+    "url": "https://github.com/sberan/tjs/issues"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -43,6 +52,7 @@
     "ajv": "^8.17.1",
     "ajv-draft-04": "^1.0.0",
     "ajv-formats": "^3.0.1",
+    "ajv-formats-draft2019": "^1.6.1",
     "ajv-keywords": "^5.1.0",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",
@@ -62,8 +72,5 @@
       "prettier --write"
     ],
     "*.json": "prettier --write"
-  },
-  "dependencies": {
-    "ajv-formats-draft2019": "^1.6.1"
   }
 }
