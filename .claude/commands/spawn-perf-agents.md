@@ -8,13 +8,13 @@ The benchmark script supports regex filtering to focus on specific validators:
 
 ```bash
 # Filter by keyword
-npm run bench:compare -- draft7 --filter idn-hostname
+npm run bench -- draft7 --filter idn-hostname
 
 # Filter with regex OR
-npm run bench:compare -- draft7 --filter "idn|iri"
+npm run bench -- draft4 --filter "idn|iri"
 
-# Filter across all drafts
-npm run bench:compare:all --filter hostname
+# Quick mode for faster feedback
+npm run bench:quick -- draft7 --filter hostname
 ```
 
 ## Instructions for Claude
@@ -46,12 +46,23 @@ Maintain these lists throughout the session:
 
 ### Step 1: Run Benchmark and Identify Targets
 
+Run benchmarks across ALL drafts to find the slowest validators:
+
 ```bash
-npm run bench:compare -- draft7 2>&1 | tail -30
+# Run all drafts and capture slowest tests
+for draft in draft4 draft6 draft7 draft2019-09 draft2020-12; do
+  echo "=== $draft ===" && npm run bench:quick -- $draft 2>&1 | tail -20
+done
 ```
 
-Parse the "Top 10 Slowest Tests" table. Extract keywords where tjs is slower than ajv.
+Or run without draft filter to benchmark all drafts together:
+```bash
+npm run bench:quick 2>&1 | tail -50
+```
+
+Parse the "Top 10 Slowest Overall" table from the output. Extract keywords where tjs is slower than ajv.
 Add any NEW keywords (not in ACTIVE_AGENTS or COMPLETED) to PENDING.
+**Note the draft version** where each slow test appears - you'll need it for targeted benchmarking.
 
 ### Step 2: Spawn Agents for Pending Keywords
 
@@ -77,8 +88,9 @@ cd /tmp/tjs-opt-KEYWORD && npm install
 ## Your Task
 
 1. **Baseline Measurement**
-   Run: npm run bench:compare -- draft7 --filter "KEYWORD"
-   Record the ops/s for tjs and ajv
+   Run benchmarks across all drafts to find where this keyword is slowest:
+   Run: npm run bench:quick --filter "KEYWORD"
+   Record the ns/test for tjs and ajv for each draft where this test exists
 
 2. **Analyze Current Implementation**
    - Read src/core/codegen.ts and search for KEYWORD
@@ -95,8 +107,8 @@ cd /tmp/tjs-opt-KEYWORD && npm install
    - Inline small functions to avoid call overhead
 
 4. **Measure Improvement**
-   Run: npm run bench:compare -- draft7 --filter "KEYWORD"
-   Compare ops/s to baseline
+   Run: npm run bench:quick --filter "KEYWORD"
+   Compare ns/test to baseline across all drafts
 
 5. **Validate**
    Run: npm test
@@ -184,7 +196,7 @@ After processing completed agents:
    - Go to Step 2 to spawn more agents
 
 2. If ACTIVE_AGENTS is empty AND PENDING is empty:
-   - Run final benchmark: `npm run bench:compare -- draft7`
+   - Run final benchmark across all drafts: `npm run bench:quick`
    - Print summary of all optimizations
    - Exit loop
 

@@ -39,8 +39,8 @@ cd /tmp/tjs-opt-codegen && npm install
 ## Your Task
 
 1. **Baseline Measurement**
-   Run: npm run bench:compare -- draft7 2>&1 | tail -40
-   Record overall ops/s for tjs and ajv
+   Run: npm run bench:quick -- draft7 2>&1 | tail -40
+   Record overall ns/test for tjs and ajv
 
 2. **Analyze Generated Code**
    - Create a test schema and inspect generated validator code
@@ -66,8 +66,8 @@ cd /tmp/tjs-opt-codegen && npm install
    Focus on changes to src/core/codegen.ts or src/core/compiler.ts that affect ALL validators.
 
 5. **Measure Improvement**
-   Run: npm run bench:compare -- draft7 2>&1 | tail -40
-   Compare overall ops/s to baseline
+   Run: npm run bench:quick -- draft7 2>&1 | tail -40
+   Compare overall ns/test to baseline
 
 6. **Validate**
    Run: npm test
@@ -95,7 +95,7 @@ cd /tmp/tjs-opt-errors && npm install
 ## Your Task
 
 1. **Baseline Measurement**
-   Run: npm run bench:compare -- draft7 2>&1 | tail -40
+   Run: npm run bench:quick -- draft7 2>&1 | tail -40
 
 2. **Analyze Error Handling**
    - Read src/core/codegen.ts for error generation code
@@ -129,8 +129,8 @@ cd /tmp/tjs-opt-types && npm install
 ## Your Task
 
 1. **Baseline Measurement**
-   Run: npm run bench:compare -- draft7 --filter "type" 2>&1 | tail -20
-   And: npm run bench:compare -- draft7 2>&1 | tail -40
+   Run: npm run bench:quick -- draft7 --filter "type" 2>&1 | tail -20
+   And: npm run bench:quick -- draft7 2>&1 | tail -40
 
 2. **Analyze Type Checking Code**
    - Read how 'type' keyword generates validation code
@@ -162,8 +162,8 @@ cd /tmp/tjs-opt-props && npm install
 ## Your Task
 
 1. **Baseline Measurement**
-   Run: npm run bench:compare -- draft7 --filter "properties|additionalProperties" 2>&1 | tail -20
-   And: npm run bench:compare -- draft7 2>&1 | tail -40
+   Run: npm run bench:quick -- draft7 --filter "properties|additionalProperties" 2>&1 | tail -20
+   And: npm run bench:quick -- draft7 2>&1 | tail -40
 
 2. **Analyze Property Validation**
    - How are object properties iterated?
@@ -196,8 +196,8 @@ cd /tmp/tjs-opt-arrays && npm install
 ## Your Task
 
 1. **Baseline Measurement**
-   Run: npm run bench:compare -- draft7 --filter "items|contains|uniqueItems" 2>&1 | tail -20
-   And: npm run bench:compare -- draft7 2>&1 | tail -40
+   Run: npm run bench:quick -- draft7 --filter "items|contains|uniqueItems" 2>&1 | tail -20
+   And: npm run bench:quick -- draft7 2>&1 | tail -40
 
 2. **Analyze Array Validation**
    - How are items iterated (for, for-of, forEach)?
@@ -230,7 +230,7 @@ cd /tmp/tjs-opt-compiletime && npm install
 ## Your Task
 
 1. **Baseline Measurement**
-   Run: npm run bench:compare -- draft7 2>&1 | tail -40
+   Run: npm run bench:quick -- draft7 2>&1 | tail -40
 
 2. **Analyze Runtime vs Compile-time Work**
    - What computations happen at validation time that could be pre-computed?
@@ -285,7 +285,7 @@ After all agents complete:
 
 1. Run final benchmark:
    ```bash
-   npm run bench:compare -- draft7 2>&1 | tail -40
+   npm run bench:quick -- draft7 2>&1 | tail -40
    ```
 
 2. Print summary:
