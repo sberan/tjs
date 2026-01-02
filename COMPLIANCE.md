@@ -1,13 +1,17 @@
 # JSON Schema Test Suite Compliance Report
 
-## Summary
+## Summary by Draft
 
-- **Total Tests**: 1990
-- **Passed**: 1990 (100.0%)
-- **Failed**: 0
-- **Skipped**: 0
+| Draft | Tests | Passed | Compliance |
+|-------|-------|--------|------------|
+| draft-04 | 881 | 881 | ✅ 100% |
+| draft-06 | 1170 | 1170 | ✅ 100% |
+| draft-07 | 1534 | 1534 | ✅ 100% |
+| draft-2019-09 | 1941 | 1941 | ✅ 100% |
+| draft-2020-12 | 1990 | 1990 | ✅ 100% |
+| **Total** | **7516** | **7516** | **✅ 100%** |
 
-## By Keyword
+## draft-2020-12 by Keyword
 
 | Keyword | Passed | Failed | Skipped | Rate |
 |---------|--------|--------|---------|------|
