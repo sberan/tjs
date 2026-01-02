@@ -1,35 +1,36 @@
 import { createValidator } from '../dist/core/index.js';
 
-// Test case 1: unevaluatedItems with tuple (worst case: 6.3x slower)
+// Test case 1: object type
 const s1 = createValidator({
-  type: 'array',
-  prefixItems: [{ type: 'string' }],
-  unevaluatedItems: false,
+  type: 'object',
 });
 
-console.log('=== unevaluatedItems with tuple ===');
+console.log('=== OBJECT ===');
 console.log(s1.toString());
 console.log('\n');
 
-// Test case 2: unevaluatedItems with $recursiveRef (2.9x slower)
+// Test case 2: string type
 const s2 = createValidator({
-  $recursiveAnchor: true,
-  type: 'array',
-  prefixItems: [{ type: 'string' }],
-  items: { $recursiveRef: '#' },
-  unevaluatedItems: false,
+  type: 'string',
 });
 
-console.log('=== unevaluatedItems with $recursiveRef ===');
+console.log('=== STRING ===');
 console.log(s2.toString());
 console.log('\n');
 
-// Test case 3: unevaluatedItems with anyOf (1.2x slower)
+// Test case 3: integer type
 const s3 = createValidator({
-  type: 'array',
-  anyOf: [{ prefixItems: [{ const: 'foo' }] }, { prefixItems: [{ const: 'bar' }] }],
-  unevaluatedItems: false,
+  type: 'integer',
 });
 
-console.log('=== unevaluatedItems with anyOf ===');
+console.log('=== INTEGER ===');
 console.log(s3.toString());
+console.log('\n');
+
+// Test case 4: array type
+const s4 = createValidator({
+  type: 'array',
+});
+
+console.log('=== ARRAY ===');
+console.log(s4.toString());

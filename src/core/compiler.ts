@@ -460,26 +460,16 @@ export function generateTypeCheck(
       genError(code, pathExprCode, '#/type', 'type', `must be ${type}`, { type }, ctx);
     });
   } else {
-    // Multiple types - try optimized union check first
-    const optimizedCheck = getOptimizedUnionTypeCheck(dataVar, types);
-    if (optimizedCheck) {
-      code.if(not(optimizedCheck), () => {
-        const typeList = types.join(',');
-        genError(
-          code,
-          pathExprCode,
-          '#/type',
-          'type',
-          `must be ${types.join(' or ')}`,
-          {
-            type: typeList,
-          },
-          ctx
-        );
-      });
-    } else {
-      // Fallback: generate individual OR checks
-      const checks = types.map((t) => getTypeCheck(dataVar, t));
+    // Multiple types - check if all can use typeof
+    const canOptimizeWithTypeof = types.every(
+      (t) => t === 'string' || t === 'number' || t === 'boolean'
+    );
+
+    if (canOptimizeWithTypeof) {
+      // Optimize by caching typeof result
+      const typeofVar = code.genVar('t');
+      code.line(_`const ${typeofVar} = typeof ${dataVar};`);
+      const checks = types.map((t) => _`${typeofVar} === ${Code.raw(JSON.stringify(t))}`);
       code.if(not(or(...checks)), () => {
         const typeList = types.join(',');
         genError(
@@ -494,6 +484,42 @@ export function generateTypeCheck(
           ctx
         );
       });
+    } else {
+      // Try optimized union check first
+      const optimizedCheck = getOptimizedUnionTypeCheck(dataVar, types);
+      if (optimizedCheck) {
+        code.if(not(optimizedCheck), () => {
+          const typeList = types.join(',');
+          genError(
+            code,
+            pathExprCode,
+            '#/type',
+            'type',
+            `must be ${types.join(' or ')}`,
+            {
+              type: typeList,
+            },
+            ctx
+          );
+        });
+      } else {
+        // Fallback: generate individual OR checks
+        const checks = types.map((t) => getTypeCheck(dataVar, t));
+        code.if(not(or(...checks)), () => {
+          const typeList = types.join(',');
+          genError(
+            code,
+            pathExprCode,
+            '#/type',
+            'type',
+            `must be ${types.join(' or ')}`,
+            {
+              type: typeList,
+            },
+            ctx
+          );
+        });
+      }
     }
   }
 }
