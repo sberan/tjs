@@ -312,3 +312,7 @@ After all agents complete:
 - **Conflict Awareness**: Changes may conflict - merge highest impact first
 - **Lower Threshold**: Accept 5% improvement (vs 10% for keyword-specific)
 - **Log Everything**: Record all attempts in PERF_IMPROVEMENTS.md
+
+## Related Commands
+
+- **`/spawn-perf-agents`**: For keyword-specific optimizations (format validators like idn-hostname, uri, etc., or schema keywords like unevaluatedItems, contains, etc.). Use this when benchmarks show specific validators are slow compared to AJV.
