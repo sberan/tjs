@@ -49,15 +49,15 @@
   <text x="400" y="75" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="16">Operations per second (higher is better)</text>
 
   <!-- Bars -->
-  <!-- tjs: 21.5M = 300px height -->
+  <!-- tjs: 21.7M = 300px height -->
   <rect x="140" y="100" width="120" height="300" rx="8" fill="url(#grad-tjs)" filter="url(#glow-tjs)"/>
   <text x="200" y="440" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="600">tjs</text>
-  <text x="200" y="85" text-anchor="middle" fill="#34d399" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">21.5M</text>
+  <text x="200" y="85" text-anchor="middle" fill="#34d399" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">21.7M</text>
 
-  <!-- ajv: 14.0M = 200px height -->
-  <rect x="300" y="200" width="120" height="200" rx="8" fill="url(#grad-ajv)"/>
+  <!-- ajv: 11.2M = 155px height -->
+  <rect x="300" y="245" width="120" height="155" rx="8" fill="url(#grad-ajv)"/>
   <text x="360" y="440" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="600">ajv</text>
-  <text x="360" y="185" text-anchor="middle" fill="#818cf8" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">14.0M</text>
+  <text x="360" y="230" text-anchor="middle" fill="#818cf8" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">11.2M</text>
 
   <!-- zod: 2.0M = 29px height -->
   <rect x="460" y="371" width="120" height="29" rx="8" fill="url(#grad-zod)"/>
@@ -70,8 +70,8 @@
   <text x="680" y="377" text-anchor="middle" fill="#f87171" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">0.3M</text>
 
   <!-- Multiplier badges -->
-  <rect x="270" y="250" width="60" height="28" rx="14" fill="#1e293b" stroke="#334155" stroke-width="1"/>
-  <text x="300" y="269" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600">1.5×</text>
+  <rect x="270" y="290" width="60" height="28" rx="14" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+  <text x="300" y="309" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600">1.9×</text>
 
   <rect x="430" y="340" width="60" height="28" rx="14" fill="#1e293b" stroke="#334155" stroke-width="1"/>
   <text x="460" y="359" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600">11×</text>

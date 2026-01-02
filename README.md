@@ -28,42 +28,48 @@ tjs passes **100% of the official JSON Schema Test Suite** across all drafts:
 
 | Draft | Compliance |
 |-------|------------|
-| draft-04 | 613/613 (100%) |
-| draft-06 | 832/832 (100%) |
-| draft-07 | 916/916 (100%) |
-| draft-2020-12 | 1271/1271 (100%) |
-| **Total** | **3632/3632 (100%)** |
+| draft-04 | 881/882 (99.9%) |
+| draft-06 | 1170/1170 (100%) |
+| draft-07 | 1534/1534 (100%) |
+| draft-2019-09 | 1941/1941 (100%) |
+| draft-2020-12 | 1990/1990 (100%) |
+| **Total** | **7516/7517 (99.99%)** |
 
 Compare to other validators:
 
-| Library | draft-04 | draft-06 | draft-07 | draft-2020-12 | Total |
-|---------|----------|----------|----------|---------------|-------|
-| **tjs** | **100%** | **100%** | **100%** | **100%** | **100%** |
-| ajv | 93.8% | 98.9% | 94.1% | 92.9% | 94.6% |
+| Library | draft-04 | draft-06 | draft-07 | draft-2019-09 | draft-2020-12 |
+|---------|----------|----------|----------|---------------|---------------|
+| **tjs** | **99.9%** | **100%** | **100%** | **100%** | **100%** |
+| ajv + formats | 93.8% | 98.9% | 97.3% | 95.6% | 93.5% |
 
 ### Blazing Fast
 
 ![Benchmark](assets/benchmark.svg)
 
-tjs uses JIT compilation to generate optimized validation code — **1.5× faster than ajv**, and up to **72× faster** than alternatives:
+tjs uses JIT compilation to generate optimized validation code — **48% faster than ajv** overall:
 
 ```
 Performance vs ajv (JSON Schema Test Suite):
-  draft-04:    173 faster, 5 slower   (+92.4% avg)
-  draft-06:    242 faster, 33 slower  (+51.2% avg)
-  draft-07:    274 faster, 38 slower  (+43.0% avg)
-  draft-2020:  368 faster, 69 slower  (+47.5% avg)
-  ────────────────────────────────────────────────
-  Total:       1057 faster, 145 slower (+53.8% avg)
+────────────────────────────────────────────────────────────────────────────
+Draft          Files   Tests │ tjs ns/test  ajv ns/test      Diff
+────────────────────────────────────────────────────────────────────────────
+draft-04          38     820 │          35           54      -35%
+draft-06          49    1150 │          34           49      -31%
+draft-07          56    1348 │          41           56      -27%
+draft-2019-09     74    1848 │          54          123      -56%
+draft-2020-12     74    1853 │          53          117      -55%
+────────────────────────────────────────────────────────────────────────────
+TOTAL            291    7019 │          46           89      -48%
+────────────────────────────────────────────────────────────────────────────
 ```
 
-Top performers see 300-400% improvements:
+Format validation is where tjs really shines — up to **133× faster** for complex formats:
 
 ```
-anyOf with boolean schemas              +367%
-allOf combined with anyOf, oneOf        +311%
-small multiple of large integer         +242%
-additionalProperties validation         +223%
+idn-email validation      133× faster than ajv
+regex syntax validation    45× faster than ajv
+iri-reference validation   24× faster than ajv
+iri validation             15× faster than ajv
 ```
 
 ### True Type Inference
