@@ -1,12 +1,8 @@
 /**
- * Compare tjs vs ajv performance using mitata.
+ * Compare tjs vs ajv performance using mitata's measure() API.
  *
- * Strategy from json-schema-benchmark (ebdrup):
- * - Pre-compile ALL validators for ALL schemas
- * - Run ALL tests in ONE benchmark iteration
- * - Uses mitata for accurate microbenchmarking
- * - Tracks compliance (pass/fail) for each validator
- * - Shows top 10 slowest tests by absolute ops/s difference
+ * Uses mitata's measure() for stable, accurate measurements with progress output.
+ * measure() auto-calibrates warmup and iterations.
  *
  * Usage:
  *   npm run bench [drafts...] [--filter <regex>]
@@ -54,30 +50,74 @@ interface CompiledTestSuite {
   isFormatTest?: boolean;
 }
 
-interface DraftResult {
-  draft: string;
-  testCount: number;
-  tjsPass: number;
-  tjsFail: number;
-  ajvPass: number;
-  ajvFail: number;
-}
-
-interface SuitePerf {
-  description: string;
-  draft: string;
-  tjsNs: number;
-  ajvNs: number;
-  diffPercent: number;
-}
-
 // ANSI colors
 const RED = '\x1b[31m';
 const GREEN = '\x1b[32m';
 const DIM = '\x1b[2m';
 const RESET = '\x1b[0m';
 
-// Load remote schemas
+// Known JSON Schema keywords for extraction
+const SCHEMA_KEYWORDS = new Set([
+  'type',
+  'enum',
+  'const',
+  'multipleOf',
+  'maximum',
+  'exclusiveMaximum',
+  'minimum',
+  'exclusiveMinimum',
+  'maxLength',
+  'minLength',
+  'pattern',
+  'maxItems',
+  'minItems',
+  'uniqueItems',
+  'maxContains',
+  'minContains',
+  'maxProperties',
+  'minProperties',
+  'required',
+  'dependentRequired',
+  'properties',
+  'patternProperties',
+  'additionalProperties',
+  'propertyNames',
+  'items',
+  'prefixItems',
+  'additionalItems',
+  'contains',
+  'unevaluatedItems',
+  'unevaluatedProperties',
+  'allOf',
+  'anyOf',
+  'oneOf',
+  'not',
+  'if',
+  'then',
+  'else',
+  'dependentSchemas',
+  'dependencies',
+  '$ref',
+  '$dynamicRef',
+  '$recursiveRef',
+  'format',
+]);
+
+function extractSchemaKeywords(schema: unknown, keywords = new Set<string>()): string[] {
+  if (typeof schema !== 'object' || schema === null) return [];
+  for (const [key, value] of Object.entries(schema)) {
+    if (SCHEMA_KEYWORDS.has(key)) keywords.add(key);
+    if (typeof value === 'object' && value !== null) {
+      if (Array.isArray(value)) {
+        for (const item of value) extractSchemaKeywords(item, keywords);
+      } else {
+        extractSchemaKeywords(value, keywords);
+      }
+    }
+  }
+  return Array.from(keywords).sort();
+}
+
 function loadRemoteSchemas(): Record<string, unknown> {
   const remotes: Record<string, unknown> = {};
   const remotesDir = path.join(__dirname, '../tests/json-schema-test-suite/remotes');
@@ -101,15 +141,12 @@ function loadRemoteSchemas(): Record<string, unknown> {
 
   loadDir(remotesDir, 'http://localhost:1234/');
 
-  // Load ALL draft-specific remote directories (needed for cross-draft tests)
   for (const entry of fs.readdirSync(remotesDir, { withFileTypes: true })) {
     if (entry.isDirectory() && entry.name.startsWith('draft')) {
-      const draftRemotesDir = path.join(remotesDir, entry.name);
-      loadDir(draftRemotesDir, `http://localhost:1234/${entry.name}/`);
+      loadDir(path.join(remotesDir, entry.name), `http://localhost:1234/${entry.name}/`);
     }
   }
 
-  // Add meta-schemas (required for tests that $ref to the meta-schema)
   const metaSchemas: Record<string, string> = {
     'http://json-schema.org/draft-04/schema': path.join(
       __dirname,
@@ -184,6 +221,7 @@ function loadRemoteSchemas(): Record<string, unknown> {
       '../src/meta-schemas/draft-2020-12/unevaluated.json'
     ),
   };
+
   for (const [uri, filePath] of Object.entries(metaSchemas)) {
     if (fs.existsSync(filePath)) {
       try {
@@ -195,32 +233,6 @@ function loadRemoteSchemas(): Record<string, unknown> {
   return remotes;
 }
 
-// Load the exact benchmark tests from json-schema-benchmark
-function loadJsbBenchmarkTests(draft: Draft): Set<string> | null {
-  const jsbDir = path.join(__dirname, '../../json-schema-benchmark');
-  let benchmarkFile: string;
-
-  if (draft === 'draft7') {
-    benchmarkFile = path.join(jsbDir, 'draft7/benchmark-tests.txt');
-  } else if (draft === 'draft6') {
-    benchmarkFile = path.join(jsbDir, 'benchmark-tests.txt');
-  } else if (draft === 'draft4') {
-    benchmarkFile = path.join(jsbDir, 'draft4/benchmark-tests.txt');
-  } else {
-    return null;
-  }
-
-  if (!fs.existsSync(benchmarkFile)) {
-    console.log(`  Warning: ${benchmarkFile} not found`);
-    return null;
-  }
-
-  const content = fs.readFileSync(benchmarkFile, 'utf-8');
-  const tests = new Set(content.split('\n').filter((line) => line.trim()));
-  return tests;
-}
-
-// Load all test suites for a draft
 function loadTestSuites(draft: Draft, includeOptional: boolean = true): TestGroup[] {
   const suiteDir = path.join(__dirname, '../tests/json-schema-test-suite', draft);
   const suites: TestGroup[] = [];
@@ -230,46 +242,30 @@ function loadTestSuites(draft: Draft, includeOptional: boolean = true): TestGrou
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        const isFormat = isFormatTest || entry.name === 'format';
-        loadDir(fullPath, isFormat);
+        loadDir(fullPath, isFormatTest || entry.name === 'format');
       } else if (entry.name.endsWith('.json')) {
         const groups: TestGroup[] = JSON.parse(fs.readFileSync(fullPath, 'utf-8'));
-        if (isFormatTest) {
-          for (const group of groups) {
-            group.isFormatTest = true;
-          }
-        }
+        if (isFormatTest) groups.forEach((g) => (g.isFormatTest = true));
         suites.push(...groups);
       }
     }
   };
 
-  // Load required tests
   for (const filename of fs.readdirSync(suiteDir)) {
     if (!filename.endsWith('.json')) continue;
     const filepath = path.join(suiteDir, filename);
     if (!fs.statSync(filepath).isFile()) continue;
-    const groups: TestGroup[] = JSON.parse(fs.readFileSync(filepath, 'utf-8'));
-    suites.push(...groups);
+    suites.push(...JSON.parse(fs.readFileSync(filepath, 'utf-8')));
   }
 
-  // Load optional tests
   if (includeOptional) {
-    const optionalDir = path.join(suiteDir, 'optional');
-    if (fs.existsSync(optionalDir)) {
-      loadDir(optionalDir);
-    }
+    loadDir(path.join(suiteDir, 'optional'));
   }
 
   return suites;
 }
 
-// Create AJV instance
-function createAjv(
-  draft: Draft,
-  remotes: Record<string, unknown>,
-  formatAssertion: boolean = false
-): Ajv {
+function createAjv(draft: Draft, remotes: Record<string, unknown>, formatAssertion: boolean): Ajv {
   const opts = {
     allErrors: false,
     logger: false as const,
@@ -277,34 +273,25 @@ function createAjv(
     strict: false,
   };
   let ajv: Ajv;
-  if (draft === 'draft2020-12') {
-    ajv = new Ajv2020(opts);
-  } else if (draft === 'draft2019-09') {
-    ajv = new Ajv2019(opts);
-  } else {
-    ajv = new Ajv(opts);
-  }
-
+  if (draft === 'draft2020-12') ajv = new Ajv2020(opts);
+  else if (draft === 'draft2019-09') ajv = new Ajv2019(opts);
+  else ajv = new Ajv(opts);
   addFormats(ajv);
-
   for (const [uri, schema] of Object.entries(remotes)) {
     try {
       ajv.addSchema(schema as object, uri);
     } catch {}
   }
-
   return ajv;
 }
 
-// Pre-compile all test suites
 function compileTestSuites(
   testSuites: TestGroup[],
   draft: Draft,
-  remotes: Record<string, unknown>,
-  freshAjvPerSchema: boolean = false
+  remotes: Record<string, unknown>
 ): CompiledTestSuite[] {
-  const sharedAjv = freshAjvPerSchema ? null : createAjv(draft, remotes, false);
-  const sharedAjvWithFormat = freshAjvPerSchema ? null : createAjv(draft, remotes, true);
+  const sharedAjv = createAjv(draft, remotes, false);
+  const sharedAjvWithFormat = createAjv(draft, remotes, true);
 
   return testSuites.map((suite) => {
     let tjsValidator: ((data: unknown) => boolean) | null = null;
@@ -319,11 +306,7 @@ function compileTestSuites(
     } catch {}
 
     try {
-      const ajv = freshAjvPerSchema
-        ? createAjv(draft, remotes, suite.isFormatTest ?? false)
-        : suite.isFormatTest
-          ? sharedAjvWithFormat!
-          : sharedAjv!;
+      const ajv = suite.isFormatTest ? sharedAjvWithFormat : sharedAjv;
       const fn = ajv.compile(suite.schema as object);
       ajvValidator = (data: unknown) => fn(data) as boolean;
     } catch {}
@@ -339,388 +322,346 @@ function compileTestSuites(
   });
 }
 
-interface FailedTest {
-  suite: string;
-  test: string;
-  expected: boolean;
-  got: boolean | 'error' | 'no-validator';
-}
-
-// Check compliance
-function checkCompliance(
-  compiled: CompiledTestSuite[],
-  getValidator: (s: CompiledTestSuite) => ((data: unknown) => boolean) | null,
-  collectFailures: boolean = false
-): { pass: number; fail: number; failures: FailedTest[] } {
-  let pass = 0;
-  let fail = 0;
-  const failures: FailedTest[] = [];
-
-  for (const suite of compiled) {
-    const validator = getValidator(suite);
-    if (!validator) {
-      fail += suite.tests.length;
-      if (collectFailures) {
-        for (const test of suite.tests) {
-          failures.push({
-            suite: suite.description,
-            test: test.description,
-            expected: test.valid,
-            got: 'no-validator',
-          });
-        }
-      }
-      continue;
-    }
-
-    for (const test of suite.tests) {
-      try {
-        const result = validator(test.data);
-        if (result === test.valid) {
-          pass++;
-        } else {
-          fail++;
-          if (collectFailures) {
-            failures.push({
-              suite: suite.description,
-              test: test.description,
-              expected: test.valid,
-              got: result,
-            });
-          }
-        }
-      } catch {
-        fail++;
-        if (collectFailures) {
-          failures.push({
-            suite: suite.description,
-            test: test.description,
-            expected: test.valid,
-            got: 'error',
-          });
-        }
-      }
-    }
-  }
-
-  return { pass, fail, failures };
-}
-
-// Prepare benchmark for a draft
-function prepareBenchmark(
-  draft: Draft,
-  filter: RegExp | null,
-  showFailures: boolean,
-  includeOptional: boolean,
-  jsbMode: boolean,
-  jsbExact: boolean
-): {
-  validSuites: CompiledTestSuite[];
-  result: DraftResult;
-} {
-  console.log(`\nLoading ${draft}...`);
-  const remotes = loadRemoteSchemas();
-  let testSuites = loadTestSuites(draft, includeOptional);
-
-  if (filter) {
-    testSuites = testSuites.filter((s) => filter.test(s.description));
-    console.log(`Filtered to ${testSuites.length} schemas matching ${filter}`);
-  }
-
-  console.log(`Compiling ${testSuites.length} schemas...`);
-  const compiled = compileTestSuites(testSuites, draft, remotes, jsbExact);
-  const compiledSuites = compiled.filter((s) => s.tjsValidator && s.ajvValidator);
-
-  let validSuites: CompiledTestSuite[];
-  let tjsCompliance: ReturnType<typeof checkCompliance>;
-  let ajvCompliance: ReturnType<typeof checkCompliance>;
-
-  if (jsbExact) {
-    const jsbTests = loadJsbBenchmarkTests(draft);
-    if (!jsbTests) {
-      console.log(`  Warning: No JSB benchmark tests for ${draft}, falling back to normal mode`);
-      validSuites = compiledSuites;
-      tjsCompliance = checkCompliance(compiled, (s) => s.tjsValidator, showFailures);
-      ajvCompliance = checkCompliance(compiled, (s) => s.ajvValidator);
-    } else {
-      console.log(`  Filtering to ${jsbTests.size} exact JSB benchmark tests...`);
-      const jsbFilteredSuites: CompiledTestSuite[] = [];
-      for (const suite of compiledSuites) {
-        const filteredTests = suite.tests.filter((test) => {
-          const testName = `${suite.description}, ${test.description}`;
-          return jsbTests.has(testName);
-        });
-        if (filteredTests.length > 0) {
-          jsbFilteredSuites.push({ ...suite, tests: filteredTests });
-        }
-      }
-      tjsCompliance = checkCompliance(jsbFilteredSuites, (s) => s.tjsValidator, showFailures);
-      ajvCompliance = checkCompliance(jsbFilteredSuites, (s) => s.ajvValidator);
-
-      validSuites = [];
-      let excludedSuites = 0;
-      for (const suite of jsbFilteredSuites) {
-        let suiteValid = true;
-        for (const test of suite.tests) {
-          try {
-            const tjsResult = suite.tjsValidator!(test.data);
-            const ajvResult = suite.ajvValidator!(test.data);
-            if (tjsResult !== test.valid || ajvResult !== test.valid) {
-              suiteValid = false;
-              break;
-            }
-          } catch {
-            suiteValid = false;
-            break;
-          }
-        }
-        if (suiteValid) {
-          validSuites.push(suite);
-        } else {
-          excludedSuites++;
-        }
-      }
-      if (excludedSuites > 0) {
-        console.log(`  Excluded ${excludedSuites} suites where either validator fails`);
-      }
-    }
-  } else {
-    tjsCompliance = checkCompliance(compiled, (s) => s.tjsValidator, showFailures);
-    ajvCompliance = checkCompliance(compiled, (s) => s.ajvValidator);
-    validSuites = [];
-    for (const suite of compiledSuites) {
-      let suiteValid = true;
-      for (const test of suite.tests) {
-        try {
-          const tjsResult = suite.tjsValidator!(test.data);
-          const ajvResult = suite.ajvValidator!(test.data);
-          if (jsbMode) {
-            if (ajvResult !== test.valid) {
-              suiteValid = false;
-              break;
-            }
-          } else {
-            if (tjsResult !== test.valid || ajvResult !== test.valid) {
-              suiteValid = false;
-              break;
-            }
-          }
-        } catch {
-          suiteValid = false;
-          break;
-        }
-      }
-      if (suiteValid) {
-        validSuites.push(suite);
-      }
-    }
-  }
-
-  console.log(
-    `  tjs compliance: ${tjsCompliance.pass}/${tjsCompliance.pass + tjsCompliance.fail} (${tjsCompliance.fail} failures)`
-  );
-  console.log(
-    `  ajv compliance: ${ajvCompliance.pass}/${ajvCompliance.pass + ajvCompliance.fail} (${ajvCompliance.fail} failures)`
-  );
-
-  if (showFailures && tjsCompliance.failures.length > 0) {
-    console.log(`\n  tjs failures:`);
-    for (const f of tjsCompliance.failures) {
-      console.log(`    - ${f.suite} > ${f.test} (expected ${f.expected}, got ${f.got})`);
-    }
-  }
-
-  const testCount = validSuites.reduce((sum, s) => sum + s.tests.length, 0);
-  console.log(`Running benchmark on ${validSuites.length} schemas (${testCount} tests)...`);
-
-  return {
-    validSuites,
-    result: {
-      draft,
-      testCount,
-      tjsPass: tjsCompliance.pass,
-      tjsFail: tjsCompliance.fail,
-      ajvPass: ajvCompliance.pass,
-      ajvFail: ajvCompliance.fail,
-    },
-  };
+interface SuiteResult {
+  draft: string;
+  description: string;
+  tjsNs: number;
+  ajvNs: number;
+  testCount: number;
+  schemaKeywords: string[];
+  tjsPass: number;
+  tjsFail: number;
+  ajvPass: number;
+  ajvFail: number;
 }
 
 async function main() {
   const args = process.argv.slice(2);
-
-  // Parse arguments
   const drafts: Draft[] = [];
   let filter: RegExp | null = null;
-  let showFailures = false;
-  let includeOptional = true;
-  let jsbMode = false;
-  let jsbExact = false;
-  let quickMode = false;
   let complianceOnly = false;
+  let quickMode = false;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--filter' || arg === '-f') {
       const pattern = args[++i];
-      if (pattern) {
-        filter = new RegExp(pattern, 'i');
-      }
-    } else if (arg === '--failures' || arg === '--show-failures') {
-      showFailures = true;
-    } else if (arg === '--no-optional') {
-      includeOptional = false;
-    } else if (arg === '--jsb') {
-      jsbMode = true;
-    } else if (arg === '--jsb-exact') {
-      jsbExact = true;
-    } else if (arg === '--quick' || arg === '-q') {
-      quickMode = true;
+      if (pattern) filter = new RegExp(pattern, 'i');
     } else if (arg === '--compliance-only' || arg === '-c') {
       complianceOnly = true;
-      showFailures = true;
+    } else if (arg === '--quick' || arg === '-q') {
+      quickMode = true;
     } else if (['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'].includes(arg)) {
       drafts.push(arg as Draft);
     }
   }
+
   if (drafts.length === 0) {
     drafts.push('draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12');
   }
 
-  console.log('tjs vs ajv Benchmark Comparison (using mitata)');
-  if (quickMode) {
-    console.log('Quick mode: reduced iterations for faster feedback');
-  }
-  if (filter) {
-    console.log(`Filter: ${filter}`);
-  }
-  if (!includeOptional) {
-    console.log('Excluding optional tests (format, content, etc.)');
-  }
-  if (jsbExact) {
-    console.log('JSB Exact mode: using exact tests from json-schema-benchmark');
-  } else if (jsbMode) {
-    console.log('JSB mode: only excluding tests where ajv fails');
-  }
-  console.log('='.repeat(100));
-
-  const results: DraftResult[] = [];
-  const allSuitePerfs: SuitePerf[] = [];
-
-  // Measure options: quick mode uses fewer samples
+  // Benchmark options - quick mode uses fewer samples for faster feedback
   const measureOpts = quickMode
-    ? { min_cpu_time: 10 * 1e6, min_samples: 5 } // 10ms, 5 samples
-    : { min_cpu_time: 500 * 1e6, min_samples: 10 }; // 500ms, 10 samples
+    ? { min_cpu_time: 50_000_000, min_samples: 8 } // 50ms, 8 samples
+    : { min_cpu_time: 200_000_000, min_samples: 12 }; // 200ms, 12 samples
 
-  // First pass: prepare all drafts and count total suites
-  const preparedDrafts: Array<{ draft: Draft; prepared: ReturnType<typeof prepareBenchmark> }> = [];
-  let totalSuites = 0;
-  for (const draft of drafts) {
-    const prepared = prepareBenchmark(
-      draft,
-      filter,
-      showFailures,
-      includeOptional,
-      jsbMode,
-      jsbExact
-    );
-    preparedDrafts.push({ draft, prepared });
-    results.push(prepared.result);
-    totalSuites += prepared.validSuites.length;
+  console.log(`tjs vs ajv Benchmark (mitata measure API)${quickMode ? ' [QUICK]' : ''}`);
+  if (filter) console.log(`Filter: ${filter}`);
+  console.log('═'.repeat(100));
+
+  const remotes = loadRemoteSchemas();
+
+  // Collect all suites across drafts
+  interface PreparedSuite {
+    draft: Draft;
+    suite: CompiledTestSuite;
+    benchId: string;
   }
 
-  // In compliance-only mode, skip benchmarking
+  const allPrepared: PreparedSuite[] = [];
+  const complianceResults: Map<
+    string,
+    { tjsPass: number; tjsFail: number; ajvPass: number; ajvFail: number }
+  > = new Map();
+
+  for (const draft of drafts) {
+    console.log(`\nLoading ${draft}...`);
+    let testSuites = loadTestSuites(draft, true);
+    if (filter) {
+      testSuites = testSuites.filter((s) => filter!.test(s.description));
+      console.log(`  Filtered to ${testSuites.length} schemas`);
+    }
+
+    const compiled = compileTestSuites(testSuites, draft, remotes);
+
+    // Check compliance
+    let tjsPass = 0,
+      tjsFail = 0,
+      ajvPass = 0,
+      ajvFail = 0;
+    for (const suite of compiled) {
+      for (const test of suite.tests) {
+        if (suite.tjsValidator) {
+          try {
+            if (suite.tjsValidator(test.data) === test.valid) tjsPass++;
+            else tjsFail++;
+          } catch {
+            tjsFail++;
+          }
+        } else tjsFail++;
+
+        if (suite.ajvValidator) {
+          try {
+            if (suite.ajvValidator(test.data) === test.valid) ajvPass++;
+            else ajvFail++;
+          } catch {
+            ajvFail++;
+          }
+        } else ajvFail++;
+      }
+    }
+
+    complianceResults.set(draft, { tjsPass, tjsFail, ajvPass, ajvFail });
+    console.log(
+      `  tjs: ${tjsPass}/${tjsPass + tjsFail} (${tjsFail} failures), ajv: ${ajvPass}/${ajvPass + ajvFail} (${ajvFail} failures)`
+    );
+
+    // Filter to suites where both validators work and both pass all tests
+    const validSuites = compiled.filter((s) => {
+      if (!s.tjsValidator || !s.ajvValidator) return false;
+      for (const test of s.tests) {
+        try {
+          if (s.tjsValidator(test.data) !== test.valid) return false;
+          if (s.ajvValidator(test.data) !== test.valid) return false;
+        } catch {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    for (const suite of validSuites) {
+      const benchId = `${draft}::${suite.description}`;
+      allPrepared.push({ draft, suite, benchId });
+    }
+  }
+
   if (complianceOnly) {
     console.log('\nCompliance check complete (benchmark skipped).');
     return;
   }
 
-  // Second pass: measure with progress
-  let completedSuites = 0;
-  const startTime = Date.now();
+  console.log(`\nRunning ${allPrepared.length} benchmark suites...\n`);
 
-  for (const { draft, prepared } of preparedDrafts) {
-    for (const testSuite of prepared.validSuites) {
-      const tjsValidator = testSuite.tjsValidator!;
-      const ajvValidator = testSuite.ajvValidator!;
-      const tests = testSuite.tests;
+  // Use measure() API for progress printing
+  // measure() auto-calibrates warmup and iterations for stable results
+  const suiteResults: Map<string, { tjsNs: number; ajvNs: number }> = new Map();
 
-      // Show progress
-      completedSuites++;
-      const percent = Math.round((completedSuites / totalSuites) * 100);
-      const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
-      process.stdout.write(
-        `\r  [${percent}%] ${completedSuites}/${totalSuites} suites (${elapsed}s) - ${draft}: ${testSuite.description.slice(0, 40).padEnd(40)}`
-      );
+  const PROGRESS_WIDTH = 30;
+  const YELLOW = '\x1b[33m';
 
-      const tjsStats = await measure(() => {
-        for (const test of tests) {
-          tjsValidator(test.data);
-        }
-      }, measureOpts);
+  for (let i = 0; i < allPrepared.length; i++) {
+    const { draft, suite, benchId } = allPrepared[i];
+    const tjsValidator = suite.tjsValidator!;
+    const ajvValidator = suite.ajvValidator!;
+    const tests = suite.tests;
 
-      const ajvStats = await measure(() => {
-        for (const test of tests) {
-          ajvValidator(test.data);
-        }
-      }, measureOpts);
+    // Progress bar
+    const progress = (i + 1) / allPrepared.length;
+    const filled = Math.round(progress * PROGRESS_WIDTH);
+    const empty = PROGRESS_WIDTH - filled;
+    const bar = `${GREEN}${'█'.repeat(filled)}${DIM}${'░'.repeat(empty)}${RESET}`;
+    const percent = `${Math.round(progress * 100)}%`.padStart(4);
 
-      const tjsNs = tjsStats.avg / tests.length;
-      const ajvNs = ajvStats.avg / tests.length;
-      const diffPercent = ajvNs > 0 ? ((tjsNs - ajvNs) / ajvNs) * 100 : 0;
+    // Truncate description to fit
+    const maxDescLen = 40;
+    const shortDesc =
+      suite.description.length > maxDescLen
+        ? suite.description.slice(0, maxDescLen - 3) + '...'
+        : suite.description.padEnd(maxDescLen);
 
-      allSuitePerfs.push({
-        description: testSuite.description,
-        draft,
-        tjsNs,
-        ajvNs,
-        diffPercent,
-      });
-    }
+    // Draft badge
+    const draftBadge = `${YELLOW}${draft.padEnd(12)}${RESET}`;
+
+    process.stdout.write(`\r${bar} ${percent} ${draftBadge} ${shortDesc}`);
+
+    // Benchmark tjs (measure() handles warmup automatically)
+    const tjsResult = await measure(() => {
+      for (const test of tests) {
+        tjsValidator(test.data);
+      }
+    }, measureOpts);
+
+    // Benchmark ajv
+    const ajvResult = await measure(() => {
+      for (const test of tests) {
+        ajvValidator(test.data);
+      }
+    }, measureOpts);
+
+    const tjsNs = tjsResult.avg;
+    const ajvNs = ajvResult.avg;
+    suiteResults.set(benchId, { tjsNs, ajvNs });
+
+    // Update progress bar color based on result
+    const ratio = ajvNs > 0 ? tjsNs / ajvNs : 0;
+    const barColor = ratio > 1 ? RED : GREEN;
+    const updatedBar = `${barColor}${'█'.repeat(filled)}${DIM}${'░'.repeat(empty)}${RESET}`;
+    process.stdout.write(`\r${updatedBar} ${percent} ${draftBadge} ${shortDesc}`);
   }
-  // Clear progress line
+  // Clear the progress line
   process.stdout.write('\r' + ' '.repeat(100) + '\r');
+  console.log('Done!\n');
 
-  // Compute per-draft performance from per-suite timing
-  interface DraftPerf {
-    draft: string;
-    testCount: number;
-    tjsTotalNs: number;
-    ajvTotalNs: number;
-    tjsPass: number;
-    tjsFail: number;
-    ajvPass: number;
-    ajvFail: number;
-  }
+  // Build final results
+  const finalResults: SuiteResult[] = [];
+  for (const { draft, suite, benchId } of allPrepared) {
+    const timing = suiteResults.get(benchId);
+    if (!timing) continue;
 
-  const draftPerfs: DraftPerf[] = [];
-  for (const r of results) {
-    const draftSuites = allSuitePerfs.filter((s) => s.draft === r.draft);
-    const tjsTotalNs = draftSuites.reduce((sum, s) => sum + s.tjsNs, 0);
-    const ajvTotalNs = draftSuites.reduce((sum, s) => sum + s.ajvNs, 0);
-    draftPerfs.push({
-      draft: r.draft,
-      testCount: r.testCount,
-      tjsTotalNs,
-      ajvTotalNs,
-      tjsPass: r.tjsPass,
-      tjsFail: r.tjsFail,
-      ajvPass: r.ajvPass,
-      ajvFail: r.ajvFail,
+    // Divide by test count to get per-test timing
+    const testCount = suite.tests.length;
+    finalResults.push({
+      draft,
+      description: suite.description,
+      tjsNs: timing.tjsNs / testCount,
+      ajvNs: timing.ajvNs / testCount,
+      testCount,
+      schemaKeywords: extractSchemaKeywords(suite.schema),
+      tjsPass: testCount, // All pass (we filtered)
+      tjsFail: 0,
+      ajvPass: testCount,
+      ajvFail: 0,
     });
   }
 
-  // Summary table
-  console.log('\n' + '='.repeat(100));
-  console.log('Performance Summary');
+  // Sort and display results
+  const slowestVsAjv = finalResults
+    .filter((s) => s.tjsNs > s.ajvNs)
+    .sort((a, b) => b.tjsNs - b.ajvNs - (a.tjsNs - a.ajvNs))
+    .slice(0, 10);
+
+  const fastestVsAjv = finalResults
+    .filter((s) => s.tjsNs < s.ajvNs)
+    .sort((a, b) => b.ajvNs - b.tjsNs - (a.ajvNs - a.tjsNs))
+    .slice(0, 10);
+
+  // Top 10 slowest overall (by absolute tjs time)
+  const slowestOverall = [...finalResults].sort((a, b) => b.tjsNs - a.tjsNs).slice(0, 10);
+
+  // Top 10 slowest overall
+  console.log('═'.repeat(100));
+  console.log('Top 10 Slowest Overall (by tjs ns)');
+  console.log('─'.repeat(110));
+  console.log(
+    '#'.padEnd(4) +
+      'Draft'.padEnd(14) +
+      'Test'.padEnd(42) +
+      'tjs ns'.padStart(10) +
+      'ajv ns'.padStart(10) +
+      'diff'.padStart(12) +
+      'ratio'.padStart(8) +
+      'kw'.padStart(6)
+  );
+  console.log('─'.repeat(110));
+
+  for (let i = 0; i < slowestOverall.length; i++) {
+    const s = slowestOverall[i];
+    const name = s.description.length > 40 ? s.description.slice(0, 37) + '...' : s.description;
+    const diffNs = Math.round(s.tjsNs - s.ajvNs);
+    const ratio = s.ajvNs > 0 ? (s.tjsNs / s.ajvNs).toFixed(1) + 'x' : '∞';
+    const diffColor = diffNs > 0 ? RED : GREEN;
+    const diffSign = diffNs > 0 ? '+' : '';
+    console.log(
+      `${i + 1}`.padEnd(4) +
+        s.draft.padEnd(14) +
+        name.padEnd(42) +
+        Math.round(s.tjsNs).toLocaleString().padStart(10) +
+        Math.round(s.ajvNs).toLocaleString().padStart(10) +
+        `${diffColor}${diffSign}${diffNs.toLocaleString()}${RESET}`.padStart(21) +
+        ratio.padStart(8) +
+        s.schemaKeywords.length.toString().padStart(6)
+    );
+  }
+  console.log('─'.repeat(110));
+
+  // Top 10 slowest vs AJV
+  console.log('\nTop 10 Slowest vs AJV (where tjs loses)');
+  console.log('─'.repeat(110));
+  console.log(
+    '#'.padEnd(4) +
+      'Draft'.padEnd(14) +
+      'Test'.padEnd(42) +
+      'tjs ns'.padStart(10) +
+      'ajv ns'.padStart(10) +
+      'diff'.padStart(12) +
+      'ratio'.padStart(8) +
+      'kw'.padStart(6)
+  );
+  console.log('─'.repeat(110));
+
+  for (let i = 0; i < slowestVsAjv.length; i++) {
+    const s = slowestVsAjv[i];
+    const name = s.description.length > 40 ? s.description.slice(0, 37) + '...' : s.description;
+    const diffNs = Math.round(s.tjsNs - s.ajvNs);
+    const ratio = s.ajvNs > 0 ? (s.tjsNs / s.ajvNs).toFixed(1) + 'x' : '∞';
+    console.log(
+      `${i + 1}`.padEnd(4) +
+        s.draft.padEnd(14) +
+        name.padEnd(42) +
+        Math.round(s.tjsNs).toLocaleString().padStart(10) +
+        Math.round(s.ajvNs).toLocaleString().padStart(10) +
+        `${RED}+${diffNs.toLocaleString()}${RESET}`.padStart(21) +
+        ratio.padStart(8) +
+        s.schemaKeywords.length.toString().padStart(6)
+    );
+  }
+  console.log('─'.repeat(110));
+
+  // Top 10 fastest
+  if (fastestVsAjv.length > 0) {
+    console.log('\nTop 10 Fastest vs AJV (where tjs wins)');
+    console.log('─'.repeat(106));
+    console.log(
+      '#'.padEnd(4) +
+        'Draft'.padEnd(14) +
+        'Test'.padEnd(42) +
+        'tjs ns'.padStart(10) +
+        'ajv ns'.padStart(10) +
+        'saved'.padStart(12) +
+        'ratio'.padStart(8)
+    );
+    console.log('─'.repeat(106));
+
+    for (let i = 0; i < fastestVsAjv.length; i++) {
+      const s = fastestVsAjv[i];
+      const name = s.description.length > 40 ? s.description.slice(0, 37) + '...' : s.description;
+      const savedNs = Math.round(s.ajvNs - s.tjsNs);
+      const ratio = s.tjsNs > 0 ? (s.ajvNs / s.tjsNs).toFixed(1) + 'x' : '∞';
+      console.log(
+        `${i + 1}`.padEnd(4) +
+          s.draft.padEnd(14) +
+          name.padEnd(42) +
+          Math.round(s.tjsNs).toLocaleString().padStart(10) +
+          Math.round(s.ajvNs).toLocaleString().padStart(10) +
+          `${GREEN}-${savedNs.toLocaleString()}${RESET}`.padStart(21) +
+          ratio.padStart(8)
+      );
+    }
+    console.log('─'.repeat(106));
+  }
+
+  // Overall summary by draft
+  console.log('\n' + '═'.repeat(100));
+  console.log('OVERALL PERFORMANCE SUMMARY');
   console.log('─'.repeat(100));
   console.log(
     'Draft'.padEnd(14) +
-      'Tests'.padStart(6) +
+      'Tests'.padStart(8) +
       ' │' +
       'tjs ns/test'.padStart(12) +
       'ajv ns/test'.padStart(12) +
-      'Diff'.padStart(8) +
+      'Diff'.padStart(10) +
       ' │' +
       'tjs pass'.padStart(10) +
       'tjs fail'.padStart(10) +
@@ -729,130 +670,81 @@ async function main() {
   );
   console.log('─'.repeat(100));
 
-  let totalTjsNs = 0;
-  let totalAjvNs = 0;
-  let totalTests = 0;
-  let totalTjsPass = 0;
-  let totalTjsFail = 0;
-  let totalAjvPass = 0;
-  let totalAjvFail = 0;
+  let totalTjsNs = 0,
+    totalAjvNs = 0,
+    totalTests = 0;
+  let totalTjsPass = 0,
+    totalTjsFail = 0,
+    totalAjvPass = 0,
+    totalAjvFail = 0;
 
-  for (const r of draftPerfs) {
-    const tjsNsPerTest = r.tjsTotalNs / r.testCount;
-    const ajvNsPerTest = r.ajvTotalNs / r.testCount;
+  for (const draft of drafts) {
+    const draftResults = finalResults.filter((r) => r.draft === draft);
+    const testCount = draftResults.reduce((sum, r) => sum + r.testCount, 0);
+    const tjsTotalNs = draftResults.reduce((sum, r) => sum + r.tjsNs * r.testCount, 0);
+    const ajvTotalNs = draftResults.reduce((sum, r) => sum + r.ajvNs * r.testCount, 0);
+
+    const compliance = complianceResults.get(draft) || {
+      tjsPass: 0,
+      tjsFail: 0,
+      ajvPass: 0,
+      ajvFail: 0,
+    };
+
+    const tjsNsPerTest = testCount > 0 ? tjsTotalNs / testCount : 0;
+    const ajvNsPerTest = testCount > 0 ? ajvTotalNs / testCount : 0;
     const diff =
       ajvNsPerTest > 0 ? Math.round(((tjsNsPerTest - ajvNsPerTest) / ajvNsPerTest) * 100) : 0;
     const color = diff <= 0 ? GREEN : RED;
     const sign = diff <= 0 ? '' : '+';
 
-    const tjsFailColor = r.tjsFail > 0 ? RED : DIM;
-    const ajvFailColor = r.ajvFail > 0 ? RED : DIM;
-
     console.log(
-      r.draft.padEnd(14) +
-        r.testCount.toString().padStart(6) +
+      draft.padEnd(14) +
+        testCount.toString().padStart(8) +
         ' │' +
         Math.round(tjsNsPerTest).toLocaleString().padStart(12) +
         Math.round(ajvNsPerTest).toLocaleString().padStart(12) +
-        `${color}${sign}${diff}%${RESET}`.padStart(17) +
+        `${color}${sign}${diff}%${RESET}`.padStart(19) +
         ' │' +
-        `${GREEN}${r.tjsPass}${RESET}`.padStart(19) +
-        `${tjsFailColor}${r.tjsFail}${RESET}`.padStart(19) +
-        `${GREEN}${r.ajvPass}${RESET}`.padStart(19) +
-        `${ajvFailColor}${r.ajvFail}${RESET}`.padStart(19)
+        `${GREEN}${compliance.tjsPass}${RESET}`.padStart(19) +
+        `${compliance.tjsFail > 0 ? RED : DIM}${compliance.tjsFail}${RESET}`.padStart(19) +
+        `${GREEN}${compliance.ajvPass}${RESET}`.padStart(19) +
+        `${compliance.ajvFail > 0 ? RED : DIM}${compliance.ajvFail}${RESET}`.padStart(19)
     );
 
-    totalTjsNs += r.tjsTotalNs;
-    totalAjvNs += r.ajvTotalNs;
-    totalTests += r.testCount;
-    totalTjsPass += r.tjsPass;
-    totalTjsFail += r.tjsFail;
-    totalAjvPass += r.ajvPass;
-    totalAjvFail += r.ajvFail;
+    totalTjsNs += tjsTotalNs;
+    totalAjvNs += ajvTotalNs;
+    totalTests += testCount;
+    totalTjsPass += compliance.tjsPass;
+    totalTjsFail += compliance.tjsFail;
+    totalAjvPass += compliance.ajvPass;
+    totalAjvFail += compliance.ajvFail;
   }
 
-  // Total row
   console.log('─'.repeat(100));
-  const totalTjsNsPerTest = totalTjsNs / totalTests;
-  const totalAjvNsPerTest = totalAjvNs / totalTests;
+  const totalTjsNsPerTest = totalTests > 0 ? totalTjsNs / totalTests : 0;
+  const totalAjvNsPerTest = totalTests > 0 ? totalAjvNs / totalTests : 0;
   const totalDiff =
     totalAjvNsPerTest > 0
       ? Math.round(((totalTjsNsPerTest - totalAjvNsPerTest) / totalAjvNsPerTest) * 100)
       : 0;
   const totalColor = totalDiff <= 0 ? GREEN : RED;
   const totalSign = totalDiff <= 0 ? '' : '+';
-  const tjsTotalFailColor = totalTjsFail > 0 ? RED : DIM;
-  const ajvTotalFailColor = totalAjvFail > 0 ? RED : DIM;
 
   console.log(
     'TOTAL'.padEnd(14) +
-      totalTests.toString().padStart(6) +
+      totalTests.toString().padStart(8) +
       ' │' +
       Math.round(totalTjsNsPerTest).toLocaleString().padStart(12) +
       Math.round(totalAjvNsPerTest).toLocaleString().padStart(12) +
-      `${totalColor}${totalSign}${totalDiff}%${RESET}`.padStart(17) +
+      `${totalColor}${totalSign}${totalDiff}%${RESET}`.padStart(19) +
       ' │' +
       `${GREEN}${totalTjsPass}${RESET}`.padStart(19) +
-      `${tjsTotalFailColor}${totalTjsFail}${RESET}`.padStart(19) +
+      `${totalTjsFail > 0 ? RED : DIM}${totalTjsFail}${RESET}`.padStart(19) +
       `${GREEN}${totalAjvPass}${RESET}`.padStart(19) +
-      `${ajvTotalFailColor}${totalAjvFail}${RESET}`.padStart(19)
+      `${totalAjvFail > 0 ? RED : DIM}${totalAjvFail}${RESET}`.padStart(19)
   );
   console.log('─'.repeat(100));
-
-  // Top 10 slowest tests by absolute tjs time
-  const slowest = [...allSuitePerfs].sort((a, b) => b.tjsNs - a.tjsNs).slice(0, 10);
-
-  if (slowest.length > 0) {
-    console.log('\nTop 10 Slowest Tests (by tjs execution time)');
-    console.log('─'.repeat(100));
-    console.log(
-      'Draft'.padEnd(14) + 'Test'.padEnd(55) + 'tjs ns'.padStart(10) + 'ajv ns'.padStart(10)
-    );
-    console.log('─'.repeat(100));
-
-    for (const s of slowest) {
-      const name = s.description.length > 53 ? s.description.slice(0, 50) + '...' : s.description;
-      console.log(
-        s.draft.padEnd(14) +
-          name.padEnd(55) +
-          Math.round(s.tjsNs).toLocaleString().padStart(10) +
-          Math.round(s.ajvNs).toLocaleString().padStart(10)
-      );
-    }
-    console.log('─'.repeat(100));
-  }
-
-  // Top 10 slowest tests compared to ajv
-  const slowestVsAjv = [...allSuitePerfs]
-    .filter((s) => s.tjsNs > s.ajvNs)
-    .sort((a, b) => b.tjsNs - b.ajvNs - (a.tjsNs - a.ajvNs))
-    .slice(0, 10);
-
-  if (slowestVsAjv.length > 0) {
-    console.log('\nTop 10 Slowest vs AJV (by ns slower than ajv)');
-    console.log('─'.repeat(100));
-    console.log(
-      'Draft'.padEnd(14) +
-        'Test'.padEnd(50) +
-        'tjs ns'.padStart(10) +
-        'ajv ns'.padStart(10) +
-        'diff ns'.padStart(10)
-    );
-    console.log('─'.repeat(100));
-
-    for (const s of slowestVsAjv) {
-      const name = s.description.length > 48 ? s.description.slice(0, 45) + '...' : s.description;
-      const diffNs = Math.round(s.tjsNs - s.ajvNs);
-      console.log(
-        s.draft.padEnd(14) +
-          name.padEnd(50) +
-          Math.round(s.tjsNs).toLocaleString().padStart(10) +
-          Math.round(s.ajvNs).toLocaleString().padStart(10) +
-          `${RED}+${diffNs.toLocaleString()}${RESET}`.padStart(19)
-      );
-    }
-    console.log('─'.repeat(100));
-  }
 }
 
 main().catch(console.error);
