@@ -1160,29 +1160,148 @@ function validateIdnEmail(s: string): boolean {
   return true;
 }
 
+/**
+ * Ultra-fast IPv6 validator using character code parsing.
+ * Avoids regex and string splitting for maximum performance.
+ *
+ * Supports:
+ * - Full form: 2001:0db8:85a3:0000:0000:8a2e:0370:7334
+ * - Compressed: 2001:db8::8a2e:370:7334, ::1, ::
+ * - IPv4-mapped: ::ffff:192.168.1.1, 2001:db8::192.168.1.1
+ */
 function validateIPv6(s: string): boolean {
-  // Zone identifiers (like %eth1) are NOT allowed per JSON Schema format
-  if (s.indexOf('%') >= 0) return false;
-  const addr = s;
-  // Check various IPv6 formats
-  if (FORMAT_REGEX.ipv6Full.test(addr)) return true;
-  if (FORMAT_REGEX.ipv6FullMixed.test(addr)) return true;
-  // Compressed formats
-  if (FORMAT_REGEX.ipv6Compressed.test(addr)) {
-    // Count colons to ensure valid compression
-    const parts = addr.split('::');
-    if (parts.length !== 2) return false;
-    const left = parts[0] ? parts[0].split(':') : [];
-    const right = parts[1] ? parts[1].split(':') : [];
-    if (left.length + right.length > 7) return false;
-    // Validate each part is 1-4 hex chars
-    for (const p of [...left, ...right]) {
-      if (p && !/^[0-9a-f]{1,4}$/i.test(p)) return false;
-    }
-    return true;
+  const len = s.length;
+  if (len < 2 || len > 45) return false; // Minimum "::" (2), maximum with IPv4 suffix
+
+  // Check for zone identifier (not allowed per JSON Schema)
+  for (let j = 0; j < len; j++) {
+    if (s.charCodeAt(j) === 37) return false; // '%'
   }
-  if (FORMAT_REGEX.ipv6Mixed.test(addr)) return true;
-  return false;
+
+  let i = 0;
+  let groupCount = 0;
+  let doubleColonSeen = false;
+
+  // Handle leading :: (very common case like ::1)
+  if (s.charCodeAt(0) === 58) {
+    // ':'
+    if (len < 2 || s.charCodeAt(1) !== 58) return false; // Single leading : is invalid
+    doubleColonSeen = true;
+    i = 2;
+    if (i === len) return true; // "::" is valid
+  }
+
+  while (i < len) {
+    const c = s.charCodeAt(i);
+
+    // Check for hex digit (0-9, a-f, A-F)
+    if (
+      (c >= 48 && c <= 57) || // 0-9
+      (c >= 97 && c <= 102) || // a-f
+      (c >= 65 && c <= 70) // A-F
+    ) {
+      // Parse hex group (1-4 hex digits)
+      let hexDigits = 1;
+      const potentialIPv4Start = i;
+      let allDecimal = c >= 48 && c <= 57;
+      i++;
+
+      while (i < len && hexDigits < 5) {
+        const d = s.charCodeAt(i);
+        if ((d >= 48 && d <= 57) || (d >= 97 && d <= 102) || (d >= 65 && d <= 70)) {
+          if (!(d >= 48 && d <= 57)) allDecimal = false;
+          hexDigits++;
+          i++;
+        } else {
+          break;
+        }
+      }
+
+      if (hexDigits > 4) return false; // Too many hex digits
+
+      // Check what follows
+      if (i < len) {
+        const next = s.charCodeAt(i);
+        if (next === 46 && allDecimal && hexDigits <= 3) {
+          // '.' - This is IPv4 suffix (first octet must be 1-3 digits)
+          i = potentialIPv4Start;
+
+          // Parse IPv4 (4 octets separated by dots)
+          for (let octet = 0; octet < 4; octet++) {
+            if (octet > 0) {
+              if (i >= len || s.charCodeAt(i) !== 46) return false;
+              i++;
+            }
+
+            // Parse decimal number (1-3 digits, value 0-255)
+            if (i >= len) return false;
+            const firstDigit = s.charCodeAt(i) - 48;
+            if (firstDigit < 0 || firstDigit > 9) return false;
+            let value = firstDigit;
+            i++;
+
+            // More digits?
+            if (i < len) {
+              const d2 = s.charCodeAt(i) - 48;
+              if (d2 >= 0 && d2 <= 9) {
+                // Leading zero check (01, 00, etc are invalid)
+                if (firstDigit === 0) return false;
+                value = value * 10 + d2;
+                i++;
+
+                if (i < len) {
+                  const d3 = s.charCodeAt(i) - 48;
+                  if (d3 >= 0 && d3 <= 9) {
+                    value = value * 10 + d3;
+                    i++;
+                  }
+                }
+              }
+            }
+
+            if (value > 255) return false;
+          }
+
+          // Must have consumed entire string
+          if (i !== len) return false;
+
+          // IPv4 counts as 2 groups (replaces 2 x 16-bit groups)
+          groupCount += 2;
+          break;
+        } else if (next === 58) {
+          // ':'
+          groupCount++;
+          i++;
+
+          // Check for ::
+          if (i < len && s.charCodeAt(i) === 58) {
+            if (doubleColonSeen) return false; // Only one :: allowed
+            doubleColonSeen = true;
+            i++;
+            if (i === len) break; // Trailing :: is valid
+          }
+          continue;
+        } else {
+          return false; // Invalid character after hex group
+        }
+      } else {
+        // End of string after hex group
+        groupCount++;
+      }
+    } else {
+      return false; // Invalid character
+    }
+  }
+
+  // Validate group count
+  // IPv6 has 8 x 16-bit groups. IPv4 suffix counts as 2 groups (32 bits).
+  if (doubleColonSeen) {
+    // With ::, we can have at most 7 groups total (at least one zero group implied)
+    return groupCount <= 7;
+  } else {
+    // Without ::, must have exactly 8 groups
+    return groupCount === 8;
+  }
 }
 
 // URI regex from ajv-formats (RFC 3986 compliant) - used by IRI validation
