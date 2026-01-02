@@ -805,8 +805,12 @@ export function generateStringChecks(
 
   if (!hasStringChecks) return;
 
-  // Only check if data is a string
-  code.if(_`typeof ${dataVar} === 'string'`, () => {
+  // Optimization: If schema.type === 'string', we know data is already a string
+  // (the type check would have failed and returned if it wasn't)
+  // So we can skip the typeof check wrapper
+  const needsTypeCheck = schema.type !== 'string';
+
+  const generateChecks = () => {
     // Use ucs2length for proper Unicode code point counting (handles surrogate pairs)
     if (schema.minLength !== undefined || schema.maxLength !== undefined) {
       const lenVar = code.genVar('len');
@@ -865,7 +869,14 @@ export function generateStringChecks(
         );
       });
     }
-  });
+  };
+
+  // Only wrap in typeof check if we don't already have a string type constraint
+  if (needsTypeCheck) {
+    code.if(_`typeof ${dataVar} === 'string'`, generateChecks);
+  } else {
+    generateChecks();
+  }
 }
 
 /**
