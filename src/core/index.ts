@@ -20,6 +20,8 @@ export interface LoadRemotesOptions {
   concurrency?: number;
   /** Timeout per request in milliseconds */
   timeout?: number;
+  /** Suppress warnings for failed fetches */
+  silent?: boolean;
 }
 
 /**
@@ -102,7 +104,12 @@ export async function loadRemoteSchemas(
   schema: JsonSchema,
   options: LoadRemotesOptions = {}
 ): Promise<Record<string, JsonSchema>> {
-  const { fetch: fetchFn = globalThis.fetch, concurrency = 5, timeout = 10000 } = options;
+  const {
+    fetch: fetchFn = globalThis.fetch,
+    concurrency = 5,
+    timeout = 10000,
+    silent = false,
+  } = options;
 
   if (!fetchFn) {
     throw new Error('fetch is not available. Provide a custom fetch function.');
@@ -133,7 +140,7 @@ export async function loadRemoteSchemas(
         try {
           const response = await fetchFn(uri, { signal: controller.signal });
           if (!response.ok) {
-            console.warn(`Failed to fetch ${uri}: ${response.status}`);
+            if (!silent) console.warn(`Failed to fetch ${uri}: ${response.status}`);
             return null;
           }
           const loadedSchema = (await response.json()) as JsonSchema;
@@ -161,10 +168,12 @@ export async function loadRemoteSchemas(
     );
 
     // Log any errors
-    for (let i = 0; i < results.length; i++) {
-      const result = results[i];
-      if (result.status === 'rejected') {
-        console.warn(`Failed to load ${batch[i]}: ${result.reason}`);
+    if (!silent) {
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        if (result.status === 'rejected') {
+          console.warn(`Failed to load ${batch[i]}: ${result.reason}`);
+        }
       }
     }
   }

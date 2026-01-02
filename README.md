@@ -40,9 +40,12 @@ const User = schema({
   required: ['name', 'email'],
 });
 
+type User = typeof User.type; // Extract the type
+
+
 // Validate with full type inference
 const user = User.assert(data);
-//    ^? { name: string; email: string; age?: number }
+//   ^? { name: string; email: string; age?: number }
 ```
 
 ## Why tjs?
@@ -195,6 +198,8 @@ const User = struct({
   age: { type: 'integer', minimum: 0, optional: true },
   role: { enum: ['admin', 'user'], optional: true },
 });
+
+type User = typeof User.type
 
 // Automatically infers:
 // { id: string; name: string; email: string; age?: number; role?: 'admin' | 'user' }

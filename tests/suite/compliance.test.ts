@@ -172,6 +172,7 @@ function testDraft(draft: Draft, includeOptional: boolean = true) {
                   defaultMeta: draft,
                   remotes,
                   fetch: localFetch,
+                  silent: true,
                   ...(isFormatTest && { formatAssertion: true }),
                 });
               } catch (err) {
