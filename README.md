@@ -1,6 +1,7 @@
 # tjs
 
 [![npm version](https://img.shields.io/npm/v/tjs.svg)](https://www.npmjs.com/package/tjs)
+[![test](https://github.com/sberan/tjs/actions/workflows/test.yml/badge.svg)](https://github.com/sberan/tjs/actions/workflows/test.yml)
 
 **The world's fastest and most accurate json-schema validator, with magical typescript inference.**
 

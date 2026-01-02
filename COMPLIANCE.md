@@ -1,23 +1,13 @@
 # JSON Schema Test Suite Compliance Report
 
-## Summary by Draft
+## Summary
 
-| Draft | Tests | Passed | Skipped | Compliance |
-|-------|-------|--------|---------|------------|
-| draft-04 | 882 | 881 | 1 | ✅ 100%* |
-| draft-06 | 1170 | 1170 | 0 | ✅ 100% |
-| draft-07 | 1534 | 1534 | 0 | ✅ 100% |
-| draft-2019-09 | 1941 | 1941 | 0 | ✅ 100% |
-| draft-2020-12 | 1990 | 1990 | 0 | ✅ 100% |
-| **Total** | **7517** | **7516** | **1** | **✅ 100%*** |
+- **Total Tests**: 1990
+- **Passed**: 1990 (100.0%)
+- **Failed**: 0
+- **Skipped**: 0
 
-\* One test skipped due to JavaScript language limitation (see below)
-
-## Skipped Test
-
-**zeroTerminatedFloats** (draft-04): Tests whether `1.0` is treated differently from `1`. JavaScript cannot distinguish between these values (`1.0 === 1`), making this test impossible to pass in any JavaScript validator. This is a known limitation documented in [json-schema-benchmark](https://github.com/json-schema-org/JSON-Schema-Test-Suite).
-
-## draft-2020-12 by Keyword
+## By Keyword
 
 | Keyword | Passed | Failed | Skipped | Rate |
 |---------|--------|--------|---------|------|
