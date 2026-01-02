@@ -762,21 +762,30 @@ function validateIdnHostname(s: string): boolean {
   const len = s.length;
   if (len === 0 || len > 253) return false;
 
-  // Ultra-fast ASCII-only path - single pass with minimal branching
-  let needsSlowPath = false;
+  // Fast path: early scan for non-ASCII (most common case is ASCII-only)
+  // Exit immediately if we find non-ASCII to avoid wasted work
+  for (let i = 0; i < len; i++) {
+    if (s.charCodeAt(i) > 127) {
+      // Found non-ASCII, jump to slow path
+      return validateIdnHostnameSlow(s, len);
+    }
+  }
+
+  // Pure ASCII path - optimized inline validation
   let labelStart = 0;
+  let hasPunycode = false;
 
   for (let i = 0; i <= len; i++) {
-    const code = i < len ? s.charCodeAt(i) : 0x002e;
+    const code = i < len ? s.charCodeAt(i) : 0x2e;
 
-    if (code === 0x002e || i === len) {
+    if (code === 0x2e || i === len) {
       const labelLen = i - labelStart;
       if (labelLen === 0 || labelLen > 63) return false;
 
       const firstCode = s.charCodeAt(labelStart);
       const lastCode = s.charCodeAt(i - 1);
 
-      // Check first/last are alphanumeric
+      // First/last must be alphanumeric
       if (
         !(
           (firstCode >= 0x30 && firstCode <= 0x39) ||
@@ -784,8 +793,10 @@ function validateIdnHostname(s: string): boolean {
           (firstCode >= 0x61 && firstCode <= 0x7a)
         )
       ) {
-        needsSlowPath = true;
-      } else if (
+        return false;
+      }
+
+      if (
         labelLen > 1 &&
         !(
           (lastCode >= 0x30 && lastCode <= 0x39) ||
@@ -793,50 +804,55 @@ function validateIdnHostname(s: string): boolean {
           (lastCode >= 0x61 && lastCode <= 0x7a)
         )
       ) {
-        needsSlowPath = true;
+        return false;
       }
 
-      // Check for -- in positions 3-4
-      if (!needsSlowPath && labelLen >= 4) {
+      // Check for -- in positions 2-3
+      if (labelLen >= 4) {
         const c2 = s.charCodeAt(labelStart + 2);
         const c3 = s.charCodeAt(labelStart + 3);
         if (c2 === 0x2d && c3 === 0x2d) {
           const c0 = s.charCodeAt(labelStart) | 0x20;
           const c1 = s.charCodeAt(labelStart + 1) | 0x20;
-          if (c0 !== 0x78 || c1 !== 0x6e) return false;
-          needsSlowPath = true;
+          if (c0 === 0x78 && c1 === 0x6e) {
+            hasPunycode = true;
+          } else {
+            return false;
+          }
         }
       }
 
       labelStart = i + 1;
-    } else if (code > 127) {
-      // Non-ASCII - need slow path
-      needsSlowPath = true;
     } else if (
       !(
-        (code >= 0x30 && code <= 0x39) || // 0-9
-        (code >= 0x41 && code <= 0x5a) || // A-Z
-        (code >= 0x61 && code <= 0x7a) || // a-z
+        (code >= 0x30 && code <= 0x39) ||
+        (code >= 0x41 && code <= 0x5a) ||
+        (code >= 0x61 && code <= 0x7a) ||
         code === 0x2d
       )
     ) {
-      // -
-      // Invalid ASCII character
       return false;
     }
   }
 
-  // Fast path succeeded
-  if (!needsSlowPath) return true;
+  // If we have punycode, need to validate it
+  if (hasPunycode) {
+    return validateIdnHostnameSlow(s, len);
+  }
 
-  // Slow path: Unicode or Punycode validation
+  return true;
+}
+
+// Slow path for Unicode/Punycode validation - extracted to separate function
+// This keeps the fast path small and optimizable
+function validateIdnHostnameSlow(s: string, len: number): boolean {
   const lastChar = s.charCodeAt(len - 1);
   if (lastChar === 0x3002 || lastChar === 0xff0e || lastChar === 0xff61) return false;
 
-  labelStart = 0;
+  let labelStart = 0;
   for (let i = 0; i <= len; i++) {
-    const code = i < len ? s.charCodeAt(i) : 0x002e;
-    const isSep = code === 0x002e || code === 0x3002 || code === 0xff0e || code === 0xff61;
+    const code = i < len ? s.charCodeAt(i) : 0x2e;
+    const isSep = code === 0x2e || code === 0x3002 || code === 0xff0e || code === 0xff61;
 
     if (isSep || i === len) {
       const labelLen = i - labelStart;
