@@ -2732,7 +2732,25 @@ export function generateCompositionChecks(
         // not: { not: false } → always fails
         genError(code, pathExprCode, '#/not', 'not', 'must NOT be valid', {}, ctx);
       } else {
-        // Not optimizable - generate normal check with isolated scope
+        // Double negation with non-trivial schema: validate inner schema directly
+        // This avoids the overhead of two negation checks
+        const checkExpr = tracker.withDiscardedScope(() =>
+          generateSubschemaCheck(code, innerNotSchema, dataVar, ctx, dynamicScopeVar)
+        );
+        code.if(_`!(${checkExpr})`, () => {
+          genError(code, pathExprCode, '#/not', 'not', 'must NOT be valid', {}, ctx);
+        });
+      }
+    } else {
+      // Try to inline simple negation patterns for better performance
+      const inlinedCheck = tryInlineNotCheck(notSchema, dataVar);
+      if (inlinedCheck) {
+        // Successfully inlined - use negated condition directly
+        code.if(inlinedCheck, () => {
+          genError(code, pathExprCode, '#/not', 'not', 'must NOT be valid', {}, ctx);
+        });
+      } else {
+        // Fall back to full subschema check with isolated scope
         const checkExpr = tracker.withDiscardedScope(() =>
           generateSubschemaCheck(code, notSchema, dataVar, ctx, dynamicScopeVar)
         );
@@ -2740,14 +2758,6 @@ export function generateCompositionChecks(
           genError(code, pathExprCode, '#/not', 'not', 'must NOT be valid', {}, ctx);
         });
       }
-    } else {
-      // Not optimizable - generate normal check with isolated scope
-      const checkExpr = tracker.withDiscardedScope(() =>
-        generateSubschemaCheck(code, notSchema, dataVar, ctx, dynamicScopeVar)
-      );
-      code.if(checkExpr, () => {
-        genError(code, pathExprCode, '#/not', 'not', 'must NOT be valid', {}, ctx);
-      });
     }
   }
 
@@ -2863,6 +2873,87 @@ export function generateCompositionChecks(
       }
     }
   }
+}
+
+/**
+ * Try to inline a simple not check for better performance.
+ * Returns a condition Code that when TRUE means validation FAILS (i.e., the inner schema matched).
+ * Returns undefined if we need to fall back to full check.
+ *
+ * Handles common simple patterns like:
+ * - not: { type: 'string' } → if (typeof data === 'string') fail
+ * - not: { type: ['string', 'number'] } → if (typeof data === 'string' || typeof data === 'number') fail
+ * - not: { const: value } → if (data === value) fail
+ * - not: { enum: [a, b, c] } → if (data === a || data === b || data === c) fail
+ */
+function tryInlineNotCheck(notSchema: JsonSchema, dataVar: Name): Code | undefined {
+  // Only inline objects (not booleans)
+  if (typeof notSchema !== 'object' || notSchema === null) {
+    return undefined;
+  }
+
+  // Count non-metadata keywords
+  const keywords = Object.keys(notSchema).filter(
+    (k) => k !== '$schema' && k !== '$comment' && k !== 'title' && k !== 'description'
+  );
+
+  // Only inline single-keyword schemas to keep it simple and fast
+  if (keywords.length !== 1) {
+    return undefined;
+  }
+
+  const keyword = keywords[0];
+
+  // Inline simple type checks
+  if (keyword === 'type') {
+    const typeValue = notSchema.type;
+    if (typeof typeValue === 'string') {
+      // Single type: not: { type: 'string' } → if (typeof data === 'string') fail
+      const typeCheck = generateTypeCheckInline(dataVar, typeValue);
+      if (typeCheck) {
+        return typeCheck;
+      }
+    } else if (Array.isArray(typeValue) && typeValue.length > 0 && typeValue.length <= 3) {
+      // Multiple types (up to 3 for performance):
+      // not: { type: ['string', 'number'] } → if (typeof data === 'string' || typeof data === 'number') fail
+      const typeChecks: Code[] = [];
+      for (const t of typeValue) {
+        if (typeof t === 'string') {
+          const check = generateTypeCheckInline(dataVar, t);
+          if (check) {
+            typeChecks.push(check);
+          } else {
+            return undefined; // Can't inline this type
+          }
+        } else {
+          return undefined; // Invalid type value
+        }
+      }
+      if (typeChecks.length === typeValue.length) {
+        // If any type matches, we fail: (check1 || check2 || ...)
+        return or(...typeChecks);
+      }
+    }
+  }
+
+  // Inline const check
+  if (keyword === 'const') {
+    // not: { const: value } → if (data === value) fail
+    return _`${dataVar} === ${stringify(notSchema.const)}`;
+  }
+
+  // Inline simple enum check (up to 5 primitive values)
+  if (keyword === 'enum' && Array.isArray(notSchema.enum) && notSchema.enum.length <= 5) {
+    const allPrimitives = notSchema.enum.every((val) => val === null || typeof val !== 'object');
+    if (allPrimitives) {
+      // not: { enum: [a, b, c] } → if (data === a || data === b || data === c) fail
+      const checks = notSchema.enum.map((val) => _`${dataVar} === ${stringify(val)}`);
+      return or(...checks);
+    }
+  }
+
+  // Can't inline - fall back to full check
+  return undefined;
 }
 
 /**
