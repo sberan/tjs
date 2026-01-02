@@ -172,6 +172,9 @@ export class CompileContext {
   /** Map of schema -> its base URI */
   readonly #schemaToBaseUri = new Map<JsonSchema, string>();
 
+  /** Cache for resolved refs: (baseUri|ref) -> schema */
+  readonly #refCache = new Map<string, JsonSchema | undefined>();
+
   /** Map of schema resource (by $id) -> all dynamic anchors within that resource */
   readonly #resourceDynamicAnchors = new Map<
     string,
@@ -535,94 +538,132 @@ export class CompileContext {
    */
   resolveRef(ref: string, fromSchema: JsonSchemaBase): JsonSchema | undefined {
     const currentBaseUri = this.#schemaToBaseUri.get(fromSchema) ?? '';
+    const cacheKey = `${currentBaseUri}|${ref}`;
+
+    // Check cache first
+    if (this.#refCache.has(cacheKey)) {
+      return this.#refCache.get(cacheKey);
+    }
+
+    let resolved: JsonSchema | undefined;
 
     if (ref === '#') {
       if (currentBaseUri) {
-        return this.#schemasById.get(currentBaseUri);
+        resolved = this.#schemasById.get(currentBaseUri);
+      } else {
+        // When no base URI, '#' refers to root schema
+        resolved = this.#rootSchema;
       }
-      // When no base URI, '#' refers to root schema
-      return this.#rootSchema;
-    }
-
-    if (ref.startsWith('#/')) {
+    } else if (ref.startsWith('#/')) {
       // JSON pointer
       if (currentBaseUri) {
         const baseSchema = this.#schemasById.get(currentBaseUri);
         if (baseSchema) {
-          return this.#resolveJsonPointer(baseSchema, ref.slice(1));
+          resolved = this.#resolveJsonPointer(baseSchema, ref.slice(1));
         }
+      } else {
+        // When no base URI, resolve against root schema
+        resolved = this.#resolveJsonPointer(this.#rootSchema, ref.slice(1));
       }
-      // When no base URI, resolve against root schema
-      return this.#resolveJsonPointer(this.#rootSchema, ref.slice(1));
-    }
-
-    // Check anchors
-    const anchorMatch = ref.match(/^#([a-zA-Z][a-zA-Z0-9_-]*)$/);
-    if (anchorMatch) {
-      if (currentBaseUri) {
-        const fullAnchorUri = `${currentBaseUri}#${anchorMatch[1]}`;
-        const result = this.#anchors.get(fullAnchorUri);
-        if (result) return result;
-      }
-      return this.#anchors.get(anchorMatch[1]);
-    }
-
-    // Handle refs with fragments
-    const fragmentIndex = ref.indexOf('#');
-    if (fragmentIndex !== -1) {
-      const refBaseUri = ref.slice(0, fragmentIndex);
-      const fragment = ref.slice(fragmentIndex);
-      const resolvedUri = this.#resolveUri(refBaseUri, currentBaseUri);
-      const baseSchema = this.#schemasById.get(resolvedUri);
-
-      if (baseSchema) {
-        if (fragment === '#') return baseSchema;
-        if (fragment.startsWith('#/')) {
-          const resolved = this.#resolveJsonPointer(baseSchema, fragment.slice(1));
-          // Set base URI for subschemas resolved via JSON pointer so internal $refs work
-          if (resolved && typeof resolved === 'object' && !this.#schemaToBaseUri.has(resolved)) {
-            this.#schemaToBaseUri.set(resolved, resolvedUri);
+    } else {
+      // Check anchors
+      const anchorMatch = ref.match(/^#([a-zA-Z][a-zA-Z0-9_-]*)$/);
+      if (anchorMatch) {
+        if (currentBaseUri) {
+          const fullAnchorUri = `${currentBaseUri}#${anchorMatch[1]}`;
+          resolved = this.#anchors.get(fullAnchorUri);
+          if (!resolved) {
+            resolved = this.#anchors.get(anchorMatch[1]);
           }
-          return resolved;
+        } else {
+          resolved = this.#anchors.get(anchorMatch[1]);
         }
-        // Anchor reference
-        const anchorName = fragment.slice(1);
-        return this.#anchors.get(`${resolvedUri}#${anchorName}`) ?? this.#anchors.get(anchorName);
+      } else {
+        // Handle refs with fragments
+        const fragmentIndex = ref.indexOf('#');
+        if (fragmentIndex !== -1) {
+          const refBaseUri = ref.slice(0, fragmentIndex);
+          const fragment = ref.slice(fragmentIndex);
+          const resolvedUri = this.#resolveUri(refBaseUri, currentBaseUri);
+          // Try without # first, then with # (for legacy draft schemas that use # in $id)
+          let baseSchema = this.#schemasById.get(resolvedUri);
+          if (!baseSchema && fragment === '#') {
+            // Legacy schemas like draft-07 have $id: "http://...schema#"
+            baseSchema = this.#schemasById.get(resolvedUri + '#');
+          }
+
+          if (baseSchema) {
+            if (fragment === '#') {
+              resolved = baseSchema;
+            } else if (fragment.startsWith('#/')) {
+              resolved = this.#resolveJsonPointer(baseSchema, fragment.slice(1));
+              // Set base URI for subschemas resolved via JSON pointer so internal $refs work
+              if (
+                resolved &&
+                typeof resolved === 'object' &&
+                !this.#schemaToBaseUri.has(resolved)
+              ) {
+                this.#schemaToBaseUri.set(resolved, resolvedUri);
+              }
+            } else {
+              // Anchor reference
+              const anchorName = fragment.slice(1);
+              resolved =
+                this.#anchors.get(`${resolvedUri}#${anchorName}`) ?? this.#anchors.get(anchorName);
+            }
+          }
+        } else {
+          // Plain URI reference
+          const resolvedRef = this.#resolveUri(ref, currentBaseUri);
+          resolved = this.#schemasById.get(resolvedRef) ?? this.#schemasById.get(ref);
+        }
       }
     }
 
-    // Plain URI reference
-    const resolvedRef = this.#resolveUri(ref, currentBaseUri);
-    return this.#schemasById.get(resolvedRef) ?? this.#schemasById.get(ref);
+    // Cache the result (even if undefined)
+    this.#refCache.set(cacheKey, resolved);
+    return resolved;
   }
 
   #resolveJsonPointer(schema: JsonSchema, pointer: string): JsonSchema | undefined {
     if (pointer === '' || pointer === '/') return schema;
 
-    const segments = pointer
-      .split('/')
-      .slice(1)
-      .map((seg) => {
-        try {
-          return decodeURIComponent(seg).replace(/~1/g, '/').replace(/~0/g, '~');
-        } catch {
-          return seg.replace(/~1/g, '/').replace(/~0/g, '~');
-        }
-      });
-
+    // Use iterative approach instead of array allocation
     let current: unknown = schema;
-    for (const segment of segments) {
+    let start = 1; // Skip leading '/'
+
+    while (start <= pointer.length) {
       if (current === null || typeof current !== 'object') return undefined;
+
+      const end = pointer.indexOf('/', start);
+      const segment = end === -1 ? pointer.slice(start) : pointer.slice(start, end);
+
+      // Only decode if necessary (contains % or ~)
+      let decoded: string;
+      if (segment.includes('~') || segment.includes('%')) {
+        try {
+          decoded = decodeURIComponent(segment).replace(/~1/g, '/').replace(/~0/g, '~');
+        } catch {
+          decoded = segment.replace(/~1/g, '/').replace(/~0/g, '~');
+        }
+      } else {
+        decoded = segment;
+      }
+
       if (Array.isArray(current)) {
-        const index = parseInt(segment, 10);
+        const index = parseInt(decoded, 10);
         if (isNaN(index) || index < 0 || index >= current.length) return undefined;
         current = current[index];
       } else {
         const obj = current as Record<string, unknown>;
-        if (!(segment in obj)) return undefined;
-        current = obj[segment];
+        if (!(decoded in obj)) return undefined;
+        current = obj[decoded];
       }
+
+      if (end === -1) break;
+      start = end + 1;
     }
+
     return current as JsonSchema;
   }
 
