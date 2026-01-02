@@ -3451,10 +3451,14 @@ export function generateItemsChecks(
   // Skip no-op schemas (true, {})
   const hasAfterTupleSchema = afterTupleSchema !== undefined && !isNoOpSchema(afterTupleSchema);
 
-  // Filter out no-op tuple schemas
-  const nonTrivialTupleSchemas = tupleSchemas
-    .map((s, i) => ({ schema: s, index: i }))
-    .filter(({ schema: s }) => !isNoOpSchema(s));
+  // Filter out no-op tuple schemas - avoid creating intermediate objects
+  const nonTrivialTupleSchemas: Array<{ schema: JsonSchema; index: number }> = [];
+  for (let i = 0; i < tupleSchemas.length; i++) {
+    const s = tupleSchemas[i];
+    if (!isNoOpSchema(s)) {
+      nonTrivialTupleSchemas.push({ schema: s, index: i });
+    }
+  }
   const hasNonTrivialTuples = nonTrivialTupleSchemas.length > 0;
 
   // Track items for unevaluatedItems support
@@ -3535,10 +3539,8 @@ export function generateItemsChecks(
             () => {
               const itemAccess = indexAccess(dataVar, iVar);
               const itemPathExpr = pathExprIndex(pathExprCode, iVar);
-              const itemVar = code.genVar('item');
-              code.line(_`const ${itemVar} = ${itemAccess};`);
-              // Inline type check with error handling
-              const typeCheck = getTypeCheck(itemVar, simpleType);
+              // Inline type check directly on array access - no intermediate variable
+              const typeCheck = getTypeCheck(itemAccess, simpleType);
               code.if(not(typeCheck), () => {
                 genError(
                   code,
