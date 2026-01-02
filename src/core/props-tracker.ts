@@ -501,7 +501,8 @@ export class PropsTracker {
     // Get or create main dynamic var
     const mainVar = this.getDynamicVar();
 
-    this.#code.if(validVar, () => {
+    // OPTIMIZATION: If validVar is always true, skip the conditional wrapper
+    const emitMergeCode = () => {
       // Emit static property additions directly
       for (const prop of branch.staticProps) {
         this.#code.line(_`${mainVar}[${stringify(prop)}] = true;`);
@@ -510,6 +511,13 @@ export class PropsTracker {
       if (hasDynamicVar) {
         this.#code.line(_`Object.assign(${mainVar}, ${branch.dynamicVar});`);
       }
-    });
+    };
+
+    // If validVar is the literal 'true', emit directly without if wrapper
+    if (validVar.str === 'true') {
+      emitMergeCode();
+    } else {
+      this.#code.if(validVar, emitMergeCode);
+    }
   }
 }
