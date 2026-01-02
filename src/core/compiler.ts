@@ -2110,21 +2110,36 @@ export function generateDependenciesCheck(
 ): void {
   if (!schema.dependencies) return;
 
-  // Filter out no-op dependencies (empty arrays, true, {})
-  const nonTrivialDeps = Object.entries(schema.dependencies).filter(([, dep]) => {
-    if (Array.isArray(dep)) {
-      return dep.length > 0; // Skip empty arrays
+  // Check if we have any non-trivial dependencies to avoid unnecessary code generation
+  let hasNonTrivial = false;
+  for (const prop in schema.dependencies) {
+    const dep = schema.dependencies[prop];
+    if (
+      Array.isArray(dep)
+        ? dep.length > 0
+        : dep !== true &&
+          !(typeof dep === 'object' && dep !== null && Object.keys(dep).length === 0)
+    ) {
+      hasNonTrivial = true;
+      break;
     }
-    // Skip no-op schemas (true, {})
-    if (dep === true) return false;
-    if (typeof dep === 'object' && dep !== null && Object.keys(dep).length === 0) return false;
-    return true;
-  });
+  }
 
-  if (nonTrivialDeps.length === 0) return;
+  if (!hasNonTrivial) return;
 
   code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
-    for (const [prop, dep] of nonTrivialDeps) {
+    for (const prop in schema.dependencies) {
+      const dep = schema.dependencies[prop];
+
+      // Skip trivial dependencies
+      if (Array.isArray(dep)) {
+        if (dep.length === 0) continue;
+      } else if (
+        dep === true ||
+        (typeof dep === 'object' && dep !== null && Object.keys(dep).length === 0)
+      ) {
+        continue;
+      }
       code.if(_`${prop} in ${dataVar}`, () => {
         if (Array.isArray(dep)) {
           // Array of required property names
