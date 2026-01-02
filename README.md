@@ -10,10 +10,10 @@
 
 | | tjs | ajv | zod | joi |
 |---|:---:|:---:|:---:|:---:|
-| **JSON Schema compliance** | 100% | 94% | Basic / Experimental | None |
-| **TypeScript inference** | Built-in | Plugin | Built-in | None |
-| **Dependencies** | 0 | 4+ | 0 | 5+ |
-| **Performance** | Fastest | Fast | Slow | Slow |
+| **JSON Schema compliance** | ✅ 100% | ⚠️ 94% | ⚠️ Basic | ❌ None |
+| **TypeScript inference** | ✅ Built-in | ⚠️ Plugin | ✅ Built-in | ❌ None |
+| **Dependencies** | ✅ 0 | ❌ 4+ | ✅ 0 | ❌ 5+ |
+| **Performance** | ✅ Fastest | ⚠️ Fast | ❌ Slow | ❌ Slow |
 
 ## Installation
 
