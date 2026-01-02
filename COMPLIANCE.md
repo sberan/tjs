@@ -2,14 +2,20 @@
 
 ## Summary by Draft
 
-| Draft | Tests | Passed | Compliance |
-|-------|-------|--------|------------|
-| draft-04 | 881 | 881 | ✅ 100% |
-| draft-06 | 1170 | 1170 | ✅ 100% |
-| draft-07 | 1534 | 1534 | ✅ 100% |
-| draft-2019-09 | 1941 | 1941 | ✅ 100% |
-| draft-2020-12 | 1990 | 1990 | ✅ 100% |
-| **Total** | **7516** | **7516** | **✅ 100%** |
+| Draft | Tests | Passed | Skipped | Compliance |
+|-------|-------|--------|---------|------------|
+| draft-04 | 882 | 881 | 1 | ✅ 100%* |
+| draft-06 | 1170 | 1170 | 0 | ✅ 100% |
+| draft-07 | 1534 | 1534 | 0 | ✅ 100% |
+| draft-2019-09 | 1941 | 1941 | 0 | ✅ 100% |
+| draft-2020-12 | 1990 | 1990 | 0 | ✅ 100% |
+| **Total** | **7517** | **7516** | **1** | **✅ 100%*** |
+
+\* One test skipped due to JavaScript language limitation (see below)
+
+## Skipped Test
+
+**zeroTerminatedFloats** (draft-04): Tests whether `1.0` is treated differently from `1`. JavaScript cannot distinguish between these values (`1.0 === 1`), making this test impossible to pass in any JavaScript validator. This is a known limitation documented in [json-schema-benchmark](https://github.com/json-schema-org/JSON-Schema-Test-Suite).
 
 ## draft-2020-12 by Keyword
 
