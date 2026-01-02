@@ -1304,12 +1304,9 @@ function validateIPv6(s: string): boolean {
   }
 }
 
-// URI regex from ajv-formats (RFC 3986 compliant) - used by IRI validation
-const URI_REGEX =
-  /^(?:[a-z][a-z0-9+\-.]*:)(?:\/?\/(?:(?:[a-z0-9\-._~!$&'()*+,;=:]|%[0-9a-f]{2})*@)?(?:\[(?:(?:(?:(?:[0-9a-f]{1,4}:){6}|::(?:[0-9a-f]{1,4}:){5}|(?:[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){4}|(?:(?:[0-9a-f]{1,4}:){0,1}[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){3}|(?:(?:[0-9a-f]{1,4}:){0,2}[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){2}|(?:(?:[0-9a-f]{1,4}:){0,3}[0-9a-f]{1,4})?::[0-9a-f]{1,4}:|(?:(?:[0-9a-f]{1,4}:){0,4}[0-9a-f]{1,4})?::)(?:[0-9a-f]{1,4}:[0-9a-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?))|(?:(?:[0-9a-f]{1,4}:){0,5}[0-9a-f]{1,4})?::[0-9a-f]{1,4}|(?:(?:[0-9a-f]{1,4}:){0,6}[0-9a-f]{1,4})?::)|[Vv][0-9a-f]+\.[a-z0-9\-._~!$&'()*+,;=:]+)\]|(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)|(?:[a-z0-9\-._~!$&'()*+,;=]|%[0-9a-f]{2})*)(?::\d*)?(?:\/(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*|\/(?:(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2})+(?:\/(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*)?|(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2})+(?:\/(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*)(?:\?(?:[a-z0-9\-._~!$&'()*+,;=:@/?]|%[0-9a-f]{2})*)?(?:#(?:[a-z0-9\-._~!$&'()*+,;=:@/?]|%[0-9a-f]{2})*)?$/i;
-
-// Detect bare IPv6 addresses (without brackets) in authority
-const BARE_IPV6_PATTERN = /^[a-z][a-z0-9+.-]*:\/\/[0-9a-f]*:[0-9a-f]*:/i;
+// URI regex from ajv-formats (RFC 3986 compliant) - no longer used, kept for reference
+// const URI_REGEX = /^(?:[a-z][a-z0-9+\-.]*:)(?:\/?\/...$/i;
+// const BARE_IPV6_PATTERN = /^[a-z][a-z0-9+.-]*:\/\/[0-9a-f]*:[0-9a-f]*:/i;
 
 // Optimized URI validation using character-by-character parsing
 // RFC 3986 compliant - faster than regex due to early exits and no backtracking
@@ -1604,62 +1601,163 @@ function validateUriReference(s: string): boolean {
 }
 
 // IRI validation based on RFC 3987
-// Uses the URI regex as a base but also allows Unicode chars (>= 0x80)
-// For performance, we first try the strict URI regex, then fall back to Unicode check
+// Uses character-by-character parsing for maximum performance
+// Allows Unicode chars (>= 0x80) unlike URI
 
 function validateIri(s: string): boolean {
-  if (!s) return false;
+  const len = s.length;
+  if (len === 0) return false;
 
-  // Check for bare IPv6 (not in brackets) BEFORE the URI regex
-  // This catches http://2001:0db8:... which would otherwise pass the URI regex
-  // because it looks like a valid authority with host:port:path
-  if (BARE_IPV6_PATTERN.test(s)) return false;
+  // Parse scheme: must start with alpha, followed by alpha/digit/+/-/.
+  // Scheme ends at first ':'
+  const first = s.charCodeAt(0);
+  if (!((first >= 65 && first <= 90) || (first >= 97 && first <= 122))) return false;
 
-  // Fast path: if it's a valid URI, it's also a valid IRI
-  if (URI_REGEX.test(s)) return true;
+  let schemeEnd = -1;
+  for (let i = 1; i < len && i < 64; i++) {
+    const c = s.charCodeAt(i);
+    if (c === 58) {
+      // ':'
+      schemeEnd = i;
+      break;
+    }
+    // alpha / digit / "+" / "-" / "."
+    if (
+      !(
+        (c >= 48 && c <= 57) || // 0-9
+        (c >= 65 && c <= 90) || // A-Z
+        (c >= 97 && c <= 122) || // a-z
+        c === 43 ||
+        c === 45 ||
+        c === 46
+      )
+    ) {
+      // + - .
+      return false;
+    }
+  }
 
-  // Slow path: check for valid IRI with Unicode characters
-  // Must have valid scheme, and no forbidden characters
-  const colonIdx = s.indexOf(':');
-  if (colonIdx < 1 || colonIdx > 63) return false;
+  if (schemeEnd < 1) return false;
 
-  // Validate scheme (first part before colon)
-  const scheme = s.slice(0, colonIdx);
-  if (!/^[a-z][a-z0-9+.-]*$/i.test(scheme)) return false;
+  // Check for bare IPv6 pattern (http://2001:0db8:...) - early rejection
+  // This is invalid because IPv6 in authority must be bracketed
+  // Only check if we have "//" after scheme (authority component)
+  if (
+    schemeEnd + 3 < len &&
+    s.charCodeAt(schemeEnd + 1) === 47 &&
+    s.charCodeAt(schemeEnd + 2) === 47
+  ) {
+    // Quick check: look for pattern hex:hex: in first few chars after //
+    // This catches bare IPv6 like http://2001:db8::1/path
+    let i = schemeEnd + 3;
+    let seenHex = false;
+    let colonCount = 0;
 
-  // Validate rest: no control chars (0x00-0x1F, 0x7F) or forbidden chars
-  const rest = s.slice(colonIdx + 1);
-  for (let i = 0; i < rest.length; i++) {
-    const c = rest.charCodeAt(i);
+    // Scan up to 15 chars (enough to detect IPv6 pattern)
+    const limit = Math.min(len, schemeEnd + 18);
+    for (; i < limit; i++) {
+      const c = s.charCodeAt(i);
+      if (c === 58) {
+        // ':'
+        if (seenHex) {
+          colonCount++;
+          if (colonCount >= 2) return false; // Bare IPv6: hex:hex: pattern
+          seenHex = false;
+        } else {
+          break; // :: or : without hex - not bare IPv6
+        }
+      } else if ((c >= 48 && c <= 57) || (c >= 97 && c <= 102) || (c >= 65 && c <= 70)) {
+        seenHex = true;
+      } else {
+        // Not hex or colon - stop checking
+        break;
+      }
+    }
+  }
+
+  // Validate rest of IRI: no control chars or forbidden chars
+  for (let i = schemeEnd + 1; i < len; i++) {
+    const c = s.charCodeAt(i);
+
     // Control chars (0x00-0x1F and 0x7F)
     if (c <= 0x1f || c === 0x7f) return false;
+
     // Forbidden chars: space (0x20), <>"{}|\^`
     if (
-      c === 0x20 ||
-      c === 0x22 ||
-      c === 0x3c ||
-      c === 0x3e ||
-      c === 0x5c ||
-      c === 0x5e ||
-      c === 0x60 ||
-      c === 0x7b ||
-      c === 0x7c ||
-      c === 0x7d
-    )
+      c === 0x20 || // space
+      c === 0x22 || // "
+      c === 0x3c || // <
+      c === 0x3e || // >
+      c === 0x5c || // \
+      c === 0x5e || // ^
+      c === 0x60 || // `
+      c === 0x7b || // {
+      c === 0x7c || // |
+      c === 0x7d // }
+    ) {
       return false;
+    }
+
+    // All other chars are allowed (including Unicode >= 0x80)
   }
 
   return true;
 }
 
-// IRI-reference regex - optimized for performance
+// Optimized IRI-reference validator using character-by-character parsing
+// IRI-reference can be a relative reference, so scheme is optional
 // Rejects control chars (0x00-0x20), DEL (0x7F), and forbidden: <>"{}|\^`
-// Allows percent-encoding and Unicode chars >= 0x21 (except forbidden)
-const IRI_REFERENCE_REGEX = /^(?:[^\x00-\x20\x7f"<>\\^`{|}]|%[0-9a-f]{2})*$/i;
-
-// Optimized IRI-reference validator using regex
 function validateIriReference(s: string): boolean {
-  return IRI_REFERENCE_REGEX.test(s);
+  const len = s.length;
+  if (len === 0) return true; // Empty string is valid IRI-reference
+
+  // Character-by-character validation for maximum speed
+  for (let i = 0; i < len; i++) {
+    const c = s.charCodeAt(i);
+
+    // Percent-encoding: check for valid %XX sequence
+    if (c === 37) {
+      // '%'
+      if (i + 2 >= len) return false;
+      const h1 = s.charCodeAt(i + 1);
+      const h2 = s.charCodeAt(i + 2);
+      // Check both hex digits
+      if (
+        !(
+          (h1 >= 48 && h1 <= 57) || // 0-9
+          (h1 >= 65 && h1 <= 70) || // A-F
+          (h1 >= 97 && h1 <= 102)
+        ) || // a-f
+        !((h2 >= 48 && h2 <= 57) || (h2 >= 65 && h2 <= 70) || (h2 >= 97 && h2 <= 102))
+      ) {
+        return false;
+      }
+      i += 2; // Skip the two hex digits
+      continue;
+    }
+
+    // Control chars (0x00-0x20 and 0x7F) are forbidden
+    if (c <= 0x20 || c === 0x7f) return false;
+
+    // Forbidden chars: " < > \ ^ ` { | }
+    if (
+      c === 0x22 || // "
+      c === 0x3c || // <
+      c === 0x3e || // >
+      c === 0x5c || // \
+      c === 0x5e || // ^
+      c === 0x60 || // `
+      c === 0x7b || // {
+      c === 0x7c || // |
+      c === 0x7d // }
+    ) {
+      return false;
+    }
+
+    // All other chars (including Unicode >= 0x80) are allowed
+  }
+
+  return true;
 }
 
 /**
