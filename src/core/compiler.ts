@@ -2422,17 +2422,26 @@ export function generateRefCheck(
 
   if (isRecursiveRef && dynamicScopeVar) {
     // DRAFT 2019-09: $ref: "#" with $recursiveAnchor: true
-    // Use Map.get() for O(1) lookup of the INNERMOST (most recent) validator
-    code.block(_``, () => {
-      // Use dynamic validator if found in scope, otherwise use static fallback
-      const pathArg = pathExprCode.toString() === "''" ? _`''` : _`errors ? ${pathExprCode} : ''`;
-      code.line(
-        _`const validator = ${dynamicScopeVar}.get('__recursive_current__') || ${funcName};`
-      );
-      code.if(_`!validator(${dataVar}, errors, ${pathArg}, ${dynamicScopeVar})`, () => {
+    const pathArg = pathExprCode.toString() === "''" ? _`''` : _`errors ? ${pathExprCode} : ''`;
+
+    // Optimization: if there's only one $recursiveAnchor in the entire schema tree,
+    // we can statically resolve it and avoid the Map.get() lookup overhead
+    const allRecursiveAnchors = ctx.getAllRecursiveAnchorSchemas();
+    if (allRecursiveAnchors.length === 1) {
+      // Static resolution: only one possible target, call it directly
+      code.if(_`!${funcName}(${dataVar}, errors, ${pathArg}, ${dynamicScopeVar})`, () => {
         genSubschemaExit(code, ctx);
       });
-    });
+    } else {
+      // Multiple $recursiveAnchors - need runtime lookup for INNERMOST validator
+      const validatorVar = new Name('validator');
+      code.line(
+        _`const ${validatorVar} = ${dynamicScopeVar}.get('__recursive_current__') || ${funcName};`
+      );
+      code.if(_`!${validatorVar}(${dataVar}, errors, ${pathArg}, ${dynamicScopeVar})`, () => {
+        genSubschemaExit(code, ctx);
+      });
+    }
     return;
   }
 
@@ -3836,13 +3845,28 @@ export function generateRecursiveRefCheck(
       genSubschemaExit(code, ctx);
     });
   } else {
-    // Has $recursiveAnchor: true - use Map.get() for O(1) lookup
-    code.block(_``, () => {
-      // Use dynamic validator if found in scope, otherwise use static fallback
-      code.line(_`const validator = ${dynamicScopeVar}.get('__recursive__') || ${staticFuncName};`);
-      code.if(_`!validator(${dataVar}, errors, ${pathExprCode}, ${dynamicScopeVar})`, () => {
+    // Has $recursiveAnchor: true
+    // Optimization: if there's only one $recursiveAnchor in the entire schema tree,
+    // we can statically resolve it and avoid the Map.get() lookup overhead
+    const allRecursiveAnchors = ctx.getAllRecursiveAnchorSchemas();
+    if (allRecursiveAnchors.length === 1) {
+      // Static resolution: only one possible target, call it directly
+      code.if(
+        _`!${staticFuncName}(${dataVar}, errors, ${pathExprCode}, ${dynamicScopeVar})`,
+        () => {
+          genSubschemaExit(code, ctx);
+        }
+      );
+    } else {
+      // Multiple $recursiveAnchors - need runtime lookup
+      // Use Map.get() for O(1) lookup, but avoid extra block scope
+      const validatorVar = new Name('validator');
+      code.line(
+        _`const ${validatorVar} = ${dynamicScopeVar}.get('__recursive__') || ${staticFuncName};`
+      );
+      code.if(_`!${validatorVar}(${dataVar}, errors, ${pathExprCode}, ${dynamicScopeVar})`, () => {
         genSubschemaExit(code, ctx);
       });
-    });
+    }
   }
 }
