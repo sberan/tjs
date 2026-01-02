@@ -2,13 +2,14 @@
 
 **The world's fastest and most accurate json-schema validator, with magical typescript inference.**
 
+![Benchmark](assets/benchmark.svg)
+
 100% spec compliance. 40% faster than ajv. Zero dependencies. Full TypeScript inference.
 
-![Benchmark](assets/benchmark.svg)
 
 ## At a Glance
 
-| | tjs | ajv | zod | joi |
+| | tjs | [ajv](https://github.com/ajv-validator/ajv) | [zod](https://github.com/colinhacks/zod) | [joi](https://github.com/hapijs/joi) |
 |---|:---:|:---:|:---:|:---:|
 | **JSON Schema compliance** | ✅ 100% | ⚠️ 94% | ⚠️ Basic | ❌ None |
 | **TypeScript inference** | ✅ Built-in | ⚠️ Plugin | ✅ Built-in | ❌ None |
