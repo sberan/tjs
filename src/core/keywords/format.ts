@@ -644,13 +644,24 @@ function validateIdnaLabel(label: string): boolean {
 
 // Lookup table for hostname characters (256 entries for fast lookup)
 const HOSTNAME_CHARS = new Uint8Array(256);
+// Lookup table for alphanumeric characters (used for first/last char validation)
+const HOSTNAME_ALNUM = new Uint8Array(256);
 (() => {
   // 0-9 (48-57)
-  for (let i = 48; i <= 57; i++) HOSTNAME_CHARS[i] = 1;
+  for (let i = 48; i <= 57; i++) {
+    HOSTNAME_CHARS[i] = 1;
+    HOSTNAME_ALNUM[i] = 1;
+  }
   // A-Z (65-90)
-  for (let i = 65; i <= 90; i++) HOSTNAME_CHARS[i] = 1;
+  for (let i = 65; i <= 90; i++) {
+    HOSTNAME_CHARS[i] = 1;
+    HOSTNAME_ALNUM[i] = 1;
+  }
   // a-z (97-122)
-  for (let i = 97; i <= 122; i++) HOSTNAME_CHARS[i] = 1;
+  for (let i = 97; i <= 122; i++) {
+    HOSTNAME_CHARS[i] = 1;
+    HOSTNAME_ALNUM[i] = 1;
+  }
   // - (45)
   HOSTNAME_CHARS[45] = 1;
   // . (46)
@@ -678,28 +689,11 @@ function validateHostname(s: string): boolean {
       const firstCode = s.charCodeAt(labelStart);
       const lastCode = s.charCodeAt(i - 1);
 
-      // First char must be alphanumeric
-      if (
-        !(
-          (firstCode >= 0x30 && firstCode <= 0x39) || // 0-9
-          (firstCode >= 0x41 && firstCode <= 0x5a) || // A-Z
-          (firstCode >= 0x61 && firstCode <= 0x7a) // a-z
-        )
-      ) {
-        return false;
-      }
+      // First char must be alphanumeric (using lookup table)
+      if (!HOSTNAME_ALNUM[firstCode]) return false;
 
       // Last char must be alphanumeric (if label length > 1)
-      if (
-        labelLen > 1 &&
-        !(
-          (lastCode >= 0x30 && lastCode <= 0x39) ||
-          (lastCode >= 0x41 && lastCode <= 0x5a) ||
-          (lastCode >= 0x61 && lastCode <= 0x7a)
-        )
-      ) {
-        return false;
-      }
+      if (labelLen > 1 && !HOSTNAME_ALNUM[lastCode]) return false;
 
       // Check for -- in positions 2-3
       if (labelLen >= 4) {
