@@ -1601,7 +1601,7 @@ export function generateUnevaluatedPropertiesCheck(
       }
 
       // Generate the condition: is this property unevaluated?
-      const isUnevaluatedExpr = propsTracker.isUnevaluated(keyVar, patternRegexVars);
+      const isUnevaluatedExpr = propsTracker.isUnevaluated(keyVar, patternRegexVars, ctx);
 
       code.if(isUnevaluatedExpr, () => {
         if (unevalSchema === false) {

@@ -338,16 +338,25 @@ export class PropsTracker {
    * Generate the unevaluated property check.
    * Returns a Code expression that evaluates to true if the key is unevaluated.
    */
-  isUnevaluated(keyVar: Name, patternRegexVars: Name[] = []): Code {
+  isUnevaluated(keyVar: Name, patternRegexVars: Name[] = [], ctx?: any): Code {
     if (!this.#active) return _`true`;
     if (this.#staticProps === true) return _`false`;
 
     const conditions: Code[] = [];
 
     // Check static properties
+    // Optimization: Use Set lookup for > 3 properties (O(1) vs O(n) string comparisons)
     if (this.#staticProps instanceof Set && this.#staticProps.size > 0) {
-      for (const prop of this.#staticProps) {
-        conditions.push(_`${keyVar} !== ${stringify(prop)}`);
+      if (this.#staticProps.size > 3 && ctx) {
+        // Use Set for efficient lookup
+        const setName = new Name(ctx.genRuntimeName('evalPropsSet'));
+        ctx.addRuntimeFunction(setName.str, this.#staticProps);
+        conditions.push(_`!${setName}.has(${keyVar})`);
+      } else {
+        // Use inline comparisons for small sets
+        for (const prop of this.#staticProps) {
+          conditions.push(_`${keyVar} !== ${stringify(prop)}`);
+        }
       }
     }
 
@@ -365,8 +374,15 @@ export class PropsTracker {
     if (this.#branchStack.length > 0) {
       const branch = this.#branchStack[this.#branchStack.length - 1];
       // Check branch's static props
-      for (const prop of branch.staticProps) {
-        conditions.push(_`${keyVar} !== ${stringify(prop)}`);
+      // Optimization: Use Set lookup for > 3 properties
+      if (branch.staticProps.size > 3 && ctx) {
+        const setName = new Name(ctx.genRuntimeName('evalPropsSet'));
+        ctx.addRuntimeFunction(setName.str, branch.staticProps);
+        conditions.push(_`!${setName}.has(${keyVar})`);
+      } else {
+        for (const prop of branch.staticProps) {
+          conditions.push(_`${keyVar} !== ${stringify(prop)}`);
+        }
       }
       // Check branch's dynamic var if it exists
       if (branch.dynamicVar) {
