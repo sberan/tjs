@@ -1681,15 +1681,43 @@ export function generateUnevaluatedItemsCheck(
   const genCheck = () => {
     const iVar = code.genVar('i');
     const lenVar = code.genVar('len');
+
+    // Get static item count to optimize loop bounds
+    const staticItemCount = itemsTracker.getStaticItemCount();
+    const needsDynamic = itemsTracker.needsDynamic;
+    const dynamicVar = needsDynamic ? itemsTracker.getDynamicVar() : undefined;
+
+    // Optimization: If we have dynamic tracking, cache the allItemsEvaluated check
+    // to avoid repeated property lookups in the loop
+    const allEvalVar = needsDynamic ? code.genVar('allEval') : undefined;
+    if (allEvalVar && dynamicVar) {
+      code.line(_`const ${allEvalVar} = ${dynamicVar}.allItemsEvaluated;`);
+    }
+
     code.line(_`const ${lenVar} = ${dataVar}.length;`);
 
-    code.for(_`let ${iVar} = 0`, _`${iVar} < ${lenVar}`, _`${iVar}++`, () => {
+    // Optimization: Start loop from static item count instead of 0
+    // This avoids checking condition inside loop for static items
+    const startIdx = staticItemCount > 0 ? staticItemCount : 0;
+    const loopInit = startIdx > 0 ? _`let ${iVar} = ${startIdx}` : _`let ${iVar} = 0`;
+
+    code.for(loopInit, _`${iVar} < ${lenVar}`, _`${iVar}++`, () => {
       const itemPathExpr = pathExprIndex(pathExprCode, iVar);
 
-      // Generate the condition: is this item unevaluated?
-      const isUnevaluatedExpr = itemsTracker.isItemUnevaluated(iVar);
+      // Generate optimized unevaluated check
+      let isUnevaluatedExpr: Code | null = null;
 
-      code.if(isUnevaluatedExpr, () => {
+      if (needsDynamic && allEvalVar && dynamicVar) {
+        // Use cached allItemsEvaluated variable and simplify condition
+        isUnevaluatedExpr = _`!${allEvalVar} && !${dynamicVar}.has(${iVar})`;
+      } else if (needsDynamic && dynamicVar) {
+        // Fallback without cache (shouldn't happen but keep for safety)
+        isUnevaluatedExpr = _`!${dynamicVar}.allItemsEvaluated && !${dynamicVar}.has(${iVar})`;
+      }
+      // For pure static tracking: we already started from staticItemCount,
+      // so all items in the loop are unevaluated - skip the if check entirely
+
+      const genBody = () => {
         if (unevalSchema === false) {
           // unevaluatedItems: false - no unevaluated items allowed
           genError(
@@ -1712,7 +1740,14 @@ export function generateUnevaluatedItemsCheck(
           code.line(_`const ${itemVar} = ${itemAccess};`);
           generateSchemaValidator(code, unevalSchema, itemVar, itemPathExpr, ctx, dynamicScopeVar);
         }
-      });
+      };
+
+      // Only add condition if we have dynamic tracking, otherwise all items in loop are unevaluated
+      if (isUnevaluatedExpr) {
+        code.if(isUnevaluatedExpr, genBody);
+      } else {
+        genBody();
+      }
     });
   };
 
