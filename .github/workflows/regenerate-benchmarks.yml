@@ -1,0 +1,68 @@
+name: Regenerate Benchmarks
+
+on:
+  workflow_dispatch:
+    inputs:
+      validators:
+        description: 'Validators to benchmark (comma-separated: ajv,zod,joi or "all")'
+        required: false
+        default: 'all'
+
+permissions:
+  contents: write
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Create results directory
+        run: mkdir -p benchmarks/results
+
+      - name: Run benchmarks
+        run: |
+          INPUT="${{ github.event.inputs.validators }}"
+          VALIDATORS=${INPUT:-all}
+
+          if [ "$VALIDATORS" = "all" ]; then
+            VALIDATORS="ajv,zod,joi"
+          fi
+
+          IFS=',' read -ra VALS <<< "$VALIDATORS"
+          for v in "${VALS[@]}"; do
+            v=$(echo "$v" | xargs)  # trim whitespace
+            echo "Running benchmark for $v..."
+            npx tsx benchmarks/bench.ts -v "$v" --json "benchmarks/results/${v}.json"
+            npx tsx benchmarks/json-to-markdown.ts "benchmarks/results/${v}.json" > "benchmarks/results/BENCHMARK_${v^^}.md"
+          done
+
+      - name: Update SVG chart
+        run: npx tsx benchmarks/update-svg.ts
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add benchmarks/results/ assets/benchmark.svg
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: regenerate benchmark results"
+            git push
+          fi

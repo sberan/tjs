@@ -6,3 +6,6 @@ dist/
 coverage/
 .env
 .env.*
+
+# Benchmark intermediate files
+benchmarks/results/*.json

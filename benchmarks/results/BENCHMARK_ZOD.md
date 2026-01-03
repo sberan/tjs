@@ -4,7 +4,7 @@ Performance comparison of **tjs** vs **[zod](https://zod.dev/)** using the offic
 
 ## Methodology
 
-We only benchmark test files where **both** validators pass **all** tests in that file. This ensures we compare actual validation performance, not no-op functions that return early due to unsupported features. Files where either validator fails any test are excluded from performance metrics but still counted for compliance.
+We only benchmark test **groups** where **both** validators pass **all** tests in that group. A file contains multiple groups (each with a schema and test cases). If either validator fails any test in a group, that entire group is excluded from benchmarking. This ensures we compare actual validation performance, not no-op functions that return early due to unsupported features. Groups where either validator fails are excluded from performance metrics but still counted for compliance.
 
 ## Summary
 
@@ -19,7 +19,7 @@ We only benchmark test files where **both** validators pass **all** tests in tha
 
 ## Head-to-Head Performance
 
-Comparison on test groups where both validators pass all tests:
+Direct comparison using only test groups where **both** validators pass **all** tests. This ensures a fair comparison by excluding groups where either validator has incomplete or incorrect implementations.
 
 **tjs vs zod**: 🟢 tjs is 238.73x faster (20 ns vs 4868 ns, 1020 tests)
 

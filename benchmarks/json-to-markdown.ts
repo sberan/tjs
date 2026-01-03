@@ -96,9 +96,11 @@ function main() {
   lines.push('## Methodology');
   lines.push('');
   lines.push(
-    'We only benchmark test files where **both** validators pass **all** tests in that file. ' +
+    'We only benchmark test **groups** where **both** validators pass **all** tests in that group. ' +
+      'A file contains multiple groups (each with a schema and test cases). ' +
+      'If either validator fails any test in a group, that entire group is excluded from benchmarking. ' +
       'This ensures we compare actual validation performance, not no-op functions that return early due to unsupported features. ' +
-      'Files where either validator fails any test are excluded from performance metrics but still counted for compliance.'
+      'Groups where either validator fails are excluded from performance metrics but still counted for compliance.'
   );
   lines.push('');
 
@@ -193,7 +195,10 @@ function main() {
   if (h2h) {
     lines.push('## Head-to-Head Performance');
     lines.push('');
-    lines.push('Comparison on test groups where both validators pass all tests:');
+    lines.push(
+      'Direct comparison using only test groups where **both** validators pass **all** tests. ' +
+        'This ensures a fair comparison by excluding groups where either validator has incomplete or incorrect implementations.'
+    );
     lines.push('');
     const emoji = h2h.faster === 'tjs' ? '🟢' : '🔴';
     lines.push(

@@ -83,6 +83,8 @@ function main() {
   // Head-to-head
   lines.push('### Head-to-Head');
   lines.push('');
+  lines.push('_Only includes test groups where both validators pass all tests._');
+  lines.push('');
   const h2h = data.headToHead;
   if (h2h) {
     const emoji = h2h.faster === 'tjs' ? '🟢' : '🔴';
