@@ -202,14 +202,32 @@ export function genError(
   }
 
   // Normal mode: set errors and return false
-  // Use stringify() to get a Code object that won't be double-quoted by the _ template
-  const paramsCode = stringify(params);
+  const pathStr = pathExprCode.toString();
+  const isStaticPath = pathStr === "''" || pathStr === '""';
 
-  // Build the error object
-  const errObj = _`{ instancePath: ${pathExprCode}, schemaPath: ${schemaPath}, keyword: ${keyword}, params: ${paramsCode}, message: ${message} }`;
-
-  // Set .errors on main function directly (AJV-compatible pattern)
-  code.line(_`${ctx.getMainFuncName()}.errors = [${errObj}];`);
+  if (isStaticPath) {
+    // Pre-allocate error array for static paths (root-level errors)
+    // This avoids expensive object creation on every validation failure
+    const errorKey = `err_${schemaPath.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    const errorName = new Name(errorKey);
+    const errorArray = [
+      {
+        instancePath: '',
+        schemaPath,
+        keyword,
+        params,
+        message,
+      },
+    ];
+    ctx.addRuntimeFunction(errorKey, errorArray);
+    code.line(_`${ctx.getMainFuncName()}.errors = ${errorName};`);
+  } else {
+    // Dynamic path: create error object with computed instancePath
+    // Use stringify() to get a Code object that won't be double-quoted by the _ template
+    const paramsCode = stringify(params);
+    const errObj = _`{ instancePath: ${pathExprCode}, schemaPath: ${schemaPath}, keyword: ${keyword}, params: ${paramsCode}, message: ${message} }`;
+    code.line(_`${ctx.getMainFuncName()}.errors = [${errObj}];`);
+  }
   code.line(_`return false;`);
 }
 
