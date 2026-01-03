@@ -29,111 +29,10 @@ jobs:
         run: npm run build
 
       - name: Run benchmarks
-        id: bench
-        run: |
-          # Run benchmarks with JSON output (stderr to file, stdout has JSON + progress)
-          npm run bench:json 2>benchmark-stderr.txt | tee benchmark-output.txt
-
-          # Extract the JSON object from output (skip progress lines and any warnings)
-          node -e "
-            const fs = require('fs');
-            const input = fs.readFileSync('benchmark-output.txt', 'utf-8');
-            // Find the outermost complete JSON object by tracking braces
-            let depth = 0;
-            let jsonStart = -1;
-            let jsonEnd = -1;
-            for (let i = 0; i < input.length; i++) {
-              if (input[i] === '{') {
-                if (depth === 0) jsonStart = i;
-                depth++;
-              } else if (input[i] === '}') {
-                depth--;
-                if (depth === 0) {
-                  jsonEnd = i;
-                  // Keep going to find the last complete JSON object
-                }
-              }
-            }
-            if (jsonStart !== -1 && jsonEnd !== -1) {
-              const jsonStr = input.slice(jsonStart, jsonEnd + 1);
-              try {
-                const json = JSON.parse(jsonStr);
-                fs.writeFileSync('benchmark.json', JSON.stringify(json, null, 2));
-                console.log('Successfully extracted JSON');
-              } catch (e) {
-                console.error('Failed to parse JSON:', e.message);
-                console.error('JSON string (first 500 chars):', jsonStr.substring(0, 500));
-                process.exit(1);
-              }
-            } else {
-              console.error('Failed to find JSON in output');
-              console.error('Output (first 500 chars):', input.substring(0, 500));
-              process.exit(1);
-            }
-          "
+        run: npm run bench:json 2>/dev/null | npx tsx benchmarks/extract-json.ts > benchmark.json
 
       - name: Generate PR comment
-        run: |
-          node -e "
-            const fs = require('fs');
-            const data = JSON.parse(fs.readFileSync('benchmark.json', 'utf-8'));
-
-            const formatOps = (ns) => ns === 0 ? '-' : ((1e9/ns)/1e6).toFixed(1) + 'M';
-            const formatDiff = (a, b) => {
-              if (b === 0) return '-';
-              const diff = ((a - b) / b) * 100;
-              return (diff > 0 ? '+' : '') + Math.round(diff) + '%';
-            };
-
-            let md = '## Benchmark Results\n\n';
-
-            // Summary table
-            md += '### Performance Summary\n\n';
-            md += '| Draft | tjs | ajv | zod | joi | tjs vs ajv |\n';
-            md += '|-------|----:|----:|----:|----:|:----------:|\n';
-
-            const drafts = ['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'];
-            for (const draft of drafts) {
-              const s = data.summary[draft];
-              if (!s) continue;
-              const diff = formatDiff(s.tjs.nsPerTest, s.ajv.nsPerTest);
-              const emoji = s.tjs.nsPerTest < s.ajv.nsPerTest ? '🟢' : '🔴';
-              md += '| ' + draft + ' | ' + formatOps(s.tjs.nsPerTest) + ' | ' + formatOps(s.ajv.nsPerTest) + ' | ' + formatOps(s.zod.nsPerTest) + ' | ' + formatOps(s.joi.nsPerTest) + ' | ' + emoji + ' ' + diff + ' |\n';
-            }
-            md += '\n';
-
-            // Head-to-head
-            md += '### Head-to-Head (on mutually passing tests)\n\n';
-            const h2h = data.headToHead;
-            if (h2h.tjsVsAjv) {
-              const emoji = h2h.tjsVsAjv.faster === 'tjs' ? '🟢' : '🔴';
-              md += '- **tjs vs ajv**: ' + emoji + ' ' + h2h.tjsVsAjv.faster + ' is ' + h2h.tjsVsAjv.ratio.toFixed(2) + 'x faster (' + h2h.tjsVsAjv.totalTests + ' tests)\n';
-            }
-            if (h2h.tjsVsZod) {
-              md += '- **tjs vs zod**: 🟢 tjs is ' + h2h.tjsVsZod.ratio.toFixed(0) + 'x faster (' + h2h.tjsVsZod.totalTests + ' tests)\n';
-            }
-            if (h2h.tjsVsJoi) {
-              const emoji = h2h.tjsVsJoi.faster === 'tjs' ? '🟢' : '🔴';
-              md += '- **tjs vs joi**: ' + emoji + ' ' + h2h.tjsVsJoi.faster + ' is ' + h2h.tjsVsJoi.ratio.toFixed(2) + 'x faster (' + h2h.tjsVsJoi.totalTests + ' tests)\n';
-            }
-            md += '\n';
-
-            // Compliance
-            md += '### Compliance\n\n';
-            md += '| Draft | tjs | ajv | zod | joi |\n';
-            md += '|-------|----:|----:|----:|----:|\n';
-            for (const draft of drafts) {
-              const s = data.summary[draft];
-              if (!s) continue;
-              const tjsTotal = s.tjs.pass + s.tjs.fail;
-              const ajvTotal = s.ajv.pass + s.ajv.fail;
-              const zodTotal = s.zod.pass + s.zod.fail;
-              const joiTotal = s.joi.pass + s.joi.fail;
-              md += '| ' + draft + ' | ' + s.tjs.pass + '/' + tjsTotal + ' | ' + s.ajv.pass + '/' + ajvTotal + ' | ' + s.zod.pass + '/' + zodTotal + ' | ' + s.joi.pass + '/' + joiTotal + ' |\n';
-            }
-
-            fs.writeFileSync('benchmark-comment.md', md);
-          "
+        run: npx tsx benchmarks/generate-pr-comment.ts < benchmark.json > benchmark-comment.md
 
       - name: Comment on PR
         uses: actions/github-script@v7
@@ -142,7 +41,6 @@ jobs:
             const fs = require('fs');
             const comment = fs.readFileSync('benchmark-comment.md', 'utf8');
 
-            // Find existing benchmark comment
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -155,7 +53,6 @@ jobs:
             );
 
             if (botComment) {
-              // Update existing comment
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -163,7 +60,6 @@ jobs:
                 body: comment
               });
             } else {
-              // Create new comment
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
