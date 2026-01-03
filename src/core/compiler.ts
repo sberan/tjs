@@ -177,6 +177,118 @@ return true;
 }
 
 /**
+ * Result of compiling a schema to code (for build-time compilation)
+ */
+export interface CompileToCodeResult {
+  /** The main function name */
+  functionName: string;
+  /** The generated validation code (function body) */
+  code: string;
+  /** Runtime dependencies that need to be included */
+  runtimeDependencies: string[];
+}
+
+/**
+ * Compile a JSON Schema to source code (for build-time compilation).
+ * Unlike `compile()`, this returns the generated code as a string instead of a function.
+ * This allows the code to be written to a file for use without the tjs compiler at runtime.
+ */
+export function compileToCode(
+  schema: JsonSchema,
+  options: CompileOptions = {}
+): CompileToCodeResult {
+  const ctx = new CompileContext(schema, options);
+  const code = new CodeBuilder();
+
+  // Initialize property tracker for unevaluatedProperties support
+  const needsPropsTracking = containsUnevaluatedProperties(schema);
+  ctx.initPropsTracker(code, needsPropsTracking);
+
+  // Initialize items tracker for unevaluatedItems support
+  const needsItemsTracking = containsUnevaluatedItems(schema);
+  ctx.initItemsTracker(code, needsItemsTracking);
+
+  // Add runtime functions
+  ctx.addRuntimeFunction('deepEqual', createDeepEqual());
+  ctx.addRuntimeFunction('formatValidators', createFormatValidators());
+  ctx.addRuntimeFunction('ucs2length', createUcs2Length());
+
+  // Generate the main validation function
+  const mainFuncName = ctx.genFuncName();
+  ctx.registerCompiled(schema, mainFuncName);
+
+  // Check for dynamic features
+  const hasDynamicFeatures =
+    !ctx.options.legacyRef && (ctx.hasAnyDynamicAnchors() || ctx.hasAnyRecursiveAnchors());
+  const dynamicScopeVar = hasDynamicFeatures ? new Name('dynamicScope') : undefined;
+
+  // Collect dynamic anchors from the root resource
+  const anchorFuncNames: Array<{ anchor: string; funcName: Name }> = [];
+  if (hasDynamicFeatures) {
+    const rootResourceId =
+      typeof schema === 'object' && schema !== null && schema.$id ? schema.$id : '__root__';
+    const rootDynamicAnchors = ctx.getResourceDynamicAnchors(rootResourceId);
+
+    for (const { anchor, schema: anchorSchema } of rootDynamicAnchors) {
+      const funcName = ctx.getCompiledName(anchorSchema) ?? ctx.queueCompile(anchorSchema);
+      anchorFuncNames.push({ anchor, funcName });
+    }
+  }
+
+  // Generate code for main schema
+  const dataVar = new Name('data');
+  const pathVar = _`''`;
+  generateSchemaValidator(code, schema, dataVar, pathVar, ctx, dynamicScopeVar);
+
+  // Process any queued schemas (from $ref)
+  let queued: { schema: JsonSchema; funcName: Name } | undefined;
+  while ((queued = ctx.nextToCompile())) {
+    const q = queued;
+    const qFuncName = q.funcName;
+    code.blank();
+    if (hasDynamicFeatures) {
+      code.block(_`function ${qFuncName}(data, errors, path, dynamicScope)`, () => {
+        const qDataVar = new Name('data');
+        const qPathVar = new Name('path');
+        const qDynamicScope = new Name('dynamicScope');
+        generateSchemaValidator(code, q.schema, qDataVar, qPathVar, ctx, qDynamicScope);
+        code.line(_`return true;`);
+      });
+    } else {
+      code.block(_`function ${qFuncName}(data, errors, path)`, () => {
+        const qDataVar = new Name('data');
+        const qPathVar = new Name('path');
+        generateSchemaValidator(code, q.schema, qDataVar, qPathVar, ctx);
+        code.line(_`return true;`);
+      });
+    }
+  }
+
+  // Build the runtime dependencies list
+  const runtimeFuncs = ctx.getRuntimeFunctions();
+  const runtimeNames = Array.from(runtimeFuncs.keys());
+
+  // Push root resource's dynamic anchors to scope at startup
+  let scopeInit = '';
+  if (hasDynamicFeatures) {
+    scopeInit = 'const dynamicScope = new Map();\n';
+    for (const { anchor, funcName } of anchorFuncNames) {
+      scopeInit += `dynamicScope.set(${JSON.stringify(anchor)}, ${funcName});\n`;
+    }
+  }
+
+  const fullCode = `${scopeInit}${code.toString()}
+${mainFuncName}.errors = null;
+return true;`;
+
+  return {
+    functionName: mainFuncName.str,
+    code: fullCode,
+    runtimeDependencies: runtimeNames,
+  };
+}
+
+/**
  * Generate validation code for a schema
  * @param pathExprCode - Code expression that evaluates to the current path string
  * @param dynamicScopeVar - Variable name for the dynamic scope array (for $dynamicRef)
