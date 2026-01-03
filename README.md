@@ -14,7 +14,7 @@
 
 | | tjs | [ajv](https://github.com/ajv-validator/ajv) | [zod](https://github.com/colinhacks/zod) | [joi](https://github.com/hapijs/joi) |
 |---|:---:|:---:|:---:|:---:|
-| **JSON Schema compliance** | ✅ 100% | ⚠️ 94% | ⚠️ Basic | ❌ None |
+| **JSON Schema compliance** | ✅ 100% | ⚠️ 98% | ⚠️ Basic | ❌ None |
 | **TypeScript inference** | ✅ Built-in | ⚠️ Plugin | ✅ Built-in | ❌ None |
 | **Dependencies** | ✅ 0 | ❌ 4+ | ✅ 0 | ❌ 5+ |
 | **Performance** | ✅ Fastest | ⚠️ Fast | ❌ Slow | ❌ Slow |
@@ -60,12 +60,12 @@ tjs passes the entire [JSON Schema Test Suite](https://github.com/json-schema-or
 
 | Draft | Compliance |
 |-------|------------|
-| draft-04 | 100% (881/881) |
+| draft-04 | 100% (882/882) |
 | draft-06 | 100% (1170/1170) |
 | draft-07 | 100% (1534/1534) |
 | draft-2019-09 | 100% (1941/1941) |
 | draft-2020-12 | 100% (1990/1990) |
-| **Total** | **100% (7516/7516)** |
+| **Total** | **100% (7517/7517)** |
 
 See [COMPLIANCE.md](COMPLIANCE.md) for details.
 
