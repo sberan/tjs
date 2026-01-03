@@ -2,11 +2,10 @@
  * Convert benchmark JSON output to markdown format
  *
  * Usage:
- *   npm run bench:json | npx tsx benchmarks/json-to-markdown.ts [validator]
+ *   npx tsx benchmarks/json-to-markdown.ts <json-file> > BENCHMARK_<VALIDATOR>.md
  *
  * Examples:
- *   npm run bench:json | npx tsx benchmarks/json-to-markdown.ts ajv > BENCHMARK_AJV.md
- *   npm run bench -v zod --json | npx tsx benchmarks/json-to-markdown.ts zod > BENCHMARK_ZOD.md
+ *   npx tsx benchmarks/json-to-markdown.ts benchmark.json > BENCHMARK_AJV.md
  */
 
 import * as fs from 'fs';
@@ -22,18 +21,14 @@ interface FileResult {
   file: string;
   testCount: number;
   tjs: ValidatorStats;
-  ajv: ValidatorStats;
-  zod: ValidatorStats;
-  joi: ValidatorStats;
+  other: ValidatorStats;
 }
 
 interface DraftSummary {
   files: number;
   tests: number;
   tjs: ValidatorStats;
-  ajv: ValidatorStats;
-  zod: ValidatorStats;
-  joi: ValidatorStats;
+  other: ValidatorStats;
 }
 
 interface H2H {
@@ -50,11 +45,7 @@ interface BenchmarkData {
   compareValidator: string;
   results: FileResult[];
   summary: Record<string, DraftSummary>;
-  headToHead: {
-    tjsVsAjv: H2H | null;
-    tjsVsZod: H2H | null;
-    tjsVsJoi: H2H | null;
-  };
+  headToHead: H2H | null;
 }
 
 const validatorLinks: Record<string, string> = {
@@ -80,37 +71,34 @@ function formatDiff(tjsNs: number, otherNs: number): string {
   return `🟢 **${Math.round(diff)}%**`;
 }
 
-function formatPassFail(pass: number, fail: number): string {
-  if (fail === 0) return `✅ ${pass}`;
-  return `⚠️ ${pass}`;
-}
-
 function main() {
-  const validator = process.argv[2] || 'ajv';
-  const validatorKey = validator.toLowerCase() as 'ajv' | 'zod' | 'joi';
-
-  // Read JSON from stdin
-  const input = fs.readFileSync(0, 'utf-8');
-
-  // Find the JSON in the input (skip any non-JSON lines like progress output)
-  const jsonStart = input.indexOf('{');
-  const jsonEnd = input.lastIndexOf('}');
-  if (jsonStart === -1 || jsonEnd === -1) {
-    console.error('No JSON found in input');
+  const jsonFile = process.argv[2];
+  if (!jsonFile) {
+    console.error('Usage: npx tsx benchmarks/json-to-markdown.ts <json-file>');
     process.exit(1);
   }
-  const jsonStr = input.slice(jsonStart, jsonEnd + 1);
-  const data: BenchmarkData = JSON.parse(jsonStr);
+
+  const data: BenchmarkData = JSON.parse(fs.readFileSync(jsonFile, 'utf-8'));
+  const validator = data.compareValidator;
+  const validatorName = validatorLinks[validator] || validator;
 
   const drafts = ['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'];
   const lines: string[] = [];
-
-  const validatorName = validatorLinks[validatorKey] || validator;
 
   lines.push(`# tjs vs ${validator} Benchmarks`);
   lines.push('');
   lines.push(
     `Performance comparison of **tjs** vs **${validatorName}** using the official [JSON Schema Test Suite](https://github.com/json-schema-org/JSON-Schema-Test-Suite).`
+  );
+  lines.push('');
+
+  // Methodology note
+  lines.push('## Methodology');
+  lines.push('');
+  lines.push(
+    'We only benchmark test files where **both** validators pass **all** tests in that file. ' +
+      'This ensures we compare actual validation performance, not no-op functions that return early due to unsupported features. ' +
+      'Files where either validator fails any test are excluded from performance metrics but still counted for compliance.'
   );
   lines.push('');
 
@@ -158,11 +146,10 @@ function main() {
         tjsNsSum += r.tjs.nsPerTest * r.testCount;
       }
       // Other validator: only count if all tests pass
-      const otherStats = r[validatorKey];
-      if (otherStats.fail === 0 && otherStats.nsPerTest > 0) {
+      if (r.other.fail === 0 && r.other.nsPerTest > 0) {
         otherFiles++;
         otherTests += r.testCount;
-        otherNsSum += otherStats.nsPerTest * r.testCount;
+        otherNsSum += r.other.nsPerTest * r.testCount;
       }
     }
 
@@ -201,9 +188,7 @@ function main() {
   lines.push('');
 
   // Head-to-head section
-  const h2hKey =
-    `tjsVs${validator.charAt(0).toUpperCase()}${validator.slice(1)}` as keyof typeof data.headToHead;
-  const h2h = data.headToHead[h2hKey];
+  const h2h = data.headToHead;
 
   if (h2h) {
     lines.push('## Head-to-Head Performance');
@@ -233,14 +218,15 @@ function main() {
     lines.push('|------|------:|----:|----------:|----:|----------:|-----:|');
 
     for (const r of draftResults) {
-      const other = r[validatorKey];
       // Only show ops/s if all tests pass
       const tjsOps = r.tjs.fail === 0 ? formatOpsPerSec(r.tjs.nsPerTest) : '-';
-      const otherOps = other.fail === 0 ? formatOpsPerSec(other.nsPerTest) : '-';
+      const otherOps = r.other.fail === 0 ? formatOpsPerSec(r.other.nsPerTest) : '-';
       const diff =
-        r.tjs.fail === 0 && other.fail === 0 ? formatDiff(r.tjs.nsPerTest, other.nsPerTest) : '-';
+        r.tjs.fail === 0 && r.other.fail === 0
+          ? formatDiff(r.tjs.nsPerTest, r.other.nsPerTest)
+          : '-';
       const tjsStatus = r.tjs.fail === 0 ? '✅' : `⚠️ ${r.tjs.fail} fail`;
-      const otherStatus = other.fail === 0 ? '✅' : `⚠️ ${other.fail} fail`;
+      const otherStatus = r.other.fail === 0 ? '✅' : `⚠️ ${r.other.fail} fail`;
       lines.push(
         `| ${r.file} | ${r.testCount} | ${tjsStatus} | ${tjsOps} | ${otherStatus} | ${otherOps} | ${diff} |`
       );

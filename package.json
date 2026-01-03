@@ -35,11 +35,9 @@
     "format:check": "prettier --check .",
     "prepare": "husky",
     "bench": "tsx benchmarks/bench.ts",
-    "bench:ajv": "tsx benchmarks/bench.ts -v ajv",
-    "bench:zod": "tsx benchmarks/bench.ts -v zod",
-    "bench:joi": "tsx benchmarks/bench.ts -v joi",
-    "bench:json": "tsx benchmarks/bench.ts --json",
-    "bench:update-svg": "npm run bench:json | tsx benchmarks/update-svg.ts"
+    "bench:ajv": "tsx benchmarks/bench.ts -v ajv --json benchmarks/results/ajv.json && tsx benchmarks/json-to-markdown.ts benchmarks/results/ajv.json > benchmarks/results/BENCHMARK_AJV.md",
+    "bench:zod": "tsx benchmarks/bench.ts -v zod --json benchmarks/results/zod.json && tsx benchmarks/json-to-markdown.ts benchmarks/results/zod.json > benchmarks/results/BENCHMARK_ZOD.md",
+    "bench:joi": "tsx benchmarks/bench.ts -v joi --json benchmarks/results/joi.json && tsx benchmarks/json-to-markdown.ts benchmarks/results/joi.json > benchmarks/results/BENCHMARK_JOI.md"
   },
   "keywords": [
     "json-schema",

@@ -1,0 +1,4256 @@
+{
+  "compareValidator": "ajv",
+  "results": [
+    {
+      "draft": "draft4",
+      "file": "additionalItems.json",
+      "testCount": 17,
+      "tjs": {
+        "nsPerTest": 14.615521599264707,
+        "pass": 17,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 17.926987591911764,
+        "pass": 17,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "additionalProperties.json",
+      "testCount": 16,
+      "tjs": {
+        "nsPerTest": 23.8037109375,
+        "pass": 16,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 34.515380859375,
+        "pass": 16,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "allOf.json",
+      "testCount": 27,
+      "tjs": {
+        "nsPerTest": 20.255759910300927,
+        "pass": 27,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 36.709255642361114,
+        "pass": 27,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "anyOf.json",
+      "testCount": 15,
+      "tjs": {
+        "nsPerTest": 18.447542317708333,
+        "pass": 15,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 26.073551432291666,
+        "pass": 15,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "default.json",
+      "testCount": 7,
+      "tjs": {
+        "nsPerTest": 15.890938895089286,
+        "pass": 7,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 16.902378627232142,
+        "pass": 7,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "dependencies.json",
+      "testCount": 29,
+      "tjs": {
+        "nsPerTest": 25.817172346443964,
+        "pass": 29,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 23.04182381465517,
+        "pass": 29,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "enum.json",
+      "testCount": 49,
+      "tjs": {
+        "nsPerTest": 39.39258808992347,
+        "pass": 49,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 27.948077766262756,
+        "pass": 49,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "format.json",
+      "testCount": 36,
+      "tjs": {
+        "nsPerTest": 12.84366183810764,
+        "pass": 36,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 13.928731282552084,
+        "pass": 36,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "infinite-loop-detection.json",
+      "testCount": 2,
+      "tjs": {
+        "nsPerTest": 20.49755859375,
+        "pass": 2,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 21.49462890625,
+        "pass": 2,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "items.json",
+      "testCount": 21,
+      "tjs": {
+        "nsPerTest": 27.425130208333332,
+        "pass": 21,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 29.306570870535715,
+        "pass": 21,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "maxItems.json",
+      "testCount": 4,
+      "tjs": {
+        "nsPerTest": 14.287353515625,
+        "pass": 4,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 15.655517578125,
+        "pass": 4,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "maxLength.json",
+      "testCount": 5,
+      "tjs": {
+        "nsPerTest": 15.747070312406867,
+        "pass": 5,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 16.994238281343133,
+        "pass": 5,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "maxProperties.json",
+      "testCount": 8,
+      "tjs": {
+        "nsPerTest": 18.998443603573833,
+        "pass": 8,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 20.137786865176167,
+        "pass": 8,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "maximum.json",
+      "testCount": 8,
+      "tjs": {
+        "nsPerTest": 14.50982666015625,
+        "pass": 14,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 16.48712158203125,
+        "pass": 8,
+        "fail": 6
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "minItems.json",
+      "testCount": 4,
+      "tjs": {
+        "nsPerTest": 14.27972412109375,
+        "pass": 4,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 15.31475830078125,
+        "pass": 4,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "minLength.json",
+      "testCount": 5,
+      "tjs": {
+        "nsPerTest": 16.90673828125,
+        "pass": 5,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.1884765625,
+        "pass": 5,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "minProperties.json",
+      "testCount": 6,
+      "tjs": {
+        "nsPerTest": 16.393025716145832,
+        "pass": 6,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 17.735799153645832,
+        "pass": 6,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "minimum.json",
+      "testCount": 11,
+      "tjs": {
+        "nsPerTest": 13.85498046875,
+        "pass": 17,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 15.632412997159092,
+        "pass": 11,
+        "fail": 6
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "multipleOf.json",
+      "testCount": 10,
+      "tjs": {
+        "nsPerTest": 14.832568359375,
+        "pass": 10,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 35.2529052734375,
+        "pass": 10,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "not.json",
+      "testCount": 20,
+      "tjs": {
+        "nsPerTest": 18.34156494140625,
+        "pass": 20,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 19.69249267578125,
+        "pass": 20,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "oneOf.json",
+      "testCount": 23,
+      "tjs": {
+        "nsPerTest": 20.756368885869566,
+        "pass": 23,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 29.679008152173914,
+        "pass": 23,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "pattern.json",
+      "testCount": 9,
+      "tjs": {
+        "nsPerTest": 17.74880642361111,
+        "pass": 9,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.01443142361111,
+        "pass": 9,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "patternProperties.json",
+      "testCount": 18,
+      "tjs": {
+        "nsPerTest": 40.739841037326386,
+        "pass": 18,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 65.30536566840277,
+        "pass": 18,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "properties.json",
+      "testCount": 17,
+      "tjs": {
+        "nsPerTest": 27.21090877757353,
+        "pass": 24,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 46.526740579044116,
+        "pass": 23,
+        "fail": 1
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "ref.json",
+      "testCount": 26,
+      "tjs": {
+        "nsPerTest": 24.23291954627404,
+        "pass": 45,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 24.312725360576923,
+        "pass": 28,
+        "fail": 17
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "refRemote.json",
+      "testCount": 6,
+      "tjs": {
+        "nsPerTest": 20.053466796875,
+        "pass": 17,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 16.793131510416668,
+        "pass": 6,
+        "fail": 11
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "required.json",
+      "testCount": 8,
+      "tjs": {
+        "nsPerTest": 15.059173583984375,
+        "pass": 15,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 16.96014404296875,
+        "pass": 11,
+        "fail": 4
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "type.json",
+      "testCount": 79,
+      "tjs": {
+        "nsPerTest": 18.546831734572784,
+        "pass": 79,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 19.785690887064874,
+        "pass": 79,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "uniqueItems.json",
+      "testCount": 69,
+      "tjs": {
+        "nsPerTest": 37.64748570538949,
+        "pass": 69,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 44.23161868772645,
+        "pass": 69,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "optional/bignum.json",
+      "testCount": 7,
+      "tjs": {
+        "nsPerTest": 14.662946428571429,
+        "pass": 9,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 32.020193917410715,
+        "pass": 7,
+        "fail": 2
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "optional/ecmascript-regex.json",
+      "testCount": 74,
+      "tjs": {
+        "nsPerTest": 39.966480152027025,
+        "pass": 74,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 39.392419763513516,
+        "pass": 74,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "optional/format/date-time.json",
+      "testCount": 26,
+      "tjs": {
+        "nsPerTest": 41.29145695612981,
+        "pass": 26,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 214.62621131310095,
+        "pass": 26,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "optional/format/email.json",
+      "testCount": 17,
+      "tjs": {
+        "nsPerTest": 47.534423828125,
+        "pass": 17,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 36.288990693933826,
+        "pass": 17,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "optional/format/ipv4.json",
+      "testCount": 16,
+      "tjs": {
+        "nsPerTest": 23.996353149414062,
+        "pass": 16,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 26.091888427734375,
+        "pass": 16,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "optional/format/ipv6.json",
+      "testCount": 40,
+      "tjs": {
+        "nsPerTest": 67.83370971679688,
+        "pass": 40,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 226.94345703125,
+        "pass": 40,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "optional/format/unknown.json",
+      "testCount": 7,
+      "tjs": {
+        "nsPerTest": 10.596888950892858,
+        "pass": 7,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 13.811383928571429,
+        "pass": 7,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "optional/format/uri.json",
+      "testCount": 36,
+      "tjs": {
+        "nsPerTest": 119.1612548828125,
+        "pass": 36,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 167.90997314453125,
+        "pass": 36,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft4",
+      "file": "optional/non-bmp-regex.json",
+      "testCount": 12,
+      "tjs": {
+        "nsPerTest": 35.745402018229164,
+        "pass": 12,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 52.26898193359375,
+        "pass": 12,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "additionalItems.json",
+      "testCount": 19,
+      "tjs": {
+        "nsPerTest": 16.171104029605264,
+        "pass": 19,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 19.01084498355263,
+        "pass": 19,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "additionalProperties.json",
+      "testCount": 16,
+      "tjs": {
+        "nsPerTest": 24.485916137695312,
+        "pass": 16,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 33.908843994140625,
+        "pass": 16,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "allOf.json",
+      "testCount": 30,
+      "tjs": {
+        "nsPerTest": 20.604109700520834,
+        "pass": 30,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 34.87073567708333,
+        "pass": 30,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "anyOf.json",
+      "testCount": 18,
+      "tjs": {
+        "nsPerTest": 17.26955837673611,
+        "pass": 18,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 25.019327799479168,
+        "pass": 18,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "boolean_schema.json",
+      "testCount": 18,
+      "tjs": {
+        "nsPerTest": 16.374376085069443,
+        "pass": 18,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.055677625868057,
+        "pass": 18,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "const.json",
+      "testCount": 54,
+      "tjs": {
+        "nsPerTest": 32.58674225985521,
+        "pass": 54,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 31.63523582175926,
+        "pass": 54,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "contains.json",
+      "testCount": 19,
+      "tjs": {
+        "nsPerTest": 32.47819438738454,
+        "pass": 19,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 45.94930869644802,
+        "pass": 19,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "default.json",
+      "testCount": 7,
+      "tjs": {
+        "nsPerTest": 15.799386160714286,
+        "pass": 7,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 16.95326450906162,
+        "pass": 7,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "definitions.json",
+      "testCount": 2,
+      "tjs": {
+        "nsPerTest": 58.771728515625,
+        "pass": 2,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 459.27429199172184,
+        "pass": 2,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "dependencies.json",
+      "testCount": 36,
+      "tjs": {
+        "nsPerTest": 23.8746337890625,
+        "pass": 36,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 21.983113606770832,
+        "pass": 36,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "enum.json",
+      "testCount": 45,
+      "tjs": {
+        "nsPerTest": 39.28335503472222,
+        "pass": 45,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 28.567616102430556,
+        "pass": 45,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "exclusiveMaximum.json",
+      "testCount": 4,
+      "tjs": {
+        "nsPerTest": 15.70892333984375,
+        "pass": 4,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 17.07708740234375,
+        "pass": 4,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "exclusiveMinimum.json",
+      "testCount": 4,
+      "tjs": {
+        "nsPerTest": 15.98101806640625,
+        "pass": 4,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 17.5933837890625,
+        "pass": 4,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "format.json",
+      "testCount": 54,
+      "tjs": {
+        "nsPerTest": 13.23351146556713,
+        "pass": 54,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 14.021131727430555,
+        "pass": 54,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "infinite-loop-detection.json",
+      "testCount": 2,
+      "tjs": {
+        "nsPerTest": 22.6033935546875,
+        "pass": 2,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 23.9461669921875,
+        "pass": 2,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "items.json",
+      "testCount": 28,
+      "tjs": {
+        "nsPerTest": 27.079990931919642,
+        "pass": 28,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 25.9097900390625,
+        "pass": 28,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "maxItems.json",
+      "testCount": 6,
+      "tjs": {
+        "nsPerTest": 16.78466796875,
+        "pass": 6,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 16.381144205729168,
+        "pass": 6,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "maxLength.json",
+      "testCount": 7,
+      "tjs": {
+        "nsPerTest": 19.47314453125,
+        "pass": 7,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 17.778669084821427,
+        "pass": 7,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "maxProperties.json",
+      "testCount": 10,
+      "tjs": {
+        "nsPerTest": 21.3104248046875,
+        "pass": 10,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 20.7855224609375,
+        "pass": 10,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "maximum.json",
+      "testCount": 8,
+      "tjs": {
+        "nsPerTest": 14.255523681640625,
+        "pass": 8,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 15.906005859375,
+        "pass": 8,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "minItems.json",
+      "testCount": 6,
+      "tjs": {
+        "nsPerTest": 16.718546549479168,
+        "pass": 6,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 16.323527018229168,
+        "pass": 6,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "minLength.json",
+      "testCount": 7,
+      "tjs": {
+        "nsPerTest": 20.013706752232142,
+        "pass": 7,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.192836216517858,
+        "pass": 7,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "minProperties.json",
+      "testCount": 8,
+      "tjs": {
+        "nsPerTest": 19.971221923828125,
+        "pass": 8,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.890380859375,
+        "pass": 8,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "minimum.json",
+      "testCount": 11,
+      "tjs": {
+        "nsPerTest": 13.937300248579545,
+        "pass": 11,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 15.453901811079545,
+        "pass": 11,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "multipleOf.json",
+      "testCount": 10,
+      "tjs": {
+        "nsPerTest": 14.769482421875,
+        "pass": 10,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 34.5428466796875,
+        "pass": 10,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "not.json",
+      "testCount": 38,
+      "tjs": {
+        "nsPerTest": 18.26316431949013,
+        "pass": 38,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.897878546463815,
+        "pass": 38,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "oneOf.json",
+      "testCount": 27,
+      "tjs": {
+        "nsPerTest": 20.48783817997685,
+        "pass": 27,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 30.10276511863426,
+        "pass": 27,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "pattern.json",
+      "testCount": 9,
+      "tjs": {
+        "nsPerTest": 18.058485243055557,
+        "pass": 9,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.70952690972222,
+        "pass": 9,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "patternProperties.json",
+      "testCount": 23,
+      "tjs": {
+        "nsPerTest": 41.81704313858695,
+        "pass": 23,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 86.0073772927989,
+        "pass": 23,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "properties.json",
+      "testCount": 21,
+      "tjs": {
+        "nsPerTest": 25.750058128720237,
+        "pass": 28,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 36.956298828125,
+        "pass": 27,
+        "fail": 1
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "propertyNames.json",
+      "testCount": 20,
+      "tjs": {
+        "nsPerTest": 22.842919921875,
+        "pass": 20,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 26.949560546875,
+        "pass": 20,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "ref.json",
+      "testCount": 65,
+      "tjs": {
+        "nsPerTest": 28.790125450721153,
+        "pass": 70,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 31.46033653846154,
+        "pass": 67,
+        "fail": 3
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "refRemote.json",
+      "testCount": 23,
+      "tjs": {
+        "nsPerTest": 23.12170940896739,
+        "pass": 23,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 26.81478218410326,
+        "pass": 23,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "required.json",
+      "testCount": 9,
+      "tjs": {
+        "nsPerTest": 14.699300130208334,
+        "pass": 16,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 16.618516710069443,
+        "pass": 12,
+        "fail": 4
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "type.json",
+      "testCount": 80,
+      "tjs": {
+        "nsPerTest": 18.76068115234375,
+        "pass": 80,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 19.36213073730469,
+        "pass": 80,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "uniqueItems.json",
+      "testCount": 69,
+      "tjs": {
+        "nsPerTest": 38.007359601449274,
+        "pass": 69,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 43.88811282835145,
+        "pass": 69,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "optional/bignum.json",
+      "testCount": 9,
+      "tjs": {
+        "nsPerTest": 15.820556640625,
+        "pass": 9,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 30.38872612847222,
+        "pass": 9,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "optional/ecmascript-regex.json",
+      "testCount": 74,
+      "tjs": {
+        "nsPerTest": 39.29481630067568,
+        "pass": 74,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 38.418057828336146,
+        "pass": 74,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "optional/format/date-time.json",
+      "testCount": 26,
+      "tjs": {
+        "nsPerTest": 44.15111365685096,
+        "pass": 26,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 214.89304762620193,
+        "pass": 26,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "optional/format/email.json",
+      "testCount": 17,
+      "tjs": {
+        "nsPerTest": 55.41812672334559,
+        "pass": 17,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 37.22246955422794,
+        "pass": 17,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "optional/format/ipv4.json",
+      "testCount": 16,
+      "tjs": {
+        "nsPerTest": 28.811767578125,
+        "pass": 16,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 26.46002197265625,
+        "pass": 16,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "optional/format/ipv6.json",
+      "testCount": 40,
+      "tjs": {
+        "nsPerTest": 71.41367797851562,
+        "pass": 40,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 227.73411865234374,
+        "pass": 40,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "optional/format/json-pointer.json",
+      "testCount": 38,
+      "tjs": {
+        "nsPerTest": 33.83248098273026,
+        "pass": 38,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 32.82727693256579,
+        "pass": 38,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "optional/format/unknown.json",
+      "testCount": 7,
+      "tjs": {
+        "nsPerTest": 10.788678850446429,
+        "pass": 7,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 13.837541852678571,
+        "pass": 7,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "optional/format/uri-reference.json",
+      "testCount": 15,
+      "tjs": {
+        "nsPerTest": 83.221435546875,
+        "pass": 15,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 81.53211263020833,
+        "pass": 15,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "optional/format/uri-template.json",
+      "testCount": 10,
+      "tjs": {
+        "nsPerTest": 52.5970458984375,
+        "pass": 10,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 55.5958984375,
+        "pass": 10,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "optional/format/uri.json",
+      "testCount": 36,
+      "tjs": {
+        "nsPerTest": 120.50855170355902,
+        "pass": 36,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 172.1163126627604,
+        "pass": 36,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "optional/id.json",
+      "testCount": 7,
+      "tjs": {
+        "nsPerTest": 29.60205078125,
+        "pass": 7,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 70.22823660714286,
+        "pass": 7,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft6",
+      "file": "optional/non-bmp-regex.json",
+      "testCount": 12,
+      "tjs": {
+        "nsPerTest": 34.930765787760414,
+        "pass": 12,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 44.63958740234375,
+        "pass": 12,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "additionalItems.json",
+      "testCount": 19,
+      "tjs": {
+        "nsPerTest": 16.14755088404605,
+        "pass": 19,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 24.332686574835527,
+        "pass": 19,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "additionalProperties.json",
+      "testCount": 16,
+      "tjs": {
+        "nsPerTest": 24.658843994140625,
+        "pass": 16,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 34.14790344238281,
+        "pass": 16,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "allOf.json",
+      "testCount": 30,
+      "tjs": {
+        "nsPerTest": 20.674983723958334,
+        "pass": 30,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 36.3861083984375,
+        "pass": 30,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "anyOf.json",
+      "testCount": 18,
+      "tjs": {
+        "nsPerTest": 17.61599392361111,
+        "pass": 18,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 25.72292751736111,
+        "pass": 18,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "boolean_schema.json",
+      "testCount": 18,
+      "tjs": {
+        "nsPerTest": 17.353759765625,
+        "pass": 18,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.693155924479168,
+        "pass": 18,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "const.json",
+      "testCount": 54,
+      "tjs": {
+        "nsPerTest": 35.101621274594905,
+        "pass": 54,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 31.83624041521991,
+        "pass": 54,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "contains.json",
+      "testCount": 21,
+      "tjs": {
+        "nsPerTest": 46.131429036458336,
+        "pass": 21,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 43.509347098214285,
+        "pass": 21,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "default.json",
+      "testCount": 7,
+      "tjs": {
+        "nsPerTest": 15.978131975446429,
+        "pass": 7,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 17.560686383928573,
+        "pass": 7,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "definitions.json",
+      "testCount": 2,
+      "tjs": {
+        "nsPerTest": 60.11962890625,
+        "pass": 2,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 486.9283447265625,
+        "pass": 2,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "dependencies.json",
+      "testCount": 36,
+      "tjs": {
+        "nsPerTest": 24.56749810112847,
+        "pass": 36,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 22.511800130208332,
+        "pass": 36,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "enum.json",
+      "testCount": 45,
+      "tjs": {
+        "nsPerTest": 39.699755859375,
+        "pass": 45,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 28.590901692708332,
+        "pass": 45,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "exclusiveMaximum.json",
+      "testCount": 4,
+      "tjs": {
+        "nsPerTest": 16.41595458984375,
+        "pass": 4,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 17.0771484375,
+        "pass": 4,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "exclusiveMinimum.json",
+      "testCount": 4,
+      "tjs": {
+        "nsPerTest": 15.96832275390625,
+        "pass": 4,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 17.2882080078125,
+        "pass": 4,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "format.json",
+      "testCount": 102,
+      "tjs": {
+        "nsPerTest": 14.12485160079657,
+        "pass": 102,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 13.75864066329657,
+        "pass": 102,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "if-then-else.json",
+      "testCount": 26,
+      "tjs": {
+        "nsPerTest": 15.29204852764423,
+        "pass": 26,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 20.776216947115383,
+        "pass": 26,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "infinite-loop-detection.json",
+      "testCount": 2,
+      "tjs": {
+        "nsPerTest": 22.7203369140625,
+        "pass": 2,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 24.7955322265625,
+        "pass": 2,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "items.json",
+      "testCount": 28,
+      "tjs": {
+        "nsPerTest": 24.975367954799108,
+        "pass": 28,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 26.040213448660715,
+        "pass": 28,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "maxItems.json",
+      "testCount": 6,
+      "tjs": {
+        "nsPerTest": 16.6015625,
+        "pass": 6,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 16.354044596354168,
+        "pass": 6,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "maxLength.json",
+      "testCount": 7,
+      "tjs": {
+        "nsPerTest": 19.335065569196427,
+        "pass": 7,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.040248325892858,
+        "pass": 7,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "maxProperties.json",
+      "testCount": 10,
+      "tjs": {
+        "nsPerTest": 24.524951171875,
+        "pass": 10,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 22.75390625,
+        "pass": 10,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "maximum.json",
+      "testCount": 8,
+      "tjs": {
+        "nsPerTest": 14.05078125,
+        "pass": 8,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 15.9912109375,
+        "pass": 8,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "minItems.json",
+      "testCount": 6,
+      "tjs": {
+        "nsPerTest": 16.6473388671875,
+        "pass": 6,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 16.29638671875,
+        "pass": 6,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "minLength.json",
+      "testCount": 7,
+      "tjs": {
+        "nsPerTest": 19.920724051339285,
+        "pass": 7,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.223353794642858,
+        "pass": 7,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "minProperties.json",
+      "testCount": 8,
+      "tjs": {
+        "nsPerTest": 20.098358154296875,
+        "pass": 8,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.671661376953125,
+        "pass": 8,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "minimum.json",
+      "testCount": 11,
+      "tjs": {
+        "nsPerTest": 13.976118607954545,
+        "pass": 11,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 15.487215909090908,
+        "pass": 11,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "multipleOf.json",
+      "testCount": 10,
+      "tjs": {
+        "nsPerTest": 14.8406982421875,
+        "pass": 10,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 35.48076171875,
+        "pass": 10,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "not.json",
+      "testCount": 38,
+      "tjs": {
+        "nsPerTest": 18.246029502467106,
+        "pass": 38,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.84888980263158,
+        "pass": 38,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "oneOf.json",
+      "testCount": 27,
+      "tjs": {
+        "nsPerTest": 20.075294777199073,
+        "pass": 27,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 29.909107349537038,
+        "pass": 27,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "pattern.json",
+      "testCount": 9,
+      "tjs": {
+        "nsPerTest": 17.587158203125,
+        "pass": 9,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.605550130208332,
+        "pass": 9,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "patternProperties.json",
+      "testCount": 23,
+      "tjs": {
+        "nsPerTest": 45.86747409986413,
+        "pass": 23,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 66.73796280570652,
+        "pass": 23,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "properties.json",
+      "testCount": 21,
+      "tjs": {
+        "nsPerTest": 25.997105189732142,
+        "pass": 28,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 37.34624953497024,
+        "pass": 27,
+        "fail": 1
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "propertyNames.json",
+      "testCount": 20,
+      "tjs": {
+        "nsPerTest": 22.9375244140625,
+        "pass": 20,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 51.129150390625,
+        "pass": 20,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "ref.json",
+      "testCount": 73,
+      "tjs": {
+        "nsPerTest": 26.199967893835616,
+        "pass": 78,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 31.933791069135275,
+        "pass": 75,
+        "fail": 3
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "refRemote.json",
+      "testCount": 23,
+      "tjs": {
+        "nsPerTest": 32.88070015285326,
+        "pass": 23,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 27.626815132472824,
+        "pass": 23,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "required.json",
+      "testCount": 9,
+      "tjs": {
+        "nsPerTest": 14.95700412326389,
+        "pass": 16,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 17.04351128472222,
+        "pass": 12,
+        "fail": 4
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "type.json",
+      "testCount": 80,
+      "tjs": {
+        "nsPerTest": 19.34814453125,
+        "pass": 80,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 20.827230834937655,
+        "pass": 80,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "uniqueItems.json",
+      "testCount": 69,
+      "tjs": {
+        "nsPerTest": 37.99246702337827,
+        "pass": 69,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 44.45968849066159,
+        "pass": 69,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "optional/bignum.json",
+      "testCount": 9,
+      "tjs": {
+        "nsPerTest": 16.86943901889026,
+        "pass": 9,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 30.82953559048474,
+        "pass": 9,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "optional/ecmascript-regex.json",
+      "testCount": 74,
+      "tjs": {
+        "nsPerTest": 40.019267314189186,
+        "pass": 74,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 38.55387589738176,
+        "pass": 74,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "optional/format/date-time.json",
+      "testCount": 26,
+      "tjs": {
+        "nsPerTest": 40.97649676983173,
+        "pass": 26,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 214.11407001201923,
+        "pass": 26,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "optional/format/date.json",
+      "testCount": 48,
+      "tjs": {
+        "nsPerTest": 100.1241455078125,
+        "pass": 48,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 100.68491109212239,
+        "pass": 48,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "optional/format/email.json",
+      "testCount": 17,
+      "tjs": {
+        "nsPerTest": 49.270924287683826,
+        "pass": 17,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 36.7712833180147,
+        "pass": 17,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "optional/format/ipv4.json",
+      "testCount": 16,
+      "tjs": {
+        "nsPerTest": 25.573089599609375,
+        "pass": 16,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 26.229217529296875,
+        "pass": 16,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "optional/format/ipv6.json",
+      "testCount": 40,
+      "tjs": {
+        "nsPerTest": 69.77081298828125,
+        "pass": 40,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 229.40826416015625,
+        "pass": 40,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "optional/format/json-pointer.json",
+      "testCount": 38,
+      "tjs": {
+        "nsPerTest": 32.9790617290296,
+        "pass": 38,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 33.941701788651315,
+        "pass": 38,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "optional/format/regex.json",
+      "testCount": 8,
+      "tjs": {
+        "nsPerTest": 14.400482177734375,
+        "pass": 8,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 770.8994445800781,
+        "pass": 8,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "optional/format/relative-json-pointer.json",
+      "testCount": 18,
+      "tjs": {
+        "nsPerTest": 26.293714735243057,
+        "pass": 18,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 27.781168619791668,
+        "pass": 18,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "optional/format/time.json",
+      "testCount": 46,
+      "tjs": {
+        "nsPerTest": 120.1934814453125,
+        "pass": 46,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 127.58603303328805,
+        "pass": 46,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "optional/format/unknown.json",
+      "testCount": 7,
+      "tjs": {
+        "nsPerTest": 10.906389508928571,
+        "pass": 7,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 13.809919084821429,
+        "pass": 7,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "optional/format/uri-reference.json",
+      "testCount": 15,
+      "tjs": {
+        "nsPerTest": 82.54191080729167,
+        "pass": 15,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 82.33439127604167,
+        "pass": 15,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "optional/format/uri-template.json",
+      "testCount": 10,
+      "tjs": {
+        "nsPerTest": 51.0141845703125,
+        "pass": 10,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 51.1383056640625,
+        "pass": 10,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "optional/format/uri.json",
+      "testCount": 36,
+      "tjs": {
+        "nsPerTest": 118.31637234157986,
+        "pass": 36,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 168.66048177083334,
+        "pass": 36,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "optional/id.json",
+      "testCount": 7,
+      "tjs": {
+        "nsPerTest": 34.74644252232143,
+        "pass": 7,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 34.633091517857146,
+        "pass": 7,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft7",
+      "file": "optional/non-bmp-regex.json",
+      "testCount": 12,
+      "tjs": {
+        "nsPerTest": 35.033345540364586,
+        "pass": 12,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 47.358194986979164,
+        "pass": 12,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "additionalItems.json",
+      "testCount": 19,
+      "tjs": {
+        "nsPerTest": 26.435713918585527,
+        "pass": 19,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.11459189967105,
+        "pass": 19,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "additionalProperties.json",
+      "testCount": 21,
+      "tjs": {
+        "nsPerTest": 35.797119140625,
+        "pass": 21,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 36.066929408482146,
+        "pass": 21,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "allOf.json",
+      "testCount": 30,
+      "tjs": {
+        "nsPerTest": 30.384651692708335,
+        "pass": 30,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 34.4455322265625,
+        "pass": 30,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "anchor.json",
+      "testCount": 8,
+      "tjs": {
+        "nsPerTest": 30.17425537109375,
+        "pass": 8,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 16.3447265625,
+        "pass": 8,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "anyOf.json",
+      "testCount": 18,
+      "tjs": {
+        "nsPerTest": 28.192586263020832,
+        "pass": 18,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 27.308702256944443,
+        "pass": 18,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "boolean_schema.json",
+      "testCount": 18,
+      "tjs": {
+        "nsPerTest": 27.514417860243057,
+        "pass": 18,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.010457356770832,
+        "pass": 18,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "const.json",
+      "testCount": 54,
+      "tjs": {
+        "nsPerTest": 44.414754231770836,
+        "pass": 54,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 31.227204499421298,
+        "pass": 54,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "contains.json",
+      "testCount": 21,
+      "tjs": {
+        "nsPerTest": 42.728004092261905,
+        "pass": 21,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 42.35791015625,
+        "pass": 21,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "content.json",
+      "testCount": 18,
+      "tjs": {
+        "nsPerTest": 21.581583658854168,
+        "pass": 18,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 13.318657769097221,
+        "pass": 18,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "default.json",
+      "testCount": 7,
+      "tjs": {
+        "nsPerTest": 25.865827287946427,
+        "pass": 7,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 16.674211774553573,
+        "pass": 7,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "defs.json",
+      "testCount": 2,
+      "tjs": {
+        "nsPerTest": 370.9869384765625,
+        "pass": 2,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 781.3262939453125,
+        "pass": 2,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "dependentRequired.json",
+      "testCount": 20,
+      "tjs": {
+        "nsPerTest": 28.43475341796875,
+        "pass": 20,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.43160400390625,
+        "pass": 20,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "dependentSchemas.json",
+      "testCount": 20,
+      "tjs": {
+        "nsPerTest": 30.2337646484375,
+        "pass": 20,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 20.90810546875,
+        "pass": 20,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "enum.json",
+      "testCount": 45,
+      "tjs": {
+        "nsPerTest": 50.514507378472224,
+        "pass": 45,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 29.380067274305556,
+        "pass": 45,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "exclusiveMaximum.json",
+      "testCount": 4,
+      "tjs": {
+        "nsPerTest": 26.611328125,
+        "pass": 4,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 15.9632568359375,
+        "pass": 4,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "exclusiveMinimum.json",
+      "testCount": 4,
+      "tjs": {
+        "nsPerTest": 26.5655517578125,
+        "pass": 4,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 17.107666015625,
+        "pass": 4,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "format.json",
+      "testCount": 114,
+      "tjs": {
+        "nsPerTest": 21.097819010416668,
+        "pass": 114,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 14.081988418311404,
+        "pass": 114,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "if-then-else.json",
+      "testCount": 26,
+      "tjs": {
+        "nsPerTest": 27.384051983173077,
+        "pass": 26,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.231126051682693,
+        "pass": 26,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "infinite-loop-detection.json",
+      "testCount": 2,
+      "tjs": {
+        "nsPerTest": 30.863525390625,
+        "pass": 2,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 21.7132568359375,
+        "pass": 2,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "items.json",
+      "testCount": 28,
+      "tjs": {
+        "nsPerTest": 34.29339599609375,
+        "pass": 28,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 26.051112583705358,
+        "pass": 28,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "maxContains.json",
+      "testCount": 12,
+      "tjs": {
+        "nsPerTest": 32.8216552734375,
+        "pass": 12,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 22.133707682291668,
+        "pass": 12,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "maxItems.json",
+      "testCount": 6,
+      "tjs": {
+        "nsPerTest": 23.56298828125,
+        "pass": 6,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 16.233642578125,
+        "pass": 6,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "maxLength.json",
+      "testCount": 7,
+      "tjs": {
+        "nsPerTest": 25.899239676339285,
+        "pass": 7,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 17.595563616071427,
+        "pass": 7,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "maxProperties.json",
+      "testCount": 10,
+      "tjs": {
+        "nsPerTest": 30.577587890625,
+        "pass": 10,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 20.53935546875,
+        "pass": 10,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "maximum.json",
+      "testCount": 8,
+      "tjs": {
+        "nsPerTest": 23.680389404296875,
+        "pass": 8,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 15.730560302734375,
+        "pass": 8,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "minContains.json",
+      "testCount": 28,
+      "tjs": {
+        "nsPerTest": 33.443638392857146,
+        "pass": 28,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 20.323250906808035,
+        "pass": 28,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "minItems.json",
+      "testCount": 6,
+      "tjs": {
+        "nsPerTest": 23.406982421875,
+        "pass": 6,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 16.2506103515625,
+        "pass": 6,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "minLength.json",
+      "testCount": 7,
+      "tjs": {
+        "nsPerTest": 27.523960658482142,
+        "pass": 7,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.181222098214285,
+        "pass": 7,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "minProperties.json",
+      "testCount": 8,
+      "tjs": {
+        "nsPerTest": 29.28924560546875,
+        "pass": 8,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.63604736328125,
+        "pass": 8,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "minimum.json",
+      "testCount": 11,
+      "tjs": {
+        "nsPerTest": 28.099298650568183,
+        "pass": 11,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 15.341108842329545,
+        "pass": 11,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "multipleOf.json",
+      "testCount": 10,
+      "tjs": {
+        "nsPerTest": 27.47802734375,
+        "pass": 10,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 34.78291015625,
+        "pass": 10,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "not.json",
+      "testCount": 40,
+      "tjs": {
+        "nsPerTest": 29.080706787109374,
+        "pass": 40,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 23.898822021484374,
+        "pass": 40,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "oneOf.json",
+      "testCount": 27,
+      "tjs": {
+        "nsPerTest": 31.652000144675927,
+        "pass": 27,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 31.27787724247685,
+        "pass": 27,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "pattern.json",
+      "testCount": 9,
+      "tjs": {
+        "nsPerTest": 30.589925130208332,
+        "pass": 9,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.211073133680557,
+        "pass": 9,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "patternProperties.json",
+      "testCount": 23,
+      "tjs": {
+        "nsPerTest": 51.85998004415761,
+        "pass": 23,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 97.24094556725544,
+        "pass": 23,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "properties.json",
+      "testCount": 21,
+      "tjs": {
+        "nsPerTest": 36.410377139136905,
+        "pass": 28,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 39.08622814360119,
+        "pass": 27,
+        "fail": 1
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "propertyNames.json",
+      "testCount": 20,
+      "tjs": {
+        "nsPerTest": 34.024560546875,
+        "pass": 20,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 27.03399658203125,
+        "pass": 20,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "recursiveRef.json",
+      "testCount": 31,
+      "tjs": {
+        "nsPerTest": 119.09205676663306,
+        "pass": 34,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 214.40435987903226,
+        "pass": 32,
+        "fail": 2
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "ref.json",
+      "testCount": 73,
+      "tjs": {
+        "nsPerTest": 47.04124304366438,
+        "pass": 81,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 40.42798520440925,
+        "pass": 73,
+        "fail": 8
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "refRemote.json",
+      "testCount": 31,
+      "tjs": {
+        "nsPerTest": 36.572525516633064,
+        "pass": 31,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 25.723034274193548,
+        "pass": 31,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "required.json",
+      "testCount": 9,
+      "tjs": {
+        "nsPerTest": 26.265462239583332,
+        "pass": 16,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 16.68183051215278,
+        "pass": 12,
+        "fail": 4
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "type.json",
+      "testCount": 80,
+      "tjs": {
+        "nsPerTest": 31.3629150390625,
+        "pass": 80,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 20.054498291015626,
+        "pass": 80,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "unevaluatedItems.json",
+      "testCount": 51,
+      "tjs": {
+        "nsPerTest": 51.39977787990196,
+        "pass": 56,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 22.781273935355394,
+        "pass": 53,
+        "fail": 3
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "unevaluatedProperties.json",
+      "testCount": 117,
+      "tjs": {
+        "nsPerTest": 68.83400524172009,
+        "pass": 123,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 71.4113060062767,
+        "pass": 120,
+        "fail": 3
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "uniqueItems.json",
+      "testCount": 69,
+      "tjs": {
+        "nsPerTest": 47.85274074388587,
+        "pass": 69,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 43.73729053442029,
+        "pass": 69,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "vocabulary.json",
+      "testCount": 2,
+      "tjs": {
+        "nsPerTest": 26.52490234375,
+        "pass": 5,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 14.5364990234375,
+        "pass": 4,
+        "fail": 1
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "optional/anchor.json",
+      "testCount": 4,
+      "tjs": {
+        "nsPerTest": 44.24542236328125,
+        "pass": 4,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 57.7239990234375,
+        "pass": 4,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "optional/bignum.json",
+      "testCount": 9,
+      "tjs": {
+        "nsPerTest": 28.746419270833332,
+        "pass": 9,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 30.437337239583332,
+        "pass": 9,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "optional/dependencies-compatibility.json",
+      "testCount": 36,
+      "tjs": {
+        "nsPerTest": 28.98803032769097,
+        "pass": 36,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 19.36113823784722,
+        "pass": 36,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "optional/ecmascript-regex.json",
+      "testCount": 74,
+      "tjs": {
+        "nsPerTest": 50.56638975401182,
+        "pass": 74,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 41.514628642314186,
+        "pass": 74,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "optional/format/date-time.json",
+      "testCount": 26,
+      "tjs": {
+        "nsPerTest": 51.04534442608173,
+        "pass": 26,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 214.24708909254807,
+        "pass": 26,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "optional/format/date.json",
+      "testCount": 48,
+      "tjs": {
+        "nsPerTest": 107.27416483561198,
+        "pass": 48,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 100.22481282552083,
+        "pass": 48,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "optional/format/email.json",
+      "testCount": 17,
+      "tjs": {
+        "nsPerTest": 57.93133903952206,
+        "pass": 17,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 36.644430721507355,
+        "pass": 17,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "optional/format/idn-email.json",
+      "testCount": 10,
+      "tjs": {
+        "nsPerTest": 54.4728759765625,
+        "pass": 10,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 6695.8,
+        "pass": 10,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "optional/format/ipv4.json",
+      "testCount": 16,
+      "tjs": {
+        "nsPerTest": 35.38641357421875,
+        "pass": 16,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 26.821136474609375,
+        "pass": 16,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "optional/format/ipv6.json",
+      "testCount": 40,
+      "tjs": {
+        "nsPerTest": 79.02908325195312,
+        "pass": 40,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 229.26025390625,
+        "pass": 40,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "optional/format/json-pointer.json",
+      "testCount": 38,
+      "tjs": {
+        "nsPerTest": 43.9819914165296,
+        "pass": 38,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 32.308747944078945,
+        "pass": 38,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "optional/format/regex.json",
+      "testCount": 8,
+      "tjs": {
+        "nsPerTest": 24.653106689453125,
+        "pass": 8,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 772.4049682617188,
+        "pass": 8,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "optional/format/relative-json-pointer.json",
+      "testCount": 18,
+      "tjs": {
+        "nsPerTest": 37.594265407986114,
+        "pass": 18,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 27.650621202256943,
+        "pass": 18,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "optional/format/time.json",
+      "testCount": 46,
+      "tjs": {
+        "nsPerTest": 128.39231275475544,
+        "pass": 46,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 127.05684230638587,
+        "pass": 46,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "optional/format/unknown.json",
+      "testCount": 7,
+      "tjs": {
+        "nsPerTest": 21.048409598214285,
+        "pass": 7,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 14.014857700892858,
+        "pass": 7,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "optional/format/uri-reference.json",
+      "testCount": 15,
+      "tjs": {
+        "nsPerTest": 92.19156901041667,
+        "pass": 15,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 81.45751953125,
+        "pass": 15,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "optional/format/uri-template.json",
+      "testCount": 10,
+      "tjs": {
+        "nsPerTest": 61.2141845703125,
+        "pass": 10,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 49.6561767578125,
+        "pass": 10,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "optional/format/uri.json",
+      "testCount": 36,
+      "tjs": {
+        "nsPerTest": 126.98138427734375,
+        "pass": 36,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 169.43471950954861,
+        "pass": 36,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "optional/format/uuid.json",
+      "testCount": 22,
+      "tjs": {
+        "nsPerTest": 71.03105024857955,
+        "pass": 22,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 54.656982421875,
+        "pass": 22,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "optional/id.json",
+      "testCount": 3,
+      "tjs": {
+        "nsPerTest": 51.540852864583336,
+        "pass": 3,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 50.872802734375,
+        "pass": 3,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "optional/no-schema.json",
+      "testCount": 3,
+      "tjs": {
+        "nsPerTest": 25.414306640625,
+        "pass": 3,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 17.384847005208332,
+        "pass": 3,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "optional/non-bmp-regex.json",
+      "testCount": 12,
+      "tjs": {
+        "nsPerTest": 46.462158203125,
+        "pass": 12,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 51.785786946614586,
+        "pass": 12,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2019-09",
+      "file": "optional/refOfUnknownKeyword.json",
+      "testCount": 10,
+      "tjs": {
+        "nsPerTest": 29.6976806640625,
+        "pass": 10,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.135595703125,
+        "pass": 10,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "additionalProperties.json",
+      "testCount": 21,
+      "tjs": {
+        "nsPerTest": 35.726399739583336,
+        "pass": 21,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 35.893031529017854,
+        "pass": 21,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "allOf.json",
+      "testCount": 30,
+      "tjs": {
+        "nsPerTest": 31.276106770833334,
+        "pass": 30,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 34.35126953125,
+        "pass": 30,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "anchor.json",
+      "testCount": 8,
+      "tjs": {
+        "nsPerTest": 31.347900390625,
+        "pass": 8,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 16.5989990234375,
+        "pass": 8,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "anyOf.json",
+      "testCount": 18,
+      "tjs": {
+        "nsPerTest": 28.60739474826389,
+        "pass": 18,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 27.873277452256943,
+        "pass": 18,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "boolean_schema.json",
+      "testCount": 18,
+      "tjs": {
+        "nsPerTest": 28.15924750434028,
+        "pass": 18,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.16531032986111,
+        "pass": 18,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "const.json",
+      "testCount": 54,
+      "tjs": {
+        "nsPerTest": 44.468442563657405,
+        "pass": 54,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 31.77501537181713,
+        "pass": 54,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "contains.json",
+      "testCount": 21,
+      "tjs": {
+        "nsPerTest": 42.802606491815474,
+        "pass": 21,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 74.54911876860119,
+        "pass": 21,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "content.json",
+      "testCount": 18,
+      "tjs": {
+        "nsPerTest": 21.73529730902778,
+        "pass": 18,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 13.341267903645834,
+        "pass": 18,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "default.json",
+      "testCount": 7,
+      "tjs": {
+        "nsPerTest": 25.181361607142858,
+        "pass": 7,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 17.008475167410715,
+        "pass": 7,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "defs.json",
+      "testCount": 2,
+      "tjs": {
+        "nsPerTest": 286.6058349609375,
+        "pass": 2,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 753.9468994140625,
+        "pass": 2,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "dependentRequired.json",
+      "testCount": 20,
+      "tjs": {
+        "nsPerTest": 29.20023193359375,
+        "pass": 20,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 19.0729736328125,
+        "pass": 20,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "dependentSchemas.json",
+      "testCount": 20,
+      "tjs": {
+        "nsPerTest": 32.22401123046875,
+        "pass": 20,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 21.0357666015625,
+        "pass": 20,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "dynamicRef.json",
+      "testCount": 4,
+      "tjs": {
+        "nsPerTest": 85.93499755859375,
+        "pass": 44,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 50.00555419828743,
+        "pass": 19,
+        "fail": 25
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "enum.json",
+      "testCount": 45,
+      "tjs": {
+        "nsPerTest": 51.18995768237445,
+        "pass": 45,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 29.86495225686166,
+        "pass": 45,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "exclusiveMaximum.json",
+      "testCount": 4,
+      "tjs": {
+        "nsPerTest": 26.237487791106105,
+        "pass": 4,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.600463868118823,
+        "pass": 4,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "exclusiveMinimum.json",
+      "testCount": 4,
+      "tjs": {
+        "nsPerTest": 35.62164306640625,
+        "pass": 4,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.307983399368823,
+        "pass": 4,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "format.json",
+      "testCount": 133,
+      "tjs": {
+        "nsPerTest": 21.889899920700188,
+        "pass": 133,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 15.105283349976503,
+        "pass": 133,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "if-then-else.json",
+      "testCount": 26,
+      "tjs": {
+        "nsPerTest": 27.149686373340394,
+        "pass": 26,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.76713679358363,
+        "pass": 26,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "infinite-loop-detection.json",
+      "testCount": 2,
+      "tjs": {
+        "nsPerTest": 30.91943359002471,
+        "pass": 2,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 24.1800537109375,
+        "pass": 2,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "items.json",
+      "testCount": 29,
+      "tjs": {
+        "nsPerTest": 35.7887004981267,
+        "pass": 29,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 28.870336072326733,
+        "pass": 29,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "maxContains.json",
+      "testCount": 12,
+      "tjs": {
+        "nsPerTest": 34.71457926463336,
+        "pass": 12,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 22.02691650421669,
+        "pass": 12,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "maxItems.json",
+      "testCount": 6,
+      "tjs": {
+        "nsPerTest": 26.613037109375,
+        "pass": 6,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 16.228597005208332,
+        "pass": 6,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "maxLength.json",
+      "testCount": 7,
+      "tjs": {
+        "nsPerTest": 29.259102957057102,
+        "pass": 7,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 17.781563894557102,
+        "pass": 7,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "maxProperties.json",
+      "testCount": 10,
+      "tjs": {
+        "nsPerTest": 33.64970703087747,
+        "pass": 10,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 23.87185058631003,
+        "pass": 10,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "maximum.json",
+      "testCount": 8,
+      "tjs": {
+        "nsPerTest": 26.624053955078125,
+        "pass": 8,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 16.48968505859375,
+        "pass": 8,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "minContains.json",
+      "testCount": 28,
+      "tjs": {
+        "nsPerTest": 33.610386439732146,
+        "pass": 28,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 20.083478655133927,
+        "pass": 28,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "minItems.json",
+      "testCount": 6,
+      "tjs": {
+        "nsPerTest": 26.594401041045785,
+        "pass": 6,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 16.626993815104168,
+        "pass": 6,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "minLength.json",
+      "testCount": 7,
+      "tjs": {
+        "nsPerTest": 30.741350446960755,
+        "pass": 7,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.301827566432102,
+        "pass": 7,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "minProperties.json",
+      "testCount": 8,
+      "tjs": {
+        "nsPerTest": 32.35626220656559,
+        "pass": 8,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.973022461868823,
+        "pass": 8,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "minimum.json",
+      "testCount": 11,
+      "tjs": {
+        "nsPerTest": 28.294411399147727,
+        "pass": 11,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 15.382701526649974,
+        "pass": 11,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "multipleOf.json",
+      "testCount": 10,
+      "tjs": {
+        "nsPerTest": 27.8645751953125,
+        "pass": 10,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 37.59357910193503,
+        "pass": 10,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "not.json",
+      "testCount": 40,
+      "tjs": {
+        "nsPerTest": 30.817413330078125,
+        "pass": 40,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 19.327288818359374,
+        "pass": 40,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "oneOf.json",
+      "testCount": 27,
+      "tjs": {
+        "nsPerTest": 30.67920826099537,
+        "pass": 27,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 31.51485640914352,
+        "pass": 27,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "pattern.json",
+      "testCount": 9,
+      "tjs": {
+        "nsPerTest": 27.9541015625,
+        "pass": 9,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.406629774305557,
+        "pass": 9,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "patternProperties.json",
+      "testCount": 23,
+      "tjs": {
+        "nsPerTest": 52.399116847826086,
+        "pass": 23,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 81.14005180027173,
+        "pass": 23,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "prefixItems.json",
+      "testCount": 11,
+      "tjs": {
+        "nsPerTest": 24.633234197443183,
+        "pass": 11,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 15.354958274147727,
+        "pass": 11,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "properties.json",
+      "testCount": 21,
+      "tjs": {
+        "nsPerTest": 37.04107375372024,
+        "pass": 28,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 48.87074497767857,
+        "pass": 27,
+        "fail": 1
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "propertyNames.json",
+      "testCount": 20,
+      "tjs": {
+        "nsPerTest": 32.48544921875,
+        "pass": 20,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 26.50604248046875,
+        "pass": 20,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "ref.json",
+      "testCount": 71,
+      "tjs": {
+        "nsPerTest": 41.258620571082744,
+        "pass": 79,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 35.69224182988556,
+        "pass": 71,
+        "fail": 8
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "refRemote.json",
+      "testCount": 31,
+      "tjs": {
+        "nsPerTest": 33.389506678427416,
+        "pass": 31,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 24.65098128780242,
+        "pass": 31,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "required.json",
+      "testCount": 9,
+      "tjs": {
+        "nsPerTest": 25.678846571180557,
+        "pass": 16,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 16.73833550347222,
+        "pass": 12,
+        "fail": 4
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "type.json",
+      "testCount": 80,
+      "tjs": {
+        "nsPerTest": 30.26123046875,
+        "pass": 80,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.962603759765624,
+        "pass": 80,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "unevaluatedItems.json",
+      "testCount": 47,
+      "tjs": {
+        "nsPerTest": 40.156369473071805,
+        "pass": 71,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 20.66126786901596,
+        "pass": 59,
+        "fail": 12
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "unevaluatedProperties.json",
+      "testCount": 117,
+      "tjs": {
+        "nsPerTest": 67.48888429821046,
+        "pass": 125,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 74.5600085136218,
+        "pass": 120,
+        "fail": 5
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "uniqueItems.json",
+      "testCount": 69,
+      "tjs": {
+        "nsPerTest": 45.37256213201993,
+        "pass": 69,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 43.61669568048007,
+        "pass": 69,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "vocabulary.json",
+      "testCount": 2,
+      "tjs": {
+        "nsPerTest": 26.555419921875,
+        "pass": 5,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 14.9739990234375,
+        "pass": 4,
+        "fail": 1
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "optional/anchor.json",
+      "testCount": 4,
+      "tjs": {
+        "nsPerTest": 43.4849853515625,
+        "pass": 4,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 55.7098388671875,
+        "pass": 4,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "optional/bignum.json",
+      "testCount": 9,
+      "tjs": {
+        "nsPerTest": 27.077012803819443,
+        "pass": 9,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 30.11181640625,
+        "pass": 9,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "optional/dependencies-compatibility.json",
+      "testCount": 36,
+      "tjs": {
+        "nsPerTest": 28.72269015842014,
+        "pass": 36,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 21.03537326388889,
+        "pass": 36,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "optional/ecmascript-regex.json",
+      "testCount": 74,
+      "tjs": {
+        "nsPerTest": 50.833624762457774,
+        "pass": 74,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 38.883106128589525,
+        "pass": 74,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "optional/format/date-time.json",
+      "testCount": 26,
+      "tjs": {
+        "nsPerTest": 50.84854830228365,
+        "pass": 26,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 215.54292179987982,
+        "pass": 26,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "optional/format/date.json",
+      "testCount": 48,
+      "tjs": {
+        "nsPerTest": 108.51965840657552,
+        "pass": 48,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 100.14237467447917,
+        "pass": 48,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "optional/format/idn-email.json",
+      "testCount": 10,
+      "tjs": {
+        "nsPerTest": 54.0568115234375,
+        "pass": 10,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 6641.6,
+        "pass": 10,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "optional/format/ipv4.json",
+      "testCount": 16,
+      "tjs": {
+        "nsPerTest": 38.09611511230469,
+        "pass": 16,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 26.086807250976562,
+        "pass": 16,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "optional/format/ipv6.json",
+      "testCount": 40,
+      "tjs": {
+        "nsPerTest": 79.3121337890625,
+        "pass": 40,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 228.90701293945312,
+        "pass": 40,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "optional/format/json-pointer.json",
+      "testCount": 38,
+      "tjs": {
+        "nsPerTest": 41.70361328125,
+        "pass": 38,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 32.28036980879934,
+        "pass": 38,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "optional/format/regex.json",
+      "testCount": 8,
+      "tjs": {
+        "nsPerTest": 23.9232177734375,
+        "pass": 8,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 771.2618713378906,
+        "pass": 8,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "optional/format/relative-json-pointer.json",
+      "testCount": 18,
+      "tjs": {
+        "nsPerTest": 37.58466254340278,
+        "pass": 18,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 27.6856689453125,
+        "pass": 18,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "optional/format/time.json",
+      "testCount": 46,
+      "tjs": {
+        "nsPerTest": 127.78152067764945,
+        "pass": 46,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 127.39607570482337,
+        "pass": 46,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "optional/format/unknown.json",
+      "testCount": 7,
+      "tjs": {
+        "nsPerTest": 20.903076171875,
+        "pass": 7,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 13.857875279017858,
+        "pass": 7,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "optional/format/uri-reference.json",
+      "testCount": 15,
+      "tjs": {
+        "nsPerTest": 91.81043294270833,
+        "pass": 15,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 81.22828776041666,
+        "pass": 15,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "optional/format/uri-template.json",
+      "testCount": 10,
+      "tjs": {
+        "nsPerTest": 61.3189697265625,
+        "pass": 10,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 49.1546630859375,
+        "pass": 10,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "optional/format/uri.json",
+      "testCount": 36,
+      "tjs": {
+        "nsPerTest": 127.01444498697917,
+        "pass": 36,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 168.82550048828125,
+        "pass": 36,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "optional/format/uuid.json",
+      "testCount": 22,
+      "tjs": {
+        "nsPerTest": 70.24314186789773,
+        "pass": 22,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 55.12908380681818,
+        "pass": 22,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "optional/id.json",
+      "testCount": 3,
+      "tjs": {
+        "nsPerTest": 50.523518880208336,
+        "pass": 3,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 51.066080729166664,
+        "pass": 3,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "optional/no-schema.json",
+      "testCount": 3,
+      "tjs": {
+        "nsPerTest": 25.885660807291668,
+        "pass": 3,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 15.614827473958334,
+        "pass": 3,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "optional/non-bmp-regex.json",
+      "testCount": 12,
+      "tjs": {
+        "nsPerTest": 46.964864095052086,
+        "pass": 12,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 51.053365071614586,
+        "pass": 12,
+        "fail": 0
+      }
+    },
+    {
+      "draft": "draft2020-12",
+      "file": "optional/refOfUnknownKeyword.json",
+      "testCount": 10,
+      "tjs": {
+        "nsPerTest": 30.99873046875,
+        "pass": 10,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 18.3990478515625,
+        "pass": 10,
+        "fail": 0
+      }
+    }
+  ],
+  "summary": {
+    "draft4": {
+      "files": 38,
+      "tests": 790,
+      "tjs": {
+        "nsPerTest": 33.20599689725079,
+        "pass": 881,
+        "fail": 1
+      },
+      "other": {
+        "nsPerTest": 51.98445473200158,
+        "pass": 827,
+        "fail": 55
+      }
+    },
+    "draft6": {
+      "files": 49,
+      "tests": 1120,
+      "tjs": {
+        "nsPerTest": 32.72399880545646,
+        "pass": 1170,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 47.4432536533884,
+        "pass": 1157,
+        "fail": 13
+      }
+    },
+    "draft7": {
+      "files": 54,
+      "tests": 1324,
+      "tjs": {
+        "nsPerTest": 37.229854894910304,
+        "pass": 1534,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 54.573897531742844,
+        "pass": 1443,
+        "fail": 91
+      }
+    },
+    "draft2019-09": {
+      "files": 69,
+      "tests": 1703,
+      "tjs": {
+        "nsPerTest": 49.23548632009689,
+        "pass": 1941,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 94.50015167397608,
+        "pass": 1855,
+        "fail": 86
+      }
+    },
+    "draft2020-12": {
+      "files": 68,
+      "tests": 1665,
+      "tjs": {
+        "nsPerTest": 47.022406390752344,
+        "pass": 1990,
+        "fail": 0
+      },
+      "other": {
+        "nsPerTest": 92.23686259501913,
+        "pass": 1860,
+        "fail": 130
+      }
+    }
+  },
+  "headToHead": {
+    "validatorA": "tjs",
+    "validatorB": "ajv",
+    "avgNsA": 41.55048226833206,
+    "avgNsB": 72.85188400236169,
+    "faster": "tjs",
+    "ratio": 1.753334258117292,
+    "totalTests": 6602
+  }
+}

@@ -28,11 +28,14 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Create results directory
+        run: mkdir -p benchmarks/results
+
       - name: Run benchmarks
-        run: npm run bench:json 2>/dev/null | npx tsx benchmarks/extract-json.ts > benchmark.json
+        run: npx tsx benchmarks/bench.ts --json benchmarks/results/ajv.json
 
       - name: Generate PR comment
-        run: npx tsx benchmarks/generate-pr-comment.ts < benchmark.json > benchmark-comment.md
+        run: npx tsx benchmarks/generate-pr-comment.ts benchmarks/results/ajv.json > benchmark-comment.md
 
       - name: Comment on PR
         uses: actions/github-script@v7

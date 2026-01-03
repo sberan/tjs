@@ -5,7 +5,7 @@
  * keyword-level insights with minimal overhead.
  *
  * Usage:
- *   npm run bench [drafts...] [--filter <regex>] [--per-test] [--validator <name>] [--json]
+ *   npm run bench [drafts...] [--filter <regex>] [--per-test] [--validator <name>] [--json <file>]
  *
  * Examples:
  *   npm run bench                            # tjs vs ajv (default)
@@ -16,7 +16,7 @@
  *   npm run bench draft2019-09               # Single draft
  *   npm run bench draft7 --filter unevaluatedItems --per-test  # Per-test breakdown
  *   npm run bench --compliance-only          # Only check compliance, skip benchmark
- *   npm run bench --json                     # Output JSON for CI/programmatic use
+ *   npm run bench --json benchmark.json      # Write JSON results to file
  */
 
 import * as fs from 'fs';
@@ -351,6 +351,8 @@ function compileFileTestsWithDesc(
         compiledTests.push({
           tjsValidator,
           ajvValidator,
+          zodValidator: null,
+          joiValidator: null,
           data: result.data,
           groupDesc: group.description,
           testDesc: result.testDesc,
@@ -719,7 +721,7 @@ async function main() {
   let filter: RegExp | null = null;
   let complianceOnly = false;
   let perTestMode = false;
-  let jsonOutput = false;
+  let jsonFile: string | null = null;
   const validators: Validator[] = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -732,7 +734,7 @@ async function main() {
     } else if (arg === '--per-test' || arg === '-t') {
       perTestMode = true;
     } else if (arg === '--json') {
-      jsonOutput = true;
+      jsonFile = args[++i] || 'benchmark.json';
     } else if (arg === '--validator' || arg === '-v') {
       const v = args[++i]?.toLowerCase();
       if (v && ['tjs', 'ajv', 'zod', 'joi'].includes(v)) {
@@ -992,8 +994,8 @@ async function main() {
 
   console.log('');
 
-  // JSON output mode - output structured data and exit
-  if (jsonOutput) {
+  // JSON output mode - write structured data to file and exit
+  if (jsonFile) {
     // Compute head-to-head stats for JSON
     const computeH2HJson = (
       validatorA: string,
@@ -1016,15 +1018,26 @@ async function main() {
       return { validatorA, validatorB, avgNsA: avgA, avgNsB: avgB, faster, ratio, totalTests };
     };
 
+    // Helper to get the "other" validator stats based on compareValidator
+    const getOtherNs = (r: FileResult) =>
+      runAjv ? r.ajvNs : runZod ? r.zodNs : runJoi ? r.joiNs : 0;
+    const getOtherPass = (r: FileResult) =>
+      runAjv ? r.ajvPass : runZod ? r.zodPass : runJoi ? r.joiPass : 0;
+    const getOtherFail = (r: FileResult) =>
+      runAjv ? r.ajvFail : runZod ? r.zodFail : runJoi ? r.joiFail : 0;
+    const getOtherCompliancePass = (c: (typeof draftCompliance)[Draft]) =>
+      runAjv ? c.ajvPass : runZod ? c.zodPass : runJoi ? c.joiPass : 0;
+    const getOtherComplianceFail = (c: (typeof draftCompliance)[Draft]) =>
+      runAjv ? c.ajvFail : runZod ? c.zodFail : runJoi ? c.joiFail : 0;
+
     const jsonData = {
+      compareValidator,
       results: results.map((r) => ({
         draft: r.draft,
         file: r.file,
         testCount: r.testCount,
         tjs: { nsPerTest: r.tjsNs, pass: r.tjsPass, fail: r.tjsFail },
-        ajv: { nsPerTest: r.ajvNs, pass: r.ajvPass, fail: r.ajvFail },
-        zod: { nsPerTest: r.zodNs, pass: r.zodPass, fail: r.zodFail },
-        joi: { nsPerTest: r.joiNs, pass: r.joiPass, fail: r.joiFail },
+        other: { nsPerTest: getOtherNs(r), pass: getOtherPass(r), fail: getOtherFail(r) },
       })),
       summary: Object.fromEntries(
         drafts.map((draft) => {
@@ -1032,9 +1045,10 @@ async function main() {
           const compliance = draftCompliance[draft];
           const testCount = draftResults.reduce((sum, r) => sum + r.testCount, 0);
           const tjsTotalNs = draftResults.reduce((sum, r) => sum + r.tjsNs * r.testCount, 0);
-          const ajvTotalNs = draftResults.reduce((sum, r) => sum + r.ajvNs * r.testCount, 0);
-          const zodTotalNs = draftResults.reduce((sum, r) => sum + r.zodNs * r.testCount, 0);
-          const joiTotalNs = draftResults.reduce((sum, r) => sum + r.joiNs * r.testCount, 0);
+          const otherTotalNs = draftResults.reduce(
+            (sum, r) => sum + getOtherNs(r) * r.testCount,
+            0
+          );
           return [
             draft,
             {
@@ -1045,65 +1059,26 @@ async function main() {
                 pass: compliance.tjsPass,
                 fail: compliance.tjsFail,
               },
-              ajv: {
-                nsPerTest: testCount > 0 ? ajvTotalNs / testCount : 0,
-                pass: compliance.ajvPass,
-                fail: compliance.ajvFail,
-              },
-              zod: {
-                nsPerTest: testCount > 0 ? zodTotalNs / testCount : 0,
-                pass: compliance.zodPass,
-                fail: compliance.zodFail,
-              },
-              joi: {
-                nsPerTest: testCount > 0 ? joiTotalNs / testCount : 0,
-                pass: compliance.joiPass,
-                fail: compliance.joiFail,
+              other: {
+                nsPerTest: testCount > 0 ? otherTotalNs / testCount : 0,
+                pass: getOtherCompliancePass(compliance),
+                fail: getOtherComplianceFail(compliance),
               },
             },
           ];
         })
       ),
-      headToHead: {
-        tjsVsAjv: computeH2HJson(
-          'tjs',
-          'ajv',
-          (r) => r.tjsNs,
-          (r) => r.ajvNs,
-          () => true
-        ),
-        tjsVsZod: computeH2HJson(
-          'tjs',
-          'zod',
-          (r) => r.tjsNs,
-          (r) => r.zodNs,
-          (r) => r.zodNs > 0
-        ),
-        tjsVsJoi: computeH2HJson(
-          'tjs',
-          'joi',
-          (r) => r.tjsNs,
-          (r) => r.joiNs,
-          (r) => r.joiNs > 0
-        ),
-        ajvVsZod: computeH2HJson(
-          'ajv',
-          'zod',
-          (r) => r.ajvNs,
-          (r) => r.zodNs,
-          (r) => r.zodNs > 0
-        ),
-        ajvVsJoi: computeH2HJson(
-          'ajv',
-          'joi',
-          (r) => r.ajvNs,
-          (r) => r.joiNs,
-          (r) => r.joiNs > 0
-        ),
-      },
+      headToHead: computeH2HJson(
+        'tjs',
+        compareValidator,
+        (r) => r.tjsNs,
+        getOtherNs,
+        (r) => getOtherNs(r) > 0
+      ),
     };
 
-    console.log(JSON.stringify(jsonData, null, 2));
+    fs.writeFileSync(jsonFile, JSON.stringify(jsonData, null, 2));
+    console.log(`Wrote benchmark results to ${jsonFile}`);
     return;
   }
 
