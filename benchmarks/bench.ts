@@ -25,6 +25,9 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 // @ts-ignore - no types available
 import addFormats2019 from 'ajv-formats-draft2019';
+import { z } from 'zod';
+// @ts-ignore - no types available
+import enjoi from 'enjoi';
 import { createValidator } from '../src/core/index.js';
 import type { JsonSchema } from '../src/types.js';
 
@@ -48,6 +51,8 @@ interface TestGroup {
 interface CompiledTest {
   tjsValidator: (data: unknown) => boolean;
   ajvValidator: (data: unknown) => boolean;
+  zodValidator: ((data: unknown) => boolean) | null;
+  joiValidator: ((data: unknown) => boolean) | null;
   data: unknown;
 }
 
@@ -55,12 +60,6 @@ interface CompiledTestWithDesc extends CompiledTest {
   groupDesc: string;
   testDesc: string;
   valid: boolean;
-}
-
-interface FailureDetail {
-  group: string;
-  test: string;
-  expected: boolean;
 }
 
 interface PerTestResult {
@@ -79,10 +78,16 @@ interface FileResult {
   testCount: number;
   tjsNs: number;
   ajvNs: number;
+  zodNs: number;
+  joiNs: number;
   tjsPass: number;
   tjsFail: number;
   ajvPass: number;
   ajvFail: number;
+  zodPass: number;
+  zodFail: number;
+  joiPass: number;
+  joiFail: number;
 }
 
 // ANSI colors
@@ -366,8 +371,10 @@ function compileFileTests(
   tjsFail: number;
   ajvPass: number;
   ajvFail: number;
-  tjsFailures: FailureDetail[];
-  ajvFailures: FailureDetail[];
+  zodPass: number;
+  zodFail: number;
+  joiPass: number;
+  joiFail: number;
 } {
   const groups: TestGroup[] = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
   const sharedAjv = createAjv(draft, remotes, false);
@@ -377,9 +384,11 @@ function compileFileTests(
   let tjsPass = 0,
     tjsFail = 0,
     ajvPass = 0,
-    ajvFail = 0;
-  const tjsFailures: FailureDetail[] = [];
-  const ajvFailures: FailureDetail[] = [];
+    ajvFail = 0,
+    zodPass = 0,
+    zodFail = 0,
+    joiPass = 0,
+    joiFail = 0;
 
   for (const group of groups) {
     const ajv = isFormat ? sharedAjvWithFormat : sharedAjv;
@@ -399,10 +408,32 @@ function compileFileTests(
       ajvValidator = (data: unknown) => fn(data) as boolean;
     } catch {}
 
+    // Create Zod validator using native z.fromJSONSchema
+    let zodValidator: ((data: unknown) => boolean) | null = null;
+    try {
+      const zodSchema = z.fromJSONSchema(group.schema as object);
+      zodValidator = (data: unknown) => zodSchema.safeParse(data).success;
+    } catch {}
+
+    // Create Joi validator using enjoi
+    let joiValidator: ((data: unknown) => boolean) | null = null;
+    try {
+      const joiSchema = enjoi.schema(group.schema as object);
+      joiValidator = (data: unknown) => !joiSchema.validate(data).error;
+    } catch {}
+
     // First pass: check compliance for all tests in this group
-    const groupResults: { tjsOk: boolean; ajvOk: boolean; data: unknown }[] = [];
+    const groupResults: {
+      tjsOk: boolean;
+      ajvOk: boolean;
+      zodOk: boolean;
+      joiOk: boolean;
+      data: unknown;
+    }[] = [];
     let groupAjvAllPass = true;
     let groupTjsAllPass = true;
+    let groupZodAllPass = true;
+    let groupJoiAllPass = true;
 
     for (const test of group.tests) {
       // Check tjs compliance
@@ -416,11 +447,6 @@ function compileFileTests(
       else {
         tjsFail++;
         groupTjsAllPass = false;
-        tjsFailures.push({
-          group: group.description,
-          test: test.description,
-          expected: test.valid,
-        });
       }
 
       // Check AJV compliance
@@ -434,31 +460,63 @@ function compileFileTests(
       else {
         ajvFail++;
         groupAjvAllPass = false;
-        ajvFailures.push({
-          group: group.description,
-          test: test.description,
-          expected: test.valid,
-        });
       }
 
-      groupResults.push({ tjsOk, ajvOk, data: test.data });
+      // Check Zod compliance
+      let zodOk = false;
+      if (zodValidator) {
+        try {
+          zodOk = zodValidator(test.data) === test.valid;
+        } catch {}
+      }
+      if (zodOk) zodPass++;
+      else {
+        zodFail++;
+        groupZodAllPass = false;
+      }
+
+      // Check Joi compliance
+      let joiOk = false;
+      if (joiValidator) {
+        try {
+          joiOk = joiValidator(test.data) === test.valid;
+        } catch {}
+      }
+      if (joiOk) joiPass++;
+      else {
+        joiFail++;
+        groupJoiAllPass = false;
+      }
+
+      groupResults.push({ tjsOk, ajvOk, zodOk, joiOk, data: test.data });
     }
 
-    // Second pass: only add tests to benchmark if both pass ALL tests in this group
-    // This ensures we don't benchmark against a validator that doesn't fully implement
-    // the validation (e.g., AJV's hostname format doesn't validate punycode)
+    // Second pass: only add tests to benchmark if both tjs and ajv pass ALL tests in this group
+    // Zod and Joi are included if they compiled (even if they fail some tests)
     if (groupAjvAllPass && groupTjsAllPass && tjsValidator && ajvValidator) {
       for (const result of groupResults) {
         compiledTests.push({
           tjsValidator,
           ajvValidator,
+          zodValidator: groupZodAllPass ? zodValidator : null,
+          joiValidator: groupJoiAllPass ? joiValidator : null,
           data: result.data,
         });
       }
     }
   }
 
-  return { compiledTests, tjsPass, tjsFail, ajvPass, ajvFail, tjsFailures, ajvFailures };
+  return {
+    compiledTests,
+    tjsPass,
+    tjsFail,
+    ajvPass,
+    ajvFail,
+    zodPass,
+    zodFail,
+    joiPass,
+    joiFail,
+  };
 }
 
 // Per-test benchmark mode: benchmarks each test case individually
@@ -655,7 +713,6 @@ async function main() {
   let filter: RegExp | null = null;
   let complianceOnly = false;
   let perTestMode = false;
-  let jsonOutput = false;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -666,8 +723,6 @@ async function main() {
       complianceOnly = true;
     } else if (arg === '--per-test' || arg === '-t') {
       perTestMode = true;
-    } else if (arg === '--json' || arg === '-j') {
-      jsonOutput = true;
     } else if (['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'].includes(arg)) {
       drafts.push(arg as Draft);
     }
@@ -680,11 +735,9 @@ async function main() {
   // Benchmark options
   const measureOpts = { min_cpu_time: 50_000_000, min_samples: 50 };
 
-  if (!jsonOutput) {
-    console.log('tjs vs ajv Benchmark (per-file)');
-    if (filter) console.log(`Filter: ${filter}`);
-    console.log('═'.repeat(100));
-  }
+  console.log('tjs vs ajv Benchmark (per-file)');
+  if (filter) console.log(`Filter: ${filter}`);
+  console.log('═'.repeat(100));
 
   const remotes = loadRemoteSchemas();
 
@@ -697,8 +750,10 @@ async function main() {
     tjsFail: number;
     ajvPass: number;
     ajvFail: number;
-    tjsFailures: FailureDetail[];
-    ajvFailures: FailureDetail[];
+    zodPass: number;
+    zodFail: number;
+    joiPass: number;
+    joiFail: number;
   }
 
   const allPrepared: PreparedFile[] = [];
@@ -709,18 +764,20 @@ async function main() {
     tjsFail: number;
     ajvPass: number;
     ajvFail: number;
-    tjsFailures: FailureDetail[];
-    ajvFailures: FailureDetail[];
+    zodPass: number;
+    zodFail: number;
+    joiPass: number;
+    joiFail: number;
   }
   const draftCompliance: Record<Draft, DraftCompliance> = {} as Record<Draft, DraftCompliance>;
 
   for (const draft of drafts) {
-    if (!jsonOutput) console.log(`\nLoading ${draft}...`);
+    console.log(`\nLoading ${draft}...`);
     let testFiles = getTestFiles(draft);
 
     if (filter) {
       testFiles = testFiles.filter((f) => filter!.test(f.relativePath));
-      if (!jsonOutput) console.log(`  Filtered to ${testFiles.length} files`);
+      console.log(`  Filtered to ${testFiles.length} files`);
     }
 
     // Initialize compliance counters for this draft
@@ -729,25 +786,34 @@ async function main() {
       tjsFail: 0,
       ajvPass: 0,
       ajvFail: 0,
-      tjsFailures: [],
-      ajvFailures: [],
+      zodPass: 0,
+      zodFail: 0,
+      joiPass: 0,
+      joiFail: 0,
     };
 
     for (const { file, relativePath, isFormat } of testFiles) {
-      const { compiledTests, tjsPass, tjsFail, ajvPass, ajvFail, tjsFailures, ajvFailures } =
-        compileFileTests(file, draft, remotes, isFormat);
+      const {
+        compiledTests,
+        tjsPass,
+        tjsFail,
+        ajvPass,
+        ajvFail,
+        zodPass,
+        zodFail,
+        joiPass,
+        joiFail,
+      } = compileFileTests(file, draft, remotes, isFormat);
 
       // Always track compliance counts (even if no benchmarkable tests)
       draftCompliance[draft].tjsPass += tjsPass;
       draftCompliance[draft].tjsFail += tjsFail;
       draftCompliance[draft].ajvPass += ajvPass;
       draftCompliance[draft].ajvFail += ajvFail;
-      draftCompliance[draft].tjsFailures.push(
-        ...tjsFailures.map((f) => ({ ...f, file: relativePath }))
-      );
-      draftCompliance[draft].ajvFailures.push(
-        ...ajvFailures.map((f) => ({ ...f, file: relativePath }))
-      );
+      draftCompliance[draft].zodPass += zodPass;
+      draftCompliance[draft].zodFail += zodFail;
+      draftCompliance[draft].joiPass += joiPass;
+      draftCompliance[draft].joiFail += joiFail;
 
       if (compiledTests.length > 0) {
         allPrepared.push({
@@ -758,21 +824,22 @@ async function main() {
           tjsFail,
           ajvPass,
           ajvFail,
-          tjsFailures,
-          ajvFailures,
+          zodPass,
+          zodFail,
+          joiPass,
+          joiFail,
         });
       }
     }
 
     // Print compliance summary for this draft (from total counts, not just benchmarkable files)
-    if (!jsonOutput) {
-      const { tjsPass, tjsFail, ajvPass, ajvFail } = draftCompliance[draft];
-      console.log(
-        `  tjs: ${tjsPass}/${tjsPass + tjsFail} (${tjsFail} failures), ajv: ${ajvPass}/${ajvPass + ajvFail} (${ajvFail} failures)`
-      );
-      const draftFiles = allPrepared.filter((f) => f.draft === draft);
-      console.log(`  ${draftFiles.length} files ready for benchmark`);
-    }
+    const { tjsPass, tjsFail, ajvPass, ajvFail, zodPass, zodFail, joiPass, joiFail } =
+      draftCompliance[draft];
+    console.log(
+      `  tjs: ${tjsPass}/${tjsPass + tjsFail} (${tjsFail} failures), ajv: ${ajvPass}/${ajvPass + ajvFail} (${ajvFail} failures), zod: ${zodPass}/${zodPass + zodFail} (${zodFail} failures), joi: ${joiPass}/${joiPass + joiFail} (${joiFail} failures)`
+    );
+    const draftFiles = allPrepared.filter((f) => f.draft === draft);
+    console.log(`  ${draftFiles.length} files ready for benchmark`);
   }
 
   if (complianceOnly) {
@@ -787,27 +854,44 @@ async function main() {
   }
 
   const totalTests = allPrepared.reduce((sum, f) => sum + f.compiledTests.length, 0);
-  if (!jsonOutput)
-    console.log(`\nBenchmarking ${allPrepared.length} files (${totalTests} tests)...\n`);
+  console.log(`\nBenchmarking ${allPrepared.length} files (${totalTests} tests)...\n`);
 
   // Warmup phase
   const WARMUP_ITERATIONS = 50;
-  if (!jsonOutput) console.log(`Warming up (${WARMUP_ITERATIONS} iterations)...`);
+  console.log(`Warming up (${WARMUP_ITERATIONS} iterations)...`);
   for (const { compiledTests } of allPrepared) {
     for (let w = 0; w < WARMUP_ITERATIONS; w++) {
       for (const t of compiledTests) {
         t.tjsValidator(t.data);
         t.ajvValidator(t.data);
+        if (t.zodValidator) t.zodValidator(t.data);
+        if (t.joiValidator) t.joiValidator(t.data);
       }
     }
   }
-  if (!jsonOutput) console.log('Warmup complete.\n');
+  console.log('Warmup complete.\n');
 
   // Benchmark each file
   const results: FileResult[] = [];
 
   for (let i = 0; i < allPrepared.length; i++) {
-    const { draft, filePath, compiledTests, tjsPass, tjsFail, ajvPass, ajvFail } = allPrepared[i];
+    const {
+      draft,
+      filePath,
+      compiledTests,
+      tjsPass,
+      tjsFail,
+      ajvPass,
+      ajvFail,
+      zodPass,
+      zodFail,
+      joiPass,
+      joiFail,
+    } = allPrepared[i];
+
+    // Check if Zod/Joi are available for all tests in this file
+    const hasZod = compiledTests.every((t) => t.zodValidator !== null);
+    const hasJoi = compiledTests.every((t) => t.joiValidator !== null);
 
     // Benchmark tjs
     const tjsResult = await measure(() => {
@@ -823,6 +907,28 @@ async function main() {
       }
     }, measureOpts);
 
+    // Benchmark zod (if available)
+    let zodNs = 0;
+    if (hasZod) {
+      const zodResult = await measure(() => {
+        for (const t of compiledTests) {
+          t.zodValidator!(t.data);
+        }
+      }, measureOpts);
+      zodNs = ((zodResult as any).p50 ?? zodResult.avg) / compiledTests.length;
+    }
+
+    // Benchmark joi (if available)
+    let joiNs = 0;
+    if (hasJoi) {
+      const joiResult = await measure(() => {
+        for (const t of compiledTests) {
+          t.joiValidator!(t.data);
+        }
+      }, measureOpts);
+      joiNs = ((joiResult as any).p50 ?? joiResult.avg) / compiledTests.length;
+    }
+
     // Use p50 (median) for outlier resistance
     const tjsNs = ((tjsResult as any).p50 ?? tjsResult.avg) / compiledTests.length;
     const ajvNs = ((ajvResult as any).p50 ?? ajvResult.avg) / compiledTests.length;
@@ -833,73 +939,26 @@ async function main() {
       testCount: compiledTests.length,
       tjsNs,
       ajvNs,
+      zodNs,
+      joiNs,
       tjsPass,
       tjsFail,
       ajvPass,
       ajvFail,
+      zodPass,
+      zodFail,
+      joiPass,
+      joiFail,
     });
 
     // Print progress
-    if (!jsonOutput) {
-      const percent = Math.round(((i + 1) / allPrepared.length) * 100);
-      const ratio = ajvNs > 0 ? tjsNs / ajvNs : 0;
-      const status =
-        ratio > 1
-          ? `${RED}+${Math.round((ratio - 1) * 100)}%${RESET}`
-          : `${GREEN}-${Math.round((1 - ratio) * 100)}%${RESET}`;
-      console.log(`${percent}% ${draft} ${filePath} ${status}`);
-    }
-  }
-
-  // JSON output mode
-  if (jsonOutput) {
-    const jsonResults = {
-      files: results.map((r) => ({
-        draft: r.draft,
-        file: r.file,
-        tests: r.testCount,
-        tjs: {
-          pass: r.tjsPass,
-          fail: r.tjsFail,
-          nsPerOp: Math.round(r.tjsNs),
-          opsPerSec: r.tjsNs > 0 ? Math.round(1_000_000_000 / r.tjsNs) : 0,
-        },
-        ajv: {
-          pass: r.ajvPass,
-          fail: r.ajvFail,
-          nsPerOp: Math.round(r.ajvNs),
-          opsPerSec: r.ajvNs > 0 ? Math.round(1_000_000_000 / r.ajvNs) : 0,
-        },
-      })),
-      summary: drafts.map((draft) => {
-        const draftResults = results.filter((r) => r.draft === draft);
-        const testCount = draftResults.reduce((sum, r) => sum + r.testCount, 0);
-        const tjsTotalNs = draftResults.reduce((sum, r) => sum + r.tjsNs * r.testCount, 0);
-        const ajvTotalNs = draftResults.reduce((sum, r) => sum + r.ajvNs * r.testCount, 0);
-        const compliance = draftCompliance[draft];
-        return {
-          draft,
-          files: draftResults.length,
-          tests: testCount,
-          tjs: {
-            pass: compliance.tjsPass,
-            fail: compliance.tjsFail,
-            nsPerOp: testCount > 0 ? Math.round(tjsTotalNs / testCount) : 0,
-            opsPerSec: testCount > 0 ? Math.round(1_000_000_000 / (tjsTotalNs / testCount)) : 0,
-            failures: compliance.tjsFailures,
-          },
-          ajv: {
-            pass: compliance.ajvPass,
-            fail: compliance.ajvFail,
-            nsPerOp: testCount > 0 ? Math.round(ajvTotalNs / testCount) : 0,
-            opsPerSec: testCount > 0 ? Math.round(1_000_000_000 / (ajvTotalNs / testCount)) : 0,
-            failures: compliance.ajvFailures,
-          },
-        };
-      }),
-    };
-    console.log(JSON.stringify(jsonResults, null, 2));
-    return;
+    const percent = Math.round(((i + 1) / allPrepared.length) * 100);
+    const ratio = ajvNs > 0 ? tjsNs / ajvNs : 0;
+    const status =
+      ratio > 1
+        ? `${RED}+${Math.round((ratio - 1) * 100)}%${RESET}`
+        : `${GREEN}-${Math.round((1 - ratio) * 100)}%${RESET}`;
+    console.log(`${percent}% ${draft} ${filePath} ${status}`);
   }
 
   console.log('');
@@ -991,31 +1050,38 @@ async function main() {
   }
 
   // Overall summary by draft
-  console.log('\n' + '═'.repeat(100));
+  console.log('\n' + '═'.repeat(160));
   console.log('OVERALL PERFORMANCE SUMMARY');
-  console.log('─'.repeat(100));
+  console.log('─'.repeat(160));
   console.log(
     'Draft'.padEnd(14) +
       'Files'.padStart(6) +
       'Tests'.padStart(8) +
       ' │' +
-      'tjs ns/test'.padStart(12) +
-      'ajv ns/test'.padStart(12) +
-      'Diff'.padStart(10) +
+      'tjs ns'.padStart(10) +
+      'ajv ns'.padStart(10) +
+      'zod ns'.padStart(10) +
+      'joi ns'.padStart(10) +
       ' │' +
       'tjs pass'.padStart(10) +
       'tjs fail'.padStart(10) +
-      'ajv fail'.padStart(10)
+      'ajv fail'.padStart(10) +
+      'zod fail'.padStart(10) +
+      'joi fail'.padStart(10)
   );
-  console.log('─'.repeat(100));
+  console.log('─'.repeat(160));
 
   let totalTjsNs = 0,
     totalAjvNs = 0,
+    totalZodNs = 0,
+    totalJoiNs = 0,
     totalTests2 = 0,
     totalFiles = 0;
   let totalTjsPass = 0,
     totalTjsFail = 0,
-    totalAjvFail = 0;
+    totalAjvFail = 0,
+    totalZodFail = 0,
+    totalJoiFail = 0;
 
   for (const draft of drafts) {
     const draftResults = results.filter((r) => r.draft === draft);
@@ -1023,67 +1089,84 @@ async function main() {
     const testCount = draftResults.reduce((sum, r) => sum + r.testCount, 0);
     const tjsTotalNs = draftResults.reduce((sum, r) => sum + r.tjsNs * r.testCount, 0);
     const ajvTotalNs = draftResults.reduce((sum, r) => sum + r.ajvNs * r.testCount, 0);
+    const zodTotalNs = draftResults.reduce((sum, r) => sum + r.zodNs * r.testCount, 0);
+    const joiTotalNs = draftResults.reduce((sum, r) => sum + r.joiNs * r.testCount, 0);
 
     // Use draftCompliance for pass/fail counts (includes ALL tests, not just benchmarkable ones)
-    const compliance = draftCompliance[draft] || { tjsPass: 0, tjsFail: 0, ajvPass: 0, ajvFail: 0 };
+    const compliance = draftCompliance[draft] || {
+      tjsPass: 0,
+      tjsFail: 0,
+      ajvPass: 0,
+      ajvFail: 0,
+      zodPass: 0,
+      zodFail: 0,
+      joiPass: 0,
+      joiFail: 0,
+    };
     const tjsPass = compliance.tjsPass;
     const tjsFail = compliance.tjsFail;
     const ajvFail = compliance.ajvFail;
+    const zodFail = compliance.zodFail;
+    const joiFail = compliance.joiFail;
 
     const tjsNsPerTest = testCount > 0 ? tjsTotalNs / testCount : 0;
     const ajvNsPerTest = testCount > 0 ? ajvTotalNs / testCount : 0;
-    const diff =
-      ajvNsPerTest > 0 ? Math.round(((tjsNsPerTest - ajvNsPerTest) / ajvNsPerTest) * 100) : 0;
-    const color = diff <= 0 ? GREEN : RED;
-    const sign = diff <= 0 ? '' : '+';
+    const zodNsPerTest = testCount > 0 ? zodTotalNs / testCount : 0;
+    const joiNsPerTest = testCount > 0 ? joiTotalNs / testCount : 0;
 
     console.log(
       draft.padEnd(14) +
         fileCount.toString().padStart(6) +
         testCount.toString().padStart(8) +
         ' │' +
-        Math.round(tjsNsPerTest).toLocaleString().padStart(12) +
-        Math.round(ajvNsPerTest).toLocaleString().padStart(12) +
-        `${color}${sign}${diff}%${RESET}`.padStart(19) +
+        Math.round(tjsNsPerTest).toLocaleString().padStart(10) +
+        Math.round(ajvNsPerTest).toLocaleString().padStart(10) +
+        Math.round(zodNsPerTest).toLocaleString().padStart(10) +
+        Math.round(joiNsPerTest).toLocaleString().padStart(10) +
         ' │' +
         `${GREEN}${tjsPass}${RESET}`.padStart(19) +
         `${tjsFail > 0 ? RED : DIM}${tjsFail}${RESET}`.padStart(19) +
-        `${ajvFail > 0 ? RED : DIM}${ajvFail}${RESET}`.padStart(19)
+        `${ajvFail > 0 ? RED : DIM}${ajvFail}${RESET}`.padStart(19) +
+        `${zodFail > 0 ? RED : DIM}${zodFail}${RESET}`.padStart(19) +
+        `${joiFail > 0 ? RED : DIM}${joiFail}${RESET}`.padStart(19)
     );
 
     totalTjsNs += tjsTotalNs;
     totalAjvNs += ajvTotalNs;
+    totalZodNs += zodTotalNs;
+    totalJoiNs += joiTotalNs;
     totalTests2 += testCount;
     totalFiles += fileCount;
     totalTjsPass += tjsPass;
     totalTjsFail += tjsFail;
     totalAjvFail += ajvFail;
+    totalZodFail += zodFail;
+    totalJoiFail += joiFail;
   }
 
-  console.log('─'.repeat(100));
+  console.log('─'.repeat(160));
   const totalTjsNsPerTest = totalTests2 > 0 ? totalTjsNs / totalTests2 : 0;
   const totalAjvNsPerTest = totalTests2 > 0 ? totalAjvNs / totalTests2 : 0;
-  const totalDiff =
-    totalAjvNsPerTest > 0
-      ? Math.round(((totalTjsNsPerTest - totalAjvNsPerTest) / totalAjvNsPerTest) * 100)
-      : 0;
-  const totalColor = totalDiff <= 0 ? GREEN : RED;
-  const totalSign = totalDiff <= 0 ? '' : '+';
+  const totalZodNsPerTest = totalTests2 > 0 ? totalZodNs / totalTests2 : 0;
+  const totalJoiNsPerTest = totalTests2 > 0 ? totalJoiNs / totalTests2 : 0;
 
   console.log(
     'TOTAL'.padEnd(14) +
       totalFiles.toString().padStart(6) +
       totalTests2.toString().padStart(8) +
       ' │' +
-      Math.round(totalTjsNsPerTest).toLocaleString().padStart(12) +
-      Math.round(totalAjvNsPerTest).toLocaleString().padStart(12) +
-      `${totalColor}${totalSign}${totalDiff}%${RESET}`.padStart(19) +
+      Math.round(totalTjsNsPerTest).toLocaleString().padStart(10) +
+      Math.round(totalAjvNsPerTest).toLocaleString().padStart(10) +
+      Math.round(totalZodNsPerTest).toLocaleString().padStart(10) +
+      Math.round(totalJoiNsPerTest).toLocaleString().padStart(10) +
       ' │' +
       `${GREEN}${totalTjsPass}${RESET}`.padStart(19) +
       `${totalTjsFail > 0 ? RED : DIM}${totalTjsFail}${RESET}`.padStart(19) +
-      `${totalAjvFail > 0 ? RED : DIM}${totalAjvFail}${RESET}`.padStart(19)
+      `${totalAjvFail > 0 ? RED : DIM}${totalAjvFail}${RESET}`.padStart(19) +
+      `${totalZodFail > 0 ? RED : DIM}${totalZodFail}${RESET}`.padStart(19) +
+      `${totalJoiFail > 0 ? RED : DIM}${totalJoiFail}${RESET}`.padStart(19)
   );
-  console.log('─'.repeat(100));
+  console.log('─'.repeat(160));
 }
 
 main().catch(console.error);
