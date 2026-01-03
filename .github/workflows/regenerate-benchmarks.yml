@@ -96,11 +96,9 @@ jobs:
         if: steps.check_changes.outputs.has_changes == 'true'
         id: summary
         run: |
-          # Generate summary of what changed
-          SUMMARY=$(npx tsx benchmarks/check-significance.ts 2>&1 || true)
-          echo "SUMMARY<<EOF" >> $GITHUB_OUTPUT
-          echo "$SUMMARY" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          # Generate summary of what changed using the comparison tool
+          npx tsx benchmarks/generate-comparison.ts --format pr-body > pr-body.md
+          echo "Generated PR body with comparison"
 
       - name: Create or update PR
         if: steps.check_changes.outputs.has_changes == 'true'
@@ -131,28 +129,12 @@ jobs:
           # Force push to update the branch (replaces any previous commits)
           git push -f origin "$BRANCH_NAME"
 
-          # Generate PR body with summary
-          PR_BODY=$(cat <<EOF
-          ## Summary
-
-          This PR updates the benchmark results and documentation.
-
-          ### What Changed
-          \`\`\`
-          ${{ steps.summary.outputs.SUMMARY }}
-          \`\`\`
-
-          ### Files Updated
-          - Benchmark results JSON files
-          - Benchmark markdown reports
-          - SVG performance chart (sorted fastest to slowest)
-          - README.md benchmark and compliance data
-          - COMPLIANCE.md test suite results
+          # Read the generated PR body
+          PR_BODY=$(cat pr-body.md)
+          PR_BODY="${PR_BODY}
 
           ---
-          *Auto-generated from commit ${{ github.sha }}. Merge anytime to update benchmarks.*
-          EOF
-          )
+          *Auto-generated from commit ${{ github.sha }}. Merge anytime to update benchmarks.*"
 
           # Check if PR already exists
           EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --json number --jq '.[0].number' 2>/dev/null || echo "")
