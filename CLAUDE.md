@@ -38,3 +38,5 @@ When making API changes, **always update README.md** to reflect the current API:
 - There is NO `.parse()` method - use `.assert()` for throwing validation or `.validate()` for result-based
 - `.validate()` returns an object `{ value, error }`, NOT a boolean
 - ALWAYS use src/claude-debug.js for any scratch work. do no use heredocs or shell scripts or cat commands.
+
+<!-- Test commit marker -->
