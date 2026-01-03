@@ -19,6 +19,7 @@ import {
   or,
   and,
   not,
+  escapeString,
 } from './codegen.js';
 import { CompileContext, VOCABULARIES, supportsFeature, type CompileOptions } from './context.js';
 import { createFormatValidators } from './keywords/format.js';
@@ -89,10 +90,9 @@ export function compile(schema: JsonSchema, options: CompileOptions = {}): Valid
   ctx.registerCompiled(schema, mainFuncName);
 
   // In legacy mode (draft-07 and earlier), skip dynamic scope entirely for better performance
-  // Also skip if schema has no dynamic anchors (common case - significant perf improvement)
-  // Include $recursiveAnchor (draft 2019-09) in the check
-  const hasDynamicFeatures =
-    !ctx.options.legacyRef && (ctx.hasAnyDynamicAnchors() || ctx.hasAnyRecursiveAnchors());
+  // Only enable dynamic scope if the root schema actually uses $dynamicRef or $recursiveRef
+  // This avoids overhead from meta-schemas with $recursiveAnchor that are never used
+  const hasDynamicFeatures = !ctx.options.legacyRef && ctx.rootUsesDynamicRefs();
   const dynamicScopeVar = hasDynamicFeatures ? new Name('dynamicScope') : undefined;
 
   // Collect dynamic anchors from the root resource to add to scope at startup
@@ -525,6 +525,93 @@ export function generateTypeCheck(
 }
 
 /**
+ * Check if a value can be inlined for comparison (simple array or object with primitives only).
+ * Returns true for arrays/objects with ≤5 elements that contain only primitives.
+ */
+function canInlineComparison(value: unknown, maxDepth: number = 2): boolean {
+  if (value === null || typeof value !== 'object') return true;
+  if (maxDepth <= 0) return false;
+
+  if (Array.isArray(value)) {
+    if (value.length > 5) return false;
+    return value.every((v) => canInlineComparison(v, maxDepth - 1));
+  }
+
+  const keys = Object.keys(value as object);
+  if (keys.length > 5) return false;
+  return keys.every((k) =>
+    canInlineComparison((value as Record<string, unknown>)[k], maxDepth - 1)
+  );
+}
+
+/**
+ * Generate inline comparison code for a value.
+ * Returns Code that evaluates to true if dataVar equals the value.
+ */
+function genInlineComparison(dataVar: Code | Name, value: unknown): Code {
+  // Primitives: simple strict equality
+  if (value === null) return _`${dataVar} === null`;
+  if (typeof value !== 'object') return _`${dataVar} === ${stringify(value)}`;
+
+  if (Array.isArray(value)) {
+    // Optimization: empty array - just check Array.isArray and length
+    if (value.length === 0) {
+      return _`(Array.isArray(${dataVar}) && ${dataVar}.length === 0)`;
+    }
+    // Array comparison: check Array.isArray, length, and each element
+    const checks: Code[] = [_`Array.isArray(${dataVar})`, _`${dataVar}.length === ${value.length}`];
+    for (let i = 0; i < value.length; i++) {
+      checks.push(genInlineComparison(_`${dataVar}[${i}]`, value[i]));
+    }
+    return _`(${and(...checks)})`;
+  }
+
+  // Object comparison: check typeof, keys, and each property
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj);
+
+  // Optimization: empty object - just check it's an object with no keys
+  if (keys.length === 0) {
+    return _`(typeof ${dataVar} === 'object' && ${dataVar} !== null && !Array.isArray(${dataVar}) && Object.keys(${dataVar}).length === 0)`;
+  }
+
+  // For objects with 1-2 keys, check key existence with 'in' operator which is faster
+  // than Object.keys().length for small objects
+  if (keys.length <= 2) {
+    const checks: Code[] = [
+      _`typeof ${dataVar} === 'object'`,
+      _`${dataVar} !== null`,
+      _`!Array.isArray(${dataVar})`,
+    ];
+    // Check each property exists and matches (implicitly checks key count for small objects)
+    for (const key of keys) {
+      const propAccess = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(key)
+        ? _`${dataVar}.${Code.raw(key)}`
+        : _`${dataVar}[${stringify(key)}]`;
+      checks.push(genInlineComparison(propAccess, obj[key]));
+    }
+    // Also verify no extra keys by checking Object.keys length
+    checks.push(_`Object.keys(${dataVar}).length === ${keys.length}`);
+    return _`(${and(...checks)})`;
+  }
+
+  const checks: Code[] = [
+    _`typeof ${dataVar} === 'object'`,
+    _`${dataVar} !== null`,
+    _`!Array.isArray(${dataVar})`,
+    _`Object.keys(${dataVar}).length === ${keys.length}`,
+  ];
+  for (const key of keys) {
+    // Check key exists and value matches
+    const propAccess = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(key)
+      ? _`${dataVar}.${Code.raw(key)}`
+      : _`${dataVar}[${stringify(key)}]`;
+    checks.push(genInlineComparison(propAccess, obj[key]));
+  }
+  return _`(${and(...checks)})`;
+}
+
+/**
  * Generate const check code
  */
 export function generateConstCheck(
@@ -551,9 +638,24 @@ export function generateConstCheck(
         ctx
       );
     });
+  } else if (canInlineComparison(schema.const)) {
+    // For simple arrays/objects, inline the comparison for better performance
+    const inlineCheck = genInlineComparison(dataVar, schema.const);
+    code.if(_`!(${inlineCheck})`, () => {
+      genError(
+        code,
+        pathExprCode,
+        '#/const',
+        'const',
+        'must be equal to constant',
+        {
+          allowedValue: schema.const,
+        },
+        ctx
+      );
+    });
   } else {
-    // For objects/arrays, store as runtime constant and use deepEqual
-    // This avoids JSON parsing overhead of stringify at runtime
+    // For complex objects/arrays, use deepEqual with runtime constant
     const constName = new Name(ctx.genRuntimeName('const'));
     ctx.addRuntimeFunction(constName.str, schema.const);
     code.if(_`!deepEqual(${dataVar}, ${constName})`, () => {
@@ -640,13 +742,42 @@ export function generateEnumCheck(
       });
     }
   } else if (primitives.length === 0) {
-    // All complex - AJV-style inline expressions for small enums
-    const arrName = new Name(ctx.genRuntimeName('enumArr'));
-    ctx.addRuntimeFunction(arrName.str, complexValues);
+    // All complex values - use inline comparison where possible
+    // Separate inlinable from non-inlinable complex values
+    const inlinableValues: unknown[] = [];
+    const nonInlinableValues: unknown[] = [];
+    for (const v of complexValues) {
+      if (canInlineComparison(v)) {
+        inlinableValues.push(v);
+      } else {
+        nonInlinableValues.push(v);
+      }
+    }
 
-    if (complexValues.length <= 10) {
-      // Small enum: generate inline expression (no loop overhead)
-      // deepEqual(data, arr[0]) || deepEqual(data, arr[1]) || ...
+    if (nonInlinableValues.length === 0) {
+      // All can be inlined - generate fully inline comparison
+      const checks: Code[] = [];
+      for (const val of inlinableValues) {
+        checks.push(genInlineComparison(dataVar, val));
+      }
+      const condition = checks.length === 1 ? _`!(${checks[0]})` : _`!(${or(...checks)})`;
+      code.if(condition, () => {
+        genError(
+          code,
+          pathExprCode,
+          '#/enum',
+          'enum',
+          'must be equal to one of the allowed values',
+          {
+            allowedValues: schema.enum,
+          },
+          ctx
+        );
+      });
+    } else if (complexValues.length <= 10) {
+      // Some need deepEqual - use mixed approach with runtime array
+      const arrName = new Name(ctx.genRuntimeName('enumArr'));
+      ctx.addRuntimeFunction(arrName.str, complexValues);
       const checks = complexValues.map((_val, i) => _`deepEqual(${dataVar}, ${arrName}[${i}])`);
       const condition = checks.length === 1 ? _`!(${checks[0]})` : _`!(${or(...checks)})`;
       code.if(condition, () => {
@@ -664,6 +795,8 @@ export function generateEnumCheck(
       });
     } else {
       // Large enum: use loop
+      const arrName = new Name(ctx.genRuntimeName('enumArr'));
+      ctx.addRuntimeFunction(arrName.str, complexValues);
       const matchVar = code.genVar('match');
       const iVar = code.genVar('i');
       code.line(_`let ${matchVar} = false;`);
@@ -688,12 +821,48 @@ export function generateEnumCheck(
       });
     }
   } else {
-    // Mixed: AJV-style single expression for small enums
+    // Mixed: primitives + complex values
     const totalLen = primitives.length + complexValues.length;
 
-    if (totalLen <= 15) {
-      // Small mixed enum: generate single expression
-      // data === v1 || data === v2 || deepEqual(data, arr[0]) || ...
+    // Separate inlinable from non-inlinable complex values
+    const inlinableComplex: unknown[] = [];
+    const nonInlinableComplex: unknown[] = [];
+    for (const v of complexValues) {
+      if (canInlineComparison(v)) {
+        inlinableComplex.push(v);
+      } else {
+        nonInlinableComplex.push(v);
+      }
+    }
+
+    if (totalLen <= 15 && nonInlinableComplex.length === 0) {
+      // All complex values can be inlined - generate single expression without runtime array
+      const checks: Code[] = [];
+      // Add primitive checks first (faster)
+      for (const val of primitives) {
+        checks.push(_`${dataVar} === ${stringify(val)}`);
+      }
+      // Add inlined complex checks
+      for (const val of inlinableComplex) {
+        checks.push(genInlineComparison(dataVar, val));
+      }
+
+      const condition = _`!(${or(...checks)})`;
+      code.if(condition, () => {
+        genError(
+          code,
+          pathExprCode,
+          '#/enum',
+          'enum',
+          'must be equal to one of the allowed values',
+          {
+            allowedValues: schema.enum,
+          },
+          ctx
+        );
+      });
+    } else if (totalLen <= 15) {
+      // Small mixed enum with some non-inlinable: use runtime array for complex
       const arrName = new Name(ctx.genRuntimeName('enumArr'));
       ctx.addRuntimeFunction(arrName.str, complexValues);
 
@@ -1952,14 +2121,28 @@ export function generateContainsCheck(
         }
       });
     } else {
-      // Queue the contains schema for compilation (reuses all existing generators)
-      const containsFuncName = ctx.queueCompile(containsSchema);
+      // Use inline subschema check instead of spawning a function
+      // This avoids function call overhead for each array item
+      const lenVar = code.genVar('len');
+      code.line(_`const ${lenVar} = ${dataVar}.length;`);
 
-      code.forArray(iVar, dataVar, () => {
+      code.for(_`let ${iVar} = 0`, _`${iVar} < ${lenVar}`, _`${iVar}++`, () => {
         const itemAccess = indexAccess(dataVar, iVar);
 
-        // Call the compiled contains validator (pass null for errors to skip collection)
-        code.if(_`${containsFuncName}(${itemAccess}, null, '')`, () => {
+        // Store item in a variable for generateSubschemaCheck
+        const itemVar = code.genVar('item');
+        code.line(_`const ${itemVar} = ${itemAccess};`);
+
+        // Generate inline check (will use labeled blocks for complex schemas)
+        const checkExpr = generateSubschemaCheck(
+          code,
+          containsSchema as JsonSchema,
+          itemVar,
+          ctx,
+          _dynamicScopeVar
+        );
+
+        code.if(checkExpr, () => {
           code.line(_`${countVar}++;`);
           // Track matched index for unevaluatedItems
           if (needsItemsTracking) {
@@ -2036,10 +2219,15 @@ export function generateDependentRequiredCheck(
   const deps = Object.entries(schema.dependentRequired).filter(([, reqs]) => reqs.length > 0);
   if (deps.length === 0) return;
 
-  code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
+  // Check if schema already has type: 'object' - then we can skip the type guard
+  const needsObjectGuard = !hasTypeConstraint(schema, 'object');
+
+  const genDependentChecks = () => {
     for (const [prop, requiredProps] of deps) {
       code.if(_`${prop} in ${dataVar}`, () => {
-        for (const reqProp of requiredProps) {
+        // For multiple required properties, batch into a single check like required does
+        if (requiredProps.length === 1) {
+          const reqProp = requiredProps[0];
           const reqPathExpr = pathExpr(pathExprCode, reqProp);
           code.if(_`!(${reqProp} in ${dataVar})`, () => {
             genError(
@@ -2052,10 +2240,46 @@ export function generateDependentRequiredCheck(
               ctx
             );
           });
+        } else {
+          // Batch multiple required property checks
+          const missingVar = code.genVar('missing');
+          code.line(_`let ${missingVar};`);
+
+          // Build the compound condition like required does
+          const conditions: Code[] = [];
+          for (const reqProp of requiredProps) {
+            conditions.push(_`(!(${reqProp} in ${dataVar}) && (${missingVar} = ${reqProp}))`);
+          }
+
+          // Combine all conditions with ||
+          let combinedCondition = conditions[0];
+          for (let i = 1; i < conditions.length; i++) {
+            combinedCondition = _`${combinedCondition} || ${conditions[i]}`;
+          }
+
+          code.if(combinedCondition, () => {
+            // Generate error inline like required does (genError doesn't support dynamic messages)
+            const propPathExpr = pathExprDynamic(pathExprCode, missingVar);
+            // Use Code.raw for the escaped prop to avoid double-quoting in the message string
+            const escapedProp = Code.raw(escapeString(prop));
+            code.line(
+              _`${ctx.getMainFuncName()}.errors = [{ instancePath: ${propPathExpr}, schemaPath: '#/dependentRequired', keyword: 'dependentRequired', params: { missingProperty: ${missingVar} }, message: "must have property '" + ${missingVar} + "' when property '${escapedProp}' is present" }];`
+            );
+            code.line(_`return false;`);
+          });
         }
       });
     }
-  });
+  };
+
+  if (needsObjectGuard) {
+    code.if(
+      _`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`,
+      genDependentChecks
+    );
+  } else {
+    genDependentChecks();
+  }
 }
 
 /**
@@ -3438,12 +3662,32 @@ function generateSubschemaCheck(
       .length === 0;
   const schemaToValidate = isRefOnly && resolvedSchema !== schema ? resolvedSchema : schema;
 
+  // Cycle detection: if this schema is already being processed inline, use function call
+  if (
+    typeof schemaToValidate === 'object' &&
+    schemaToValidate !== null &&
+    (ctx.isProcessingInline(schemaToValidate) || ctx.isCompiled(schemaToValidate))
+  ) {
+    const funcName = ctx.getCompiledName(schemaToValidate) ?? ctx.queueCompile(schemaToValidate);
+    const hasDynamicFeatures = dynamicScopeVar !== undefined;
+    if (hasDynamicFeatures) {
+      return _`${funcName}(${dataVar}, null, '', ${dynamicScopeVar})`;
+    } else {
+      return _`${funcName}(${dataVar}, null, '')`;
+    }
+  }
+
   // Create labeled block for early exit without IIFE
   const label = code.genVar('check');
   const validVar = code.genVar('valid');
 
   code.line(_`let ${validVar} = true;`);
   code.line(_`${label}: {`);
+
+  // Track that we're processing this schema inline (for cycle detection)
+  if (typeof schemaToValidate === 'object' && schemaToValidate !== null) {
+    ctx.enterInlineProcessing(schemaToValidate);
+  }
 
   // Enter subschema check mode - genError will use break instead of return
   ctx.enterSubschemaCheck(label, validVar);
@@ -3453,6 +3697,11 @@ function generateSubschemaCheck(
 
   // Exit subschema check mode
   ctx.exitSubschemaCheck();
+
+  // Stop tracking inline processing
+  if (typeof schemaToValidate === 'object' && schemaToValidate !== null) {
+    ctx.exitInlineProcessing(schemaToValidate);
+  }
 
   code.line(_`}`);
 

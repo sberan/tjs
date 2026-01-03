@@ -8,6 +8,7 @@ import {
   Code,
   Name,
   _,
+  or,
   propAccess,
   pathExpr,
   pathExprDynamic,
@@ -201,14 +202,32 @@ export function genError(
   }
 
   // Normal mode: set errors and return false
-  // Use stringify() to get a Code object that won't be double-quoted by the _ template
-  const paramsCode = stringify(params);
+  const pathStr = pathExprCode.toString();
+  const isStaticPath = pathStr === "''" || pathStr === '""';
 
-  // Build the error object
-  const errObj = _`{ instancePath: ${pathExprCode}, schemaPath: ${schemaPath}, keyword: ${keyword}, params: ${paramsCode}, message: ${message} }`;
-
-  // Set .errors on main function directly (AJV-compatible pattern)
-  code.line(_`${ctx.getMainFuncName()}.errors = [${errObj}];`);
+  if (isStaticPath) {
+    // Pre-allocate error array for static paths (root-level errors)
+    // This avoids expensive object creation on every validation failure
+    const errorKey = `err_${schemaPath.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    const errorName = new Name(errorKey);
+    const errorArray = [
+      {
+        instancePath: '',
+        schemaPath,
+        keyword,
+        params,
+        message,
+      },
+    ];
+    ctx.addRuntimeFunction(errorKey, errorArray);
+    code.line(_`${ctx.getMainFuncName()}.errors = ${errorName};`);
+  } else {
+    // Dynamic path: create error object with computed instancePath
+    // Use stringify() to get a Code object that won't be double-quoted by the _ template
+    const paramsCode = stringify(params);
+    const errObj = _`{ instancePath: ${pathExprCode}, schemaPath: ${schemaPath}, keyword: ${keyword}, params: ${paramsCode}, message: ${message} }`;
+    code.line(_`${ctx.getMainFuncName()}.errors = [${errObj}];`);
+  }
   code.line(_`return false;`);
 }
 
@@ -294,6 +313,27 @@ export function getOptimizedUnionTypeCheck(
       return _`(${dataVar} === null || typeof ${dataVar} === 'string')`;
     case 'null,number':
       return _`(${dataVar} === null || typeof ${dataVar} === 'number')`;
+    // Optimized: array OR object means typeof === 'object' && not null
+    case 'array,object':
+      return _`(typeof ${dataVar} === 'object' && ${dataVar} !== null)`;
+    // Optimized: array OR object OR null means typeof === 'object'
+    case 'array,null,object':
+      return _`(typeof ${dataVar} === 'object')`;
+    // Optimized: number OR null
+    case 'boolean,null':
+      return _`(${dataVar} === null || typeof ${dataVar} === 'boolean')`;
+    // Optimized: integer OR string
+    case 'integer,string':
+      return _`(Number.isInteger(${dataVar}) || typeof ${dataVar} === 'string')`;
+    // Optimized: integer OR number (both are numbers)
+    case 'integer,number':
+      return _`(typeof ${dataVar} === 'number')`;
+    // Optimized: array OR null
+    case 'array,null':
+      return _`(${dataVar} === null || Array.isArray(${dataVar}))`;
+    // Optimized: object OR null
+    case 'null,object':
+      return _`(${dataVar} === null || (typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})))`;
   }
 
   return undefined;
@@ -416,4 +456,72 @@ export function getInlineTypeCheck(dataVar: Name, schema: unknown): Code | undef
   const simpleType = getSimpleType(schema);
   if (!simpleType) return undefined;
   return getTypeCheck(dataVar, simpleType);
+}
+
+/**
+ * Get the simple const value from a const-only schema.
+ * Returns undefined if the schema is not a simple const-only schema.
+ */
+export function getSimpleConst(schema: unknown): unknown {
+  if (typeof schema !== 'object' || schema === null) return undefined;
+  const s = schema as JsonSchemaBase;
+  const keys = Object.keys(s);
+
+  // Allow const + metadata keys
+  const metadataKeys = new Set(['$schema', '$id']);
+  const validationKeys = keys.filter((k) => !metadataKeys.has(k));
+
+  if (validationKeys.length === 1 && validationKeys[0] === 'const') {
+    return s.const;
+  }
+
+  return undefined;
+}
+
+/**
+ * Check if a value is a primitive that can be compared with ===
+ */
+export function isPrimitive(value: unknown): boolean {
+  return value === null || typeof value !== 'object';
+}
+
+/**
+ * Get inline check for a simple schema (type, const, or simple enum).
+ * Returns undefined if the schema cannot be inlined.
+ */
+export function getInlineSchemaCheck(dataVar: Name | Code, schema: unknown): Code | undefined {
+  if (typeof schema !== 'object' || schema === null) return undefined;
+  const s = schema as JsonSchemaBase;
+  const keys = Object.keys(s);
+
+  // Filter out metadata keys
+  const metadataKeys = new Set(['$schema', '$id']);
+  const validationKeys = keys.filter((k) => !metadataKeys.has(k));
+
+  if (validationKeys.length !== 1) return undefined;
+
+  const keyword = validationKeys[0];
+
+  // Handle type
+  if (keyword === 'type' && typeof s.type === 'string') {
+    return getTypeCheck(dataVar, s.type);
+  }
+
+  // Handle const with primitive value
+  if (keyword === 'const' && isPrimitive(s.const)) {
+    return _`${dataVar} === ${stringify(s.const)}`;
+  }
+
+  // Handle enum with all primitive values (up to 5 values for reasonable code size)
+  if (keyword === 'enum' && Array.isArray(s.enum) && s.enum.length <= 5) {
+    if (s.enum.every(isPrimitive)) {
+      if (s.enum.length === 1) {
+        return _`${dataVar} === ${stringify(s.enum[0])}`;
+      }
+      const checks = s.enum.map((v) => _`${dataVar} === ${stringify(v)}`);
+      return _`(${or(...checks)})`;
+    }
+  }
+
+  return undefined;
 }

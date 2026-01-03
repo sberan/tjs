@@ -205,6 +205,12 @@ export class CompileContext {
   /** Stack for subschema check contexts (for labeled block approach) */
   #subschemaStack: Array<{ label: Name; validVar: Name }> = [];
 
+  /** Set of schemas currently being processed inline (for cycle detection) */
+  readonly #inlineProcessing = new Set<JsonSchema>();
+
+  /** Whether the root schema uses $dynamicRef or $recursiveRef (requires dynamic scope) */
+  readonly #rootUsesDynamicRefs: boolean;
+
   /** Property tracker for unevaluatedProperties support */
   #propsTracker: PropsTracker | null = null;
 
@@ -254,6 +260,9 @@ export class CompileContext {
     const vocabResult = this.#resolveVocabularies(rootSchema);
     this.#enabledVocabularies = vocabResult.vocabularies;
     this.#hasCustomVocabulary = vocabResult.hasCustomVocabulary;
+
+    // Check if root schema uses $dynamicRef or $recursiveRef (requires dynamic scope at runtime)
+    this.#rootUsesDynamicRefs = this.#schemaUsesDynamicRefs(rootSchema, new Set());
   }
 
   /**
@@ -531,6 +540,27 @@ export class CompileContext {
    */
   nextToCompile(): { schema: JsonSchema; funcName: Name } | undefined {
     return this.#compileQueue.shift();
+  }
+
+  /**
+   * Check if a schema is currently being processed inline (cycle detection)
+   */
+  isProcessingInline(schema: JsonSchema): boolean {
+    return this.#inlineProcessing.has(schema);
+  }
+
+  /**
+   * Mark a schema as being processed inline
+   */
+  enterInlineProcessing(schema: JsonSchema): void {
+    this.#inlineProcessing.add(schema);
+  }
+
+  /**
+   * Mark a schema as no longer being processed inline
+   */
+  exitInlineProcessing(schema: JsonSchema): void {
+    this.#inlineProcessing.delete(schema);
   }
 
   /**
@@ -863,6 +893,73 @@ export class CompileContext {
    */
   hasRecursiveAnchor(schema: JsonSchema): boolean {
     return typeof schema === 'object' && schema !== null && schema.$recursiveAnchor === true;
+  }
+
+  /**
+   * Check if the root schema uses $dynamicRef or $recursiveRef.
+   * This is used to determine if dynamic scope is needed at runtime.
+   * Unlike hasAnyDynamicAnchors/hasAnyRecursiveAnchors, this only checks
+   * the main schema, not remotes that may never be referenced.
+   */
+  rootUsesDynamicRefs(): boolean {
+    return this.#rootUsesDynamicRefs;
+  }
+
+  /**
+   * Recursively check if a schema uses $dynamicRef or $recursiveRef.
+   * Also follows $ref chains to detect dynamic features in referenced schemas.
+   */
+  #schemaUsesDynamicRefs(schema: JsonSchema, visited: Set<unknown>): boolean {
+    if (typeof schema !== 'object' || schema === null || visited.has(schema)) {
+      return false;
+    }
+    visited.add(schema);
+
+    // Check for $dynamicRef or $recursiveRef
+    if (schema.$dynamicRef || schema.$recursiveRef) {
+      return true;
+    }
+
+    // Check for $dynamicAnchor or $recursiveAnchor (means dynamic refs might target this)
+    if (schema.$dynamicAnchor || schema.$recursiveAnchor === true) {
+      return true;
+    }
+
+    // Follow $ref to check referenced schemas
+    if (schema.$ref) {
+      const resolved = this.resolveRef(schema.$ref, schema);
+      if (resolved && !visited.has(resolved)) {
+        if (this.#schemaUsesDynamicRefs(resolved, visited)) {
+          return true;
+        }
+      }
+    }
+
+    // Recursively check all subschemas
+    const subschemas = [
+      ...(schema.$defs ? Object.values(schema.$defs) : []),
+      ...(schema.definitions ? Object.values(schema.definitions) : []),
+      ...(schema.properties ? Object.values(schema.properties) : []),
+      ...(schema.patternProperties ? Object.values(schema.patternProperties) : []),
+      ...(schema.prefixItems ?? []),
+      ...(schema.anyOf ?? []),
+      ...(schema.oneOf ?? []),
+      ...(schema.allOf ?? []),
+      ...(Array.isArray(schema.items) ? schema.items : schema.items ? [schema.items] : []),
+      schema.additionalItems,
+      schema.additionalProperties,
+      schema.unevaluatedProperties,
+      schema.unevaluatedItems,
+      schema.not,
+      schema.if,
+      schema.then,
+      schema.else,
+      schema.contains,
+      schema.propertyNames,
+      ...(schema.dependentSchemas ? Object.values(schema.dependentSchemas) : []),
+    ].filter((s): s is JsonSchema => s !== undefined && s !== null);
+
+    return subschemas.some((sub) => this.#schemaUsesDynamicRefs(sub, visited));
   }
 
   /**
