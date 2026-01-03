@@ -97,6 +97,32 @@ date-time                8x faster than ajv
 ipv6                     4x faster than ajv
 ```
 
+#### Why is tjs faster?
+
+tjs achieves its performance through several code generation optimizations that ajv doesn't implement:
+
+| Optimization | tjs | ajv |
+|--------------|-----|-----|
+| **Format validators** | Character-code parsing with lookup tables | Complex regex patterns (800+ chars for ipv6) |
+| **typeof caching** | Caches `typeof` result once for multi-type checks | Calls `typeof` repeatedly |
+| **oneOf early exit** | Returns immediately when 2nd match found | Evaluates all branches, tracks matches in arrays |
+| **Error allocation** | Pre-compiled error objects, zero allocation in hot path | Creates error objects inline during validation |
+
+The format validators show the largest gains. For example, `date-time` validation in tjs uses direct character code comparisons:
+
+```javascript
+// tjs: ~140 lines of simple character code checks
+if (s.charCodeAt(4) !== 45) return false; // '-'
+const year = (s.charCodeAt(0) - 48) * 1000 + ...
+```
+
+vs ajv-formats which uses regex with potential backtracking:
+
+```javascript
+// ajv-formats: regex pattern
+/^\d\d\d\d-[0-1]\d-[0-3]\dt(?:[0-2]\d:[0-5]\d:[0-5]\d|23:59:60)(?:\.\d+)?(?:z|[+-]\d\d(?::?\d\d)?)$/i
+```
+
 ### Magical Type Inference ✨
 
 tjs infers TypeScript types directly from your schema — no code generation, no separate type definitions:
