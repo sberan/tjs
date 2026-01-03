@@ -79,10 +79,10 @@ export function compile(schema: JsonSchema, options: CompileOptions = {}): Valid
   const needsItemsTracking = containsUnevaluatedItems(schema);
   ctx.initItemsTracker(code, needsItemsTracking);
 
-  // Add runtime functions
-  ctx.addRuntimeFunction('deepEqual', createDeepEqual());
-  ctx.addRuntimeFunction('formatValidators', createFormatValidators());
-  ctx.addRuntimeFunction('ucs2length', createUcs2Length());
+  // Add shared runtime functions (module-level singletons, not recreated per schema)
+  ctx.addRuntimeFunction('deepEqual', sharedDeepEqual);
+  ctx.addRuntimeFunction('formatValidators', sharedFormatValidators);
+  ctx.addRuntimeFunction('ucs2length', sharedUcs2Length);
 
   // Generate the main validation function
   const mainFuncName = ctx.genFuncName();
@@ -356,81 +356,80 @@ function generateSchemaValidator(
 }
 
 /**
- * Create a deep equality function for const/enum validation
+ * Deep equality function for const/enum validation
  * Optimized for performance with early exits and minimal overhead
+ * Shared across all validators (module-level singleton)
  */
-function createDeepEqual(): (a: unknown, b: unknown) => boolean {
-  return function deepEqual(a: unknown, b: unknown): boolean {
-    // Fast path: strict equality (handles primitives, same reference)
-    if (a === b) return true;
+function sharedDeepEqual(a: unknown, b: unknown): boolean {
+  // Fast path: strict equality (handles primitives, same reference)
+  if (a === b) return true;
 
-    // Fast path: type mismatch
-    const aType = typeof a;
-    const bType = typeof b;
-    if (aType !== bType) return false;
+  // Fast path: type mismatch
+  const aType = typeof a;
+  const bType = typeof b;
+  if (aType !== bType) return false;
 
-    // Fast path: non-objects or nulls
-    if (aType !== 'object' || a === null || b === null) return false;
+  // Fast path: non-objects or nulls
+  if (aType !== 'object' || a === null || b === null) return false;
 
-    // Fast path: array vs non-array mismatch
-    const aIsArray = Array.isArray(a);
-    const bIsArray = Array.isArray(b);
-    if (aIsArray !== bIsArray) return false;
+  // Fast path: array vs non-array mismatch
+  const aIsArray = Array.isArray(a);
+  const bIsArray = Array.isArray(b);
+  if (aIsArray !== bIsArray) return false;
 
-    if (aIsArray) {
-      const aArr = a as unknown[];
-      const bArr = b as unknown[];
-      const len = aArr.length;
+  if (aIsArray) {
+    const aArr = a as unknown[];
+    const bArr = b as unknown[];
+    const len = aArr.length;
 
-      // Fast path: length mismatch
-      if (len !== bArr.length) return false;
+    // Fast path: length mismatch
+    if (len !== bArr.length) return false;
 
-      // Optimize: use for loop instead of every() to reduce function call overhead
-      for (let i = 0; i < len; i++) {
-        if (!deepEqual(aArr[i], bArr[i])) return false;
-      }
-      return true;
-    }
-
-    // Object comparison
-    const aObj = a as Record<string, unknown>;
-    const bObj = b as Record<string, unknown>;
-    const aKeys = Object.keys(aObj);
-    const len = aKeys.length;
-
-    // Fast path: key count mismatch
-    if (len !== Object.keys(bObj).length) return false;
-
-    // Optimize: use for loop instead of every()
+    // Optimize: use for loop instead of every() to reduce function call overhead
     for (let i = 0; i < len; i++) {
-      const key = aKeys[i];
-      if (!(key in bObj) || !deepEqual(aObj[key], bObj[key])) return false;
+      if (!sharedDeepEqual(aArr[i], bArr[i])) return false;
     }
     return true;
-  };
+  }
+
+  // Object comparison
+  const aObj = a as Record<string, unknown>;
+  const bObj = b as Record<string, unknown>;
+  const aKeys = Object.keys(aObj);
+  const len = aKeys.length;
+
+  // Fast path: key count mismatch
+  if (len !== Object.keys(bObj).length) return false;
+
+  // Optimize: use for loop instead of every()
+  for (let i = 0; i < len; i++) {
+    const key = aKeys[i];
+    if (!(key in bObj) || !sharedDeepEqual(aObj[key], bObj[key])) return false;
+  }
+  return true;
 }
+
 /**
- * Create a Unicode code point length function for minLength/maxLength validation.
+ * Unicode code point length function for minLength/maxLength validation.
  * This handles surrogate pairs (emojis, etc.) correctly.
  * Based on https://mathiasbynens.be/notes/javascript-encoding
+ * Shared across all validators (module-level singleton)
  */
-function createUcs2Length(): (str: string) => number {
-  return function ucs2length(str: string): number {
-    const len = str.length;
-    let length = 0;
-    let pos = 0;
-    let value: number;
-    while (pos < len) {
-      length++;
-      value = str.charCodeAt(pos++);
-      if (value >= 0xd800 && value <= 0xdbff && pos < len) {
-        // high surrogate, and there is a next character
-        value = str.charCodeAt(pos);
-        if ((value & 0xfc00) === 0xdc00) pos++; // low surrogate
-      }
+function sharedUcs2Length(str: string): number {
+  const len = str.length;
+  let length = 0;
+  let pos = 0;
+  let value: number;
+  while (pos < len) {
+    length++;
+    value = str.charCodeAt(pos++);
+    if (value >= 0xd800 && value <= 0xdbff && pos < len) {
+      // high surrogate, and there is a next character
+      value = str.charCodeAt(pos);
+      if ((value & 0xfc00) === 0xdc00) pos++; // low surrogate
     }
-    return length;
-  };
+  }
+  return length;
 }
 
 // =============================================================================
