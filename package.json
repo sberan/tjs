@@ -35,7 +35,9 @@
     "format:check": "prettier --check .",
     "prepare": "husky",
     "bench": "tsx benchmarks/bench.ts",
-    "bench:json": "tsx benchmarks/bench.ts --json",
+    "bench:compare": "tsx benchmarks/bench.ts -v ajv",
+    "bench:all": "tsx benchmarks/bench.ts -v ajv -v zod -v joi",
+    "bench:json": "tsx benchmarks/bench.ts -v ajv --json",
     "bench:update-svg": "npm run bench:json | tsx benchmarks/update-svg.ts"
   },
   "keywords": [
