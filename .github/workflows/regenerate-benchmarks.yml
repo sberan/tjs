@@ -66,17 +66,25 @@ jobs:
       - name: Update README
         run: npx tsx benchmarks/update-readme.ts
 
-      - name: Check for changes
+      - name: Check for significant changes
         id: check_changes
         run: |
           git add -A
           if git diff --staged --quiet; then
             echo "has_changes=false" >> $GITHUB_OUTPUT
             echo "No changes detected"
-          else
+            exit 0
+          fi
+
+          echo "Changes detected, checking significance..."
+          git diff --staged --stat
+
+          # Check if changes are significant (exits 0 if significant, 1 if noise)
+          if npx tsx benchmarks/check-significance.ts; then
             echo "has_changes=true" >> $GITHUB_OUTPUT
-            echo "Changes detected:"
-            git diff --staged --stat
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "Changes are within noise threshold, skipping PR"
           fi
 
       - name: Create or update PR
