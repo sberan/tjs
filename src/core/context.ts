@@ -205,6 +205,9 @@ export class CompileContext {
   /** Stack for subschema check contexts (for labeled block approach) */
   #subschemaStack: Array<{ label: Name; validVar: Name }> = [];
 
+  /** Set of schemas currently being processed inline (for cycle detection) */
+  readonly #inlineProcessing = new Set<JsonSchema>();
+
   /** Property tracker for unevaluatedProperties support */
   #propsTracker: PropsTracker | null = null;
 
@@ -531,6 +534,27 @@ export class CompileContext {
    */
   nextToCompile(): { schema: JsonSchema; funcName: Name } | undefined {
     return this.#compileQueue.shift();
+  }
+
+  /**
+   * Check if a schema is currently being processed inline (cycle detection)
+   */
+  isProcessingInline(schema: JsonSchema): boolean {
+    return this.#inlineProcessing.has(schema);
+  }
+
+  /**
+   * Mark a schema as being processed inline
+   */
+  enterInlineProcessing(schema: JsonSchema): void {
+    this.#inlineProcessing.add(schema);
+  }
+
+  /**
+   * Mark a schema as no longer being processed inline
+   */
+  exitInlineProcessing(schema: JsonSchema): void {
+    this.#inlineProcessing.delete(schema);
   }
 
   /**

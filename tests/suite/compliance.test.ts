@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { loadTestFiles } from './loader.js';
 import { formatReport } from './runner.js';
 import { createValidatorAsync, type Validator } from '../../src/index.js';
+import { metaSchemas } from '../../src/meta-schemas/index.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
@@ -142,7 +143,7 @@ function loadRemoteSchemas(draft: Draft): Record<string, JsonSchema> {
 function testDraft(draft: Draft, includeOptional: boolean = true) {
   describe(draft, () => {
     const files = loadTestFiles({ draft, includeOptional });
-    const remotes = loadRemoteSchemas(draft);
+    const remotes = { ...metaSchemas, ...loadRemoteSchemas(draft) };
     const localFetch = createLocalFetch();
 
     // Track results for report generation

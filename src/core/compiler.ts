@@ -3621,12 +3621,32 @@ function generateSubschemaCheck(
       .length === 0;
   const schemaToValidate = isRefOnly && resolvedSchema !== schema ? resolvedSchema : schema;
 
+  // Cycle detection: if this schema is already being processed inline, use function call
+  if (
+    typeof schemaToValidate === 'object' &&
+    schemaToValidate !== null &&
+    (ctx.isProcessingInline(schemaToValidate) || ctx.isCompiled(schemaToValidate))
+  ) {
+    const funcName = ctx.getCompiledName(schemaToValidate) ?? ctx.queueCompile(schemaToValidate);
+    const hasDynamicFeatures = dynamicScopeVar !== undefined;
+    if (hasDynamicFeatures) {
+      return _`${funcName}(${dataVar}, null, '', ${dynamicScopeVar})`;
+    } else {
+      return _`${funcName}(${dataVar}, null, '')`;
+    }
+  }
+
   // Create labeled block for early exit without IIFE
   const label = code.genVar('check');
   const validVar = code.genVar('valid');
 
   code.line(_`let ${validVar} = true;`);
   code.line(_`${label}: {`);
+
+  // Track that we're processing this schema inline (for cycle detection)
+  if (typeof schemaToValidate === 'object' && schemaToValidate !== null) {
+    ctx.enterInlineProcessing(schemaToValidate);
+  }
 
   // Enter subschema check mode - genError will use break instead of return
   ctx.enterSubschemaCheck(label, validVar);
@@ -3636,6 +3656,11 @@ function generateSubschemaCheck(
 
   // Exit subschema check mode
   ctx.exitSubschemaCheck();
+
+  // Stop tracking inline processing
+  if (typeof schemaToValidate === 'object' && schemaToValidate !== null) {
+    ctx.exitInlineProcessing(schemaToValidate);
+  }
 
   code.line(_`}`);
 
