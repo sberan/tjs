@@ -243,39 +243,55 @@ ${perfRows.join('\n')}
 TOTAL          ${String(totalFiles).padStart(5)}${String(totalTests).padStart(8)} │${String(Math.round(avgTjsNs)).padStart(11)}${String(Math.round(avgAjvNs)).padStart(13)}${totalDiff.padStart(10)}
 ────────────────────────────────────────────────────────────────────────────`;
 
+  // Match the entire performance table block (from header to last separator line)
   readme = readme.replace(
-    /Performance vs ajv \(JSON Schema Test Suite\):[\s\S]*?─{10,}/g,
-    (match) => {
-      // Count how many separator lines there are
-      const separatorCount = (match.match(/─{10,}/g) || []).length;
-      if (separatorCount >= 4) {
-        return perfTable;
-      }
-      return match;
-    }
+    /Performance vs ajv \(JSON Schema Test Suite\):\n─+\n[\s\S]*?TOTAL[\s\S]*?─+/,
+    perfTable
   );
 
+  // Calculate the overall performance improvement percentage
+  const perfImprovement = Math.round(((avgAjvNs - avgTjsNs) / avgAjvNs) * 100);
+
+  // Update the tagline "X% faster than ajv"
+  readme = readme.replace(
+    /100% spec compliance\. \d+% faster than ajv\./,
+    `100% spec compliance. ${perfImprovement}% faster than ajv.`
+  );
+
+  // Update the "X% faster than ajv overall" in the Blazing Fast section
+  readme = readme.replace(
+    /\*\*\d+% faster than ajv\*\* overall/,
+    `**${perfImprovement}% faster than ajv** overall`
+  );
+
+  console.error(`Performance improvement: ${perfImprovement}% faster than ajv`);
+
   // Find format validation speedup data from per-file results
-  const formatSpeedups: { name: string; ratio: number }[] = [];
+  // Use a map to track best ratio per format type (since we have multiple drafts)
+  const formatBestRatios: Map<string, { name: string; ratio: number }> = new Map();
   const formatFiles = ['idn-email', 'ecmascript-regex', 'date-time', 'ipv6'];
 
   for (const result of ajvData.results) {
     for (const fmt of formatFiles) {
       if (result.file.includes(fmt) && result.tjs.fail === 0 && result.other.fail === 0) {
         const ratio = result.other.nsPerTest / result.tjs.nsPerTest;
-        if (ratio > 1) {
-          formatSpeedups.push({
-            name: fmt.replace('ecmascript-regex', 'regex syntax'),
-            ratio,
-          });
+        // Only include meaningful speedups (at least 2x faster)
+        if (ratio >= 2) {
+          const name = fmt.replace('ecmascript-regex', 'regex syntax');
+          const existing = formatBestRatios.get(name);
+          // Use the highest ratio (best speedup) for each format
+          if (!existing || ratio > existing.ratio) {
+            formatBestRatios.set(name, { name, ratio });
+          }
         }
       }
     }
   }
 
   // Sort by ratio and take top 4
-  formatSpeedups.sort((a, b) => b.ratio - a.ratio);
-  const topFormats = formatSpeedups.slice(0, 4);
+  const topFormats = Array.from(formatBestRatios.values())
+    .sort((a, b) => b.ratio - a.ratio)
+    .slice(0, 4);
 
   if (topFormats.length > 0) {
     const formatLines = topFormats.map((f) => {
@@ -288,7 +304,7 @@ TOTAL          ${String(totalFiles).padStart(5)}${String(totalTests).padStart(8)
 
     // Replace the format validation section
     readme = readme.replace(
-      /Format validation is where tjs really shines.*?```\n([\s\S]*?)```/,
+      /Format validation is where tjs really shines[^\n]*\n\n```\n[\s\S]*?\n```/,
       `Format validation is where tjs really shines — up to **${Math.round(topFormats[0].ratio)}x faster** for complex formats:\n\n\`\`\`\n${formatSection}\n\`\`\``
     );
   }

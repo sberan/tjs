@@ -7,7 +7,7 @@
 
 ![Benchmark](assets/benchmark.svg)
 
-100% spec compliance. 40% faster than ajv. Zero dependencies. Full TypeScript inference.
+100% spec compliance. 66% faster than ajv. Zero dependencies. Full TypeScript inference.
 
 
 ## At a Glance
@@ -72,30 +72,29 @@ See [COMPLIANCE.md](COMPLIANCE.md) for details.
 ### Blazing Fast 🔥
 
 See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance comparison.
-tjs uses JIT compilation to generate optimized validation code — **40% faster than ajv** overall:
+tjs uses JIT compilation to generate optimized validation code — **66% faster than ajv** overall:
 
 ```
 Performance vs ajv (JSON Schema Test Suite):
 ────────────────────────────────────────────────────────────────────────────
 Draft          Files   Tests │ tjs ns/test  ajv ns/test      Diff
 ────────────────────────────────────────────────────────────────────────────
-draft-04          38     790 │          36           53      -31%
-draft-06          49    1120 │          34           46      -26%
-draft-07          54    1324 │          39           53      -26%
-draft-2019-09     69    1703 │          50           95      -47%
-draft-2020-12     68    1665 │          49           90      -46%
+draft-04         38     790 │         45           90      -51%
+draft-06         49    1120 │         44           84      -48%
+draft-07         54    1324 │         50           92      -46%
+draft-2019-09    69    1703 │         57          217      -74%
+draft-2020-12    68    1665 │         53          202      -74%
 ────────────────────────────────────────────────────────────────────────────
-TOTAL            278    6602 │          43           72      -40%
+TOTAL            278    6602 │         51          150      -66%
 ────────────────────────────────────────────────────────────────────────────
 ```
 
-Format validation is where tjs really shines — up to **124x faster** for complex formats:
+Format validation is where tjs really shines — up to **254x faster** for complex formats:
 
 ```
-idn-email validation      124x faster than ajv
-regex syntax validation    44x faster than ajv
-date-time validation        5x faster than ajv
-ipv6 validation             3x faster than ajv
+idn-email                254x faster than ajv
+date-time                8x faster than ajv
+ipv6                     4x faster than ajv
 ```
 
 ### Magical Type Inference ✨
