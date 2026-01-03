@@ -239,6 +239,9 @@ export interface Validator<T> {
   /** Phantom type for TypeScript type inference */
   readonly type: T;
 
+  /** The JSON Schema definition used to create this validator. Can be used for schema composition. */
+  readonly schema: JsonSchema;
+
   /** Errors from last validation (null if valid, array if invalid). AJV-compatible format. */
   errors: ValidationError[] | null;
 }
@@ -246,6 +249,8 @@ export interface Validator<T> {
 /**
  * Create a JSON Schema validator.
  * Returns a callable validator with validate() and assert() methods.
+ *
+ * Schemas can include other validators directly - they will be expanded during compilation.
  *
  * The generated validator function directly sets `.errors` property (AJV-compatible):
  * - On validation failure: `.errors` contains an array with the error
@@ -258,6 +263,13 @@ export function createValidator<T>(schema: JsonSchema, options: CompileOptions =
   // The compiled function already sets .errors directly (AJV-style)
   // Cast to Validator type - the function already has the right shape
   const validator = validateFn as unknown as Validator<T>;
+
+  // Store the schema on the validator for composition
+  Object.defineProperty(validator, 'schema', {
+    value: schema,
+    writable: false,
+    enumerable: true,
+  });
 
   // Create specialized validate/assert methods based on whether coercion is enabled
   // This eliminates the branch on every call for better performance
