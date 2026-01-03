@@ -19,6 +19,7 @@ import {
   or,
   and,
   not,
+  escapeString,
 } from './codegen.js';
 import { CompileContext, VOCABULARIES, supportsFeature, type CompileOptions } from './context.js';
 import { createFormatValidators } from './keywords/format.js';
@@ -89,10 +90,9 @@ export function compile(schema: JsonSchema, options: CompileOptions = {}): Valid
   ctx.registerCompiled(schema, mainFuncName);
 
   // In legacy mode (draft-07 and earlier), skip dynamic scope entirely for better performance
-  // Also skip if schema has no dynamic anchors (common case - significant perf improvement)
-  // Include $recursiveAnchor (draft 2019-09) in the check
-  const hasDynamicFeatures =
-    !ctx.options.legacyRef && (ctx.hasAnyDynamicAnchors() || ctx.hasAnyRecursiveAnchors());
+  // Only enable dynamic scope if the root schema actually uses $dynamicRef or $recursiveRef
+  // This avoids overhead from meta-schemas with $recursiveAnchor that are never used
+  const hasDynamicFeatures = !ctx.options.legacyRef && ctx.rootUsesDynamicRefs();
   const dynamicScopeVar = hasDynamicFeatures ? new Name('dynamicScope') : undefined;
 
   // Collect dynamic anchors from the root resource to add to scope at startup
@@ -2219,10 +2219,15 @@ export function generateDependentRequiredCheck(
   const deps = Object.entries(schema.dependentRequired).filter(([, reqs]) => reqs.length > 0);
   if (deps.length === 0) return;
 
-  code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
+  // Check if schema already has type: 'object' - then we can skip the type guard
+  const needsObjectGuard = !hasTypeConstraint(schema, 'object');
+
+  const genDependentChecks = () => {
     for (const [prop, requiredProps] of deps) {
       code.if(_`${prop} in ${dataVar}`, () => {
-        for (const reqProp of requiredProps) {
+        // For multiple required properties, batch into a single check like required does
+        if (requiredProps.length === 1) {
+          const reqProp = requiredProps[0];
           const reqPathExpr = pathExpr(pathExprCode, reqProp);
           code.if(_`!(${reqProp} in ${dataVar})`, () => {
             genError(
@@ -2235,10 +2240,46 @@ export function generateDependentRequiredCheck(
               ctx
             );
           });
+        } else {
+          // Batch multiple required property checks
+          const missingVar = code.genVar('missing');
+          code.line(_`let ${missingVar};`);
+
+          // Build the compound condition like required does
+          const conditions: Code[] = [];
+          for (const reqProp of requiredProps) {
+            conditions.push(_`(!(${reqProp} in ${dataVar}) && (${missingVar} = ${reqProp}))`);
+          }
+
+          // Combine all conditions with ||
+          let combinedCondition = conditions[0];
+          for (let i = 1; i < conditions.length; i++) {
+            combinedCondition = _`${combinedCondition} || ${conditions[i]}`;
+          }
+
+          code.if(combinedCondition, () => {
+            // Generate error inline like required does (genError doesn't support dynamic messages)
+            const propPathExpr = pathExprDynamic(pathExprCode, missingVar);
+            // Use Code.raw for the escaped prop to avoid double-quoting in the message string
+            const escapedProp = Code.raw(escapeString(prop));
+            code.line(
+              _`${ctx.getMainFuncName()}.errors = [{ instancePath: ${propPathExpr}, schemaPath: '#/dependentRequired', keyword: 'dependentRequired', params: { missingProperty: ${missingVar} }, message: "must have property '" + ${missingVar} + "' when property '${escapedProp}' is present" }];`
+            );
+            code.line(_`return false;`);
+          });
         }
       });
     }
-  });
+  };
+
+  if (needsObjectGuard) {
+    code.if(
+      _`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`,
+      genDependentChecks
+    );
+  } else {
+    genDependentChecks();
+  }
 }
 
 /**
