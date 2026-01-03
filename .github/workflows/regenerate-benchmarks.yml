@@ -147,13 +147,14 @@ jobs:
       - name: Create or update PR
         if: steps.check_changes.outputs.has_changes == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
           BRANCH_NAME="chore/update-benchmarks"
 
-          # Configure git
+          # Configure git to use PAT for push (triggers workflows)
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
 
           # Always start fresh from main (single commit approach)
           git checkout -B "$BRANCH_NAME" origin/main
@@ -171,6 +172,7 @@ jobs:
           git commit -m "chore: update benchmark results"
 
           # Force push to update the branch (replaces any previous commits)
+          # Using PAT allows this push to trigger the test workflow
           git push -f origin "$BRANCH_NAME"
 
           # Read the generated PR body
