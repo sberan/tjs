@@ -1,11 +1,13 @@
 /**
- * Update the benchmark SVG bar chart from JSON output
+ * Update the benchmark SVG bar chart from JSON output files
  *
  * Usage:
- *   npm run bench:json | npx tsx benchmarks/update-svg.ts
+ *   npx tsx benchmarks/update-svg.ts
  *
- * Or with a file:
- *   npx tsx benchmarks/update-svg.ts < benchmark.json
+ * Reads from:
+ *   benchmarks/results/ajv.json
+ *   benchmarks/results/zod.json
+ *   benchmarks/results/joi.json
  */
 
 import * as fs from 'fs';
@@ -24,30 +26,12 @@ interface DraftSummary {
   files: number;
   tests: number;
   tjs: ValidatorStats;
-  ajv: ValidatorStats;
-  zod: ValidatorStats;
-  joi: ValidatorStats;
-}
-
-interface H2H {
-  validatorA: string;
-  validatorB: string;
-  avgNsA: number;
-  avgNsB: number;
-  faster: string;
-  ratio: number;
-  totalTests: number;
+  other: ValidatorStats;
 }
 
 interface BenchmarkData {
+  compareValidator: string;
   summary: Record<string, DraftSummary>;
-  headToHead: {
-    tjsVsAjv: H2H | null;
-    tjsVsZod: H2H | null;
-    tjsVsJoi: H2H | null;
-    ajvVsZod: H2H | null;
-    ajvVsJoi: H2H | null;
-  };
 }
 
 function formatOps(opsPerSec: number): string {
@@ -60,19 +44,28 @@ function formatOps(opsPerSec: number): string {
   return `${Math.round(opsPerSec)}`;
 }
 
-function main() {
-  // Read JSON from stdin
-  const input = fs.readFileSync(0, 'utf-8');
+function loadBenchmarkData(validator: string): BenchmarkData | null {
+  const filePath = path.join(__dirname, 'results', `${validator}.json`);
+  if (!fs.existsSync(filePath)) {
+    console.error(`Warning: ${filePath} not found`);
+    return null;
+  }
+  return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+}
 
-  // Find the JSON in the input (skip any non-JSON lines like progress output)
-  const jsonStart = input.indexOf('{');
-  const jsonEnd = input.lastIndexOf('}');
-  if (jsonStart === -1 || jsonEnd === -1) {
-    console.error('No JSON found in input');
+function main() {
+  // Load benchmark data from each validator's JSON file
+  const ajvData = loadBenchmarkData('ajv');
+  const zodData = loadBenchmarkData('zod');
+  const joiData = loadBenchmarkData('joi');
+
+  if (!ajvData && !zodData && !joiData) {
+    console.error('No benchmark data found. Run benchmarks first:');
+    console.error('  npm run bench:ajv');
+    console.error('  npm run bench:zod');
+    console.error('  npm run bench:joi');
     process.exit(1);
   }
-  const jsonStr = input.slice(jsonStart, jsonEnd + 1);
-  const data: BenchmarkData = JSON.parse(jsonStr);
 
   // Calculate weighted average ops/sec across all drafts
   const drafts = ['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'];
@@ -82,14 +75,40 @@ function main() {
   let zodTotalNs = 0;
   let joiTotalNs = 0;
 
-  for (const draft of drafts) {
-    const s = data.summary[draft];
-    if (!s) continue;
-    totalTests += s.tests;
-    tjsTotalNs += s.tjs.nsPerTest * s.tests;
-    ajvTotalNs += s.ajv.nsPerTest * s.tests;
-    zodTotalNs += s.zod.nsPerTest * s.tests;
-    joiTotalNs += s.joi.nsPerTest * s.tests;
+  // Use ajvData for tjs stats (they should be consistent across all)
+  const primaryData = ajvData || zodData || joiData;
+  if (primaryData) {
+    for (const draft of drafts) {
+      const s = primaryData.summary[draft];
+      if (!s) continue;
+      totalTests += s.tests;
+      tjsTotalNs += s.tjs.nsPerTest * s.tests;
+    }
+  }
+
+  // Get other validator stats from their respective files
+  if (ajvData) {
+    for (const draft of drafts) {
+      const s = ajvData.summary[draft];
+      if (!s) continue;
+      ajvTotalNs += s.other.nsPerTest * s.tests;
+    }
+  }
+
+  if (zodData) {
+    for (const draft of drafts) {
+      const s = zodData.summary[draft];
+      if (!s) continue;
+      zodTotalNs += s.other.nsPerTest * s.tests;
+    }
+  }
+
+  if (joiData) {
+    for (const draft of drafts) {
+      const s = joiData.summary[draft];
+      if (!s) continue;
+      joiTotalNs += s.other.nsPerTest * s.tests;
+    }
   }
 
   // Convert to ops/sec
