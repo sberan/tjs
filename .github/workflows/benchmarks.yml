@@ -4,6 +4,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  pull-requests: write
+
 jobs:
   benchmark:
     runs-on: ubuntu-latest
@@ -26,4 +29,70 @@ jobs:
         run: npm run build
 
       - name: Run benchmarks
-        run: npm run bench
+        id: bench
+        run: |
+          # Run benchmarks and capture output (strip ANSI codes)
+          npm run bench 2>&1 | sed 's/\x1b\[[0-9;]*m//g' > benchmark-output.txt
+
+          # Extract key sections for the comment
+          echo "## Benchmark Results" > benchmark-comment.md
+          echo "" >> benchmark-comment.md
+          echo "<details>" >> benchmark-comment.md
+          echo "<summary>Full benchmark output</summary>" >> benchmark-comment.md
+          echo "" >> benchmark-comment.md
+          echo '```' >> benchmark-comment.md
+          cat benchmark-output.txt >> benchmark-comment.md
+          echo '```' >> benchmark-comment.md
+          echo "</details>" >> benchmark-comment.md
+          echo "" >> benchmark-comment.md
+
+          # Extract the summary sections
+          echo "### Performance Summary" >> benchmark-comment.md
+          echo "" >> benchmark-comment.md
+          echo '```' >> benchmark-comment.md
+          sed -n '/OVERALL PERFORMANCE SUMMARY/,/HEAD-TO-HEAD/p' benchmark-output.txt | head -20 >> benchmark-comment.md
+          echo '```' >> benchmark-comment.md
+          echo "" >> benchmark-comment.md
+
+          echo "### Head-to-Head Comparisons" >> benchmark-comment.md
+          echo "" >> benchmark-comment.md
+          echo '```' >> benchmark-comment.md
+          sed -n '/HEAD-TO-HEAD COMPARISONS/,/─────────────────────/p' benchmark-output.txt >> benchmark-comment.md
+          echo '```' >> benchmark-comment.md
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const comment = fs.readFileSync('benchmark-comment.md', 'utf8');
+
+            // Find existing benchmark comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' &&
+              c.body.includes('## Benchmark Results')
+            );
+
+            if (botComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comment
+              });
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              });
+            }
