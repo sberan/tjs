@@ -130,20 +130,8 @@ function main() {
   console.error(`  zod: ${formatOps(zodOps)} ops/sec`);
   console.error(`  joi: ${formatOps(joiOps)} ops/sec`);
 
-  // Calculate bar heights (max height is 300px, baseline y is 400)
+  // Calculate max ops for scaling
   const maxOps = Math.max(tjsOps, ajvOps, zodOps, joiOps);
-  const maxHeight = 300;
-  const baseY = 400;
-
-  const tjsHeight = Math.round((tjsOps / maxOps) * maxHeight);
-  const ajvHeight = Math.round((ajvOps / maxOps) * maxHeight);
-  const zodHeight = Math.max(8, Math.round((zodOps / maxOps) * maxHeight)); // min 8px for visibility
-  const joiHeight = Math.max(8, Math.round((joiOps / maxOps) * maxHeight)); // min 8px for visibility
-
-  const tjsY = baseY - tjsHeight;
-  const ajvY = baseY - ajvHeight;
-  const zodY = baseY - zodHeight;
-  const joiY = baseY - joiHeight;
 
   // Calculate multipliers (tjs vs others)
   const ajvMultiplier = ajvOps > 0 ? tjsOps / ajvOps : 0;
@@ -159,26 +147,116 @@ function main() {
   const maxOpsRounded = Math.ceil(maxOps / 1e6) * 1e6; // Round up to nearest million
   const yAxisStep = maxOpsRounded / 3;
 
+  // Define validator styles
+  const validatorStyles: Record<
+    string,
+    {
+      gradient: string;
+      gradientStart: string;
+      gradientEnd: string;
+      labelColor: string;
+      glow?: boolean;
+    }
+  > = {
+    tjs: {
+      gradient: 'grad-tjs',
+      gradientStart: '#34d399',
+      gradientEnd: '#10b981',
+      labelColor: '#34d399',
+      glow: true,
+    },
+    ajv: {
+      gradient: 'grad-ajv',
+      gradientStart: '#818cf8',
+      gradientEnd: '#6366f1',
+      labelColor: '#818cf8',
+    },
+    zod: {
+      gradient: 'grad-zod',
+      gradientStart: '#fbbf24',
+      gradientEnd: '#f59e0b',
+      labelColor: '#fbbf24',
+    },
+    joi: {
+      gradient: 'grad-joi',
+      gradientStart: '#f87171',
+      gradientEnd: '#ef4444',
+      labelColor: '#f87171',
+    },
+  };
+
+  // Create sorted array of validators by ops/sec (fastest first)
+  const validators = [
+    { name: 'tjs', ops: tjsOps },
+    { name: 'ajv', ops: ajvOps },
+    { name: 'zod', ops: zodOps },
+    { name: 'joi', ops: joiOps },
+  ]
+    .filter((v) => v.ops > 0)
+    .sort((a, b) => b.ops - a.ops);
+
+  console.error(`\nSorted order (fastest to slowest): ${validators.map((v) => v.name).join(', ')}`);
+
+  // Calculate bar positions and heights
+  const barWidth = 120;
+  const barSpacing = 160;
+  const startX = 140;
+  const baseY = 400;
+  const maxHeight = 300;
+
+  const barsData = validators.map((v, i) => {
+    const height = Math.max(8, Math.round((v.ops / maxOps) * maxHeight));
+    const x = startX + i * barSpacing;
+    const y = baseY - height;
+    const style = validatorStyles[v.name];
+    const multiplier = v.name === 'tjs' ? null : tjsOps / v.ops;
+    return { ...v, height, x, y, style, multiplier };
+  });
+
+  // Generate gradient definitions
+  const gradientDefs = validators
+    .map((v) => {
+      const style = validatorStyles[v.name];
+      return `    <linearGradient id="${style.gradient}" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:${style.gradientStart};stop-opacity:1" />
+      <stop offset="100%" style="stop-color:${style.gradientEnd};stop-opacity:1" />
+    </linearGradient>`;
+    })
+    .join('\n');
+
+  // Generate bars SVG
+  const barsSvg = barsData
+    .map((bar) => {
+      const filter = bar.style.glow ? ' filter="url(#glow-tjs)"' : '';
+      const rx = Math.min(8, bar.height / 2);
+      return `  <!-- ${bar.name}: ${formatOps(bar.ops)} = ${bar.height}px height -->
+  <rect x="${bar.x}" y="${bar.y}" width="${barWidth}" height="${bar.height}" rx="${rx}" fill="url(#${bar.style.gradient})"${filter}/>
+  <text x="${bar.x + barWidth / 2}" y="440" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="600">${bar.name}</text>
+  <text x="${bar.x + barWidth / 2}" y="${bar.y - 15}" text-anchor="middle" fill="${bar.style.labelColor}" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">${formatOps(bar.ops)}</text>`;
+    })
+    .join('\n\n');
+
+  // Generate multiplier badges (show between adjacent bars, comparing to tjs)
+  const multiplierBadges = barsData
+    .slice(1)
+    .map((bar, i) => {
+      if (!bar.multiplier) return '';
+      const prevBar = barsData[i];
+      const badgeX = (prevBar.x + barWidth + bar.x) / 2 - 30;
+      const badgeY = Math.max(Math.max(prevBar.y, bar.y) - 30, 100);
+      const multiplierText =
+        bar.multiplier >= 10 ? `${bar.multiplier.toFixed(0)}×` : `${bar.multiplier.toFixed(1)}×`;
+      return `  <rect x="${badgeX}" y="${badgeY}" width="60" height="28" rx="14" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+  <text x="${badgeX + 30}" y="${badgeY + 19}" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600">${multiplierText}</text>`;
+    })
+    .filter((s) => s)
+    .join('\n\n');
+
   // Generate SVG
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500">
   <defs>
     <!-- Gradients for bars -->
-    <linearGradient id="grad-tjs" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#34d399;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#10b981;stop-opacity:1" />
-    </linearGradient>
-    <linearGradient id="grad-ajv" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#818cf8;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#6366f1;stop-opacity:1" />
-    </linearGradient>
-    <linearGradient id="grad-zod" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#fbbf24;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#f59e0b;stop-opacity:1" />
-    </linearGradient>
-    <linearGradient id="grad-joi" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#f87171;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#ef4444;stop-opacity:1" />
-    </linearGradient>
+${gradientDefs}
     <!-- Glow effects -->
     <filter id="glow-tjs" x="-20%" y="-20%" width="140%" height="140%">
       <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
@@ -211,35 +289,10 @@ function main() {
   <text x="400" y="75" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="16">Operations per second (higher is better)</text>
 
   <!-- Bars -->
-  <!-- tjs: ${formatOps(tjsOps)} = ${tjsHeight}px height -->
-  <rect x="140" y="${tjsY}" width="120" height="${tjsHeight}" rx="8" fill="url(#grad-tjs)" filter="url(#glow-tjs)"/>
-  <text x="200" y="440" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="600">tjs</text>
-  <text x="200" y="${tjsY - 15}" text-anchor="middle" fill="#34d399" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">${formatOps(tjsOps)}</text>
-
-  <!-- ajv: ${formatOps(ajvOps)} = ${ajvHeight}px height -->
-  <rect x="300" y="${ajvY}" width="120" height="${ajvHeight}" rx="8" fill="url(#grad-ajv)"/>
-  <text x="360" y="440" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="600">ajv</text>
-  <text x="360" y="${ajvY - 15}" text-anchor="middle" fill="#818cf8" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">${formatOps(ajvOps)}</text>
-
-  <!-- zod: ${formatOps(zodOps)} = ${zodHeight}px height -->
-  <rect x="460" y="${zodY}" width="120" height="${zodHeight}" rx="8" fill="url(#grad-zod)"/>
-  <text x="520" y="440" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="600">zod</text>
-  <text x="520" y="${zodY - 15}" text-anchor="middle" fill="#fbbf24" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">${formatOps(zodOps)}</text>
-
-  <!-- joi: ${formatOps(joiOps)} = ${joiHeight}px height -->
-  <rect x="620" y="${joiY}" width="120" height="${joiHeight}" rx="${Math.min(8, joiHeight / 2)}" fill="url(#grad-joi)"/>
-  <text x="680" y="440" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="600">joi</text>
-  <text x="680" y="${joiY - 15}" text-anchor="middle" fill="#f87171" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">${formatOps(joiOps)}</text>
+${barsSvg}
 
   <!-- Multiplier badges -->
-  <rect x="270" y="${Math.max(ajvY, tjsY) + 20}" width="60" height="28" rx="14" fill="#1e293b" stroke="#334155" stroke-width="1"/>
-  <text x="300" y="${Math.max(ajvY, tjsY) + 39}" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600">${ajvMultiplier.toFixed(1)}×</text>
-
-  <rect x="430" y="${Math.max(zodY - 30, 100)}" width="60" height="28" rx="14" fill="#1e293b" stroke="#334155" stroke-width="1"/>
-  <text x="460" y="${Math.max(zodY - 30, 100) + 19}" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600">${zodMultiplier.toFixed(0)}×</text>
-
-  <rect x="590" y="${Math.max(joiY - 30, 100)}" width="60" height="28" rx="14" fill="#1e293b" stroke="#334155" stroke-width="1"/>
-  <text x="620" y="${Math.max(joiY - 30, 100) + 19}" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600">${joiMultiplier.toFixed(0)}×</text>
+${multiplierBadges}
 </svg>
 `;
 

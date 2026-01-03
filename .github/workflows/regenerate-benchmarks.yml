@@ -1,6 +1,9 @@
 name: Regenerate Benchmarks
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       validators:
@@ -8,8 +11,11 @@ on:
         required: false
         default: 'all'
 
+# Security note: This workflow only runs on push to main, not on PRs.
+# Only maintainers with push access can trigger it, so write permissions are safe.
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   regenerate:
@@ -19,6 +25,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
+          fetch-depth: 0
 
       - name: Use Node.js 22
         uses: actions/setup-node@v4
@@ -52,17 +59,117 @@ jobs:
             npx tsx benchmarks/json-to-markdown.ts "benchmarks/results/${v}.json" > "benchmarks/results/BENCHMARK_${v^^}.md"
           done
 
+      - name: Run compliance tests
+        run: npm test -- --reporter=verbose 2>&1 || true
+
       - name: Update SVG chart
         run: npx tsx benchmarks/update-svg.ts
 
-      - name: Commit and push
+      - name: Update README
+        run: npx tsx benchmarks/update-readme.ts
+
+      - name: Check for significant changes
+        id: check_changes
         run: |
+          git add -A
+          if git diff --staged --quiet; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "No changes detected"
+            exit 0
+          fi
+
+          echo "Changes detected, checking significance..."
+          git diff --staged --stat
+
+          # Check if changes are significant (exits 0 if significant, 1 if noise)
+          if npx tsx benchmarks/check-significance.ts; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "Changes are within noise threshold, skipping PR"
+          fi
+
+      - name: Create or update PR
+        if: steps.check_changes.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH_NAME="chore/update-benchmarks"
+
+          # Configure git
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add benchmarks/results/ assets/benchmark.svg
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
+
+          # Check if the branch already exists on remote
+          if git ls-remote --exit-code --heads origin "$BRANCH_NAME" >/dev/null 2>&1; then
+            echo "Branch $BRANCH_NAME exists, updating it..."
+            git fetch origin "$BRANCH_NAME"
+            git checkout -B "$BRANCH_NAME" origin/"$BRANCH_NAME"
+            # Reset to main to get a clean slate, then apply our changes
+            git reset --hard origin/main
+            git checkout --theirs .
+            git add -A
           else
-            git commit -m "chore: regenerate benchmark results"
-            git push
+            echo "Creating new branch $BRANCH_NAME..."
+            git checkout -b "$BRANCH_NAME"
           fi
+
+          # Stage all changes again after branch operations
+          git add -A
+
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "No changes to commit after branch operations"
+            exit 0
+          fi
+
+          # Commit changes
+          git commit -m "chore: regenerate benchmark results and update README
+
+          Triggered by: ${{ github.event_name }}
+          Commit: ${{ github.sha }}
+
+          Changes include:
+          - Benchmark results JSON files
+          - Benchmark markdown reports
+          - SVG performance chart (sorted fastest to slowest)
+          - README.md benchmark and compliance data
+          - COMPLIANCE.md test suite results"
+
+          # Force push to update the branch
+          git push -f origin "$BRANCH_NAME"
+
+          # Check if PR already exists
+          EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --json number --jq '.[0].number' 2>/dev/null || echo "")
+
+          if [ -n "$EXISTING_PR" ]; then
+            echo "PR #$EXISTING_PR already exists, it has been updated with new commits"
+            echo "PR URL: https://github.com/${{ github.repository }}/pull/$EXISTING_PR"
+          else
+            echo "Creating new PR..."
+            gh pr create \
+              --title "chore: update benchmark results" \
+              --body "$(cat <<'EOF'
+          ## Summary
+
+          This PR updates the benchmark results and documentation.
+
+          ### Changes
+          - Updated benchmark JSON results for all validators (ajv, zod, joi)
+          - Regenerated benchmark markdown reports
+          - Updated SVG performance chart (validators sorted fastest to slowest)
+          - Updated README.md with latest benchmark and compliance data
+          - Updated COMPLIANCE.md with test suite results
+
+          ### How to use
+          This PR is automatically updated on every push to main. Merge it anytime to update the benchmarks in the repository.
+
+          ---
+          *This PR is automatically maintained by the benchmark regeneration workflow.*
+          EOF
+          )"
+          fi
+
+      - name: No changes message
+        if: steps.check_changes.outputs.has_changes != 'true'
+        run: echo "No significant changes to benchmark data - PR not created/updated"
