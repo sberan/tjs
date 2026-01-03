@@ -48,6 +48,172 @@ src/
 
 ---
 
+## Implementation Spike Findings
+
+An implementation spike was conducted to validate the refactoring approach. Key findings:
+
+### Successfully Extracted: Simple Keywords
+
+Keywords without recursive sub-schema validation extract cleanly:
+- `generateTypeCheck` - extracted to `keywords/type.ts` ✅
+- `generateConstCheck`, `generateEnumCheck` - should extract similarly
+- `generateStringChecks`, `generateNumberChecks`, `generateArrayChecks`, `generateObjectChecks` - leaf validators
+
+**Result**: Tests pass with identical behavior.
+
+### Major Complication: Circular Dependencies
+
+**Problem**: 15+ keyword handlers call `generateSchemaValidator()` recursively to validate sub-schemas:
+
+```
+generateSchemaValidator() ──calls──> generatePropertiesChecks()
+         ↑                                      │
+         └──────────────────────────────────────┘
+                    (recursive call)
+```
+
+**Affected handlers** (require sub-schema validation):
+- `generatePropertiesChecks` → validates property schemas
+- `generateItemsChecks` → validates item schemas
+- `generateContainsCheck` → validates contains schema
+- `generateCompositionChecks` → validates allOf/anyOf/oneOf/not schemas
+- `generateRefCheck` → validates $ref target
+- `generateDynamicRefCheck` → validates $dynamicRef target
+- `generateDependentSchemasCheck` → validates dependent schemas
+- `generateUnevaluatedPropertiesCheck` → validates unevaluated schema
+- `generateUnevaluatedItemsCheck` → validates unevaluated schema
+- `generatePropertyNamesCheck` → validates propertyNames schema
+- `generateContentChecks` → validates contentSchema
+
+**If extracted naively**: Circular imports would occur:
+```
+compiler.ts imports properties.ts
+properties.ts imports generateSchemaValidator from compiler.ts  ← CIRCULAR
+```
+
+### Complication: Shared Private Utilities
+
+Several private functions are used across multiple keyword handlers:
+
+| Function | Used By |
+|----------|---------|
+| `determineRegexFlags()` | pattern, patternProperties, unevaluatedProperties |
+| `generateAdditionalPropsCheck()` | properties (private helper) |
+
+These must be extracted to shared utils or duplicated.
+
+### Recommended Solution: Dependency Injection
+
+**Approach**: Pass `generateSchemaValidator` as a callback parameter to handlers that need it.
+
+```typescript
+// keywords/types.ts
+export type SchemaValidator = (
+  code: CodeBuilder,
+  schema: JsonSchema,
+  dataVar: Name,
+  pathExprCode: Code,
+  ctx: CompileContext,
+  dynamicScopeVar?: Name
+) => void;
+
+export interface KeywordGeneratorOptions {
+  schema: JsonSchemaBase;
+  code: CodeBuilder;
+  ctx: CompileContext;
+  dataVar: Name;
+  pathExprCode: Code;
+  dynamicScopeVar?: Name;
+  validateSubschema?: SchemaValidator;  // ← Injected dependency
+}
+```
+
+**compiler.ts orchestration**:
+```typescript
+import { generatePropertiesChecks } from './keywords/object/properties.js';
+
+function generateSchemaValidator(...) {
+  // ... setup ...
+
+  // Inject self as callback for recursive validation
+  generatePropertiesChecks({
+    schema, code, ctx, dataVar, pathExprCode, dynamicScopeVar,
+    validateSubschema: generateSchemaValidator,  // ← Inject
+  });
+}
+```
+
+**Benefits**:
+- No circular imports
+- Explicit dependencies
+- Testable in isolation (can mock `validateSubschema`)
+- Zero runtime cost (callback is direct function reference)
+
+### Alternative: CompileContext Method
+
+Add `ctx.validateSubschema()` method that wraps the recursive call:
+
+```typescript
+// context.ts
+class CompileContext {
+  private schemaValidator?: SchemaValidator;
+
+  setSchemaValidator(fn: SchemaValidator) {
+    this.schemaValidator = fn;
+  }
+
+  validateSubschema(code, schema, dataVar, pathExprCode, dynamicScopeVar?) {
+    this.schemaValidator!(code, schema, dataVar, pathExprCode, this, dynamicScopeVar);
+  }
+}
+```
+
+**Trade-offs**:
+- Simpler API (no extra parameter)
+- Less explicit (hidden dependency)
+- Requires initialization before use
+
+### Revised File Structure (Simplified)
+
+Based on spike findings, a flatter structure is more practical:
+
+```
+src/core/
+├── compiler.ts              # Orchestration (~400 lines)
+├── keywords/
+│   ├── index.ts             # Re-exports all handlers
+│   ├── types.ts             # KeywordHandler, SchemaValidator types
+│   ├── utils.ts             # Shared utilities (existing + determineRegexFlags)
+│   │
+│   ├── type.ts              # Simple: no sub-schema validation
+│   ├── const.ts             # Simple
+│   ├── enum.ts              # Simple
+│   ├── string.ts            # Simple: minLength, maxLength, pattern
+│   ├── number.ts            # Simple: min, max, multipleOf
+│   ├── array-constraints.ts # Simple: minItems, maxItems, uniqueItems
+│   ├── object-constraints.ts# Simple: minProperties, maxProperties, required
+│   │
+│   ├── properties.ts        # Complex: needs validateSubschema
+│   ├── items.ts             # Complex: needs validateSubschema
+│   ├── contains.ts          # Complex: needs validateSubschema
+│   ├── composition.ts       # Complex: allOf, anyOf, oneOf, not, if/then/else
+│   ├── ref.ts               # Complex: $ref, $dynamicRef, $recursiveRef
+│   ├── dependencies.ts      # Complex: dependentRequired, dependentSchemas, dependencies
+│   ├── unevaluated.ts       # Complex: unevaluatedProperties, unevaluatedItems
+│   ├── property-names.ts    # Complex: needs validateSubschema
+│   │
+│   └── format/              # Already separate
+│       ├── index.ts
+│       └── validators.ts
+```
+
+**Rationale**:
+- Fewer files = less import overhead
+- Group related keywords (e.g., all composition in one file)
+- Separate "simple" (no recursion) from "complex" (needs recursion)
+
+---
+
 ## Target State
 
 ### New File Structure
@@ -237,33 +403,67 @@ Before/after benchmarks to verify zero performance cost:
 ```typescript
 // src/core/keywords/types.ts
 
-import type { CodeBuilder } from '../codegen.js';
+import type { CodeBuilder, Code, Name } from '../codegen.js';
 import type { CompileContext } from '../context.js';
-import type { JsonSchema } from '../../types.js';
+import type { JsonSchema, JsonSchemaBase } from '../../types.js';
 
 /**
- * Standard interface for all keyword handlers.
- * Each handler generates validation code for its keyword(s).
+ * Function type for recursive schema validation.
+ * Passed to complex keyword handlers via dependency injection.
  */
-export interface KeywordGeneratorOptions {
-  /** The schema being compiled */
-  schema: JsonSchema;
-  /** Code builder for generating JavaScript */
+export type SchemaValidator = (
+  code: CodeBuilder,
+  schema: JsonSchema,
+  dataVar: Name,
+  pathExprCode: Code,
+  ctx: CompileContext,
+  dynamicScopeVar?: Name
+) => void;
+
+/**
+ * Options for simple keyword handlers (no sub-schema validation needed).
+ */
+export interface SimpleKeywordOptions {
   code: CodeBuilder;
-  /** Compilation context (refs, vocabularies, options) */
+  schema: JsonSchemaBase;
+  dataVar: Name;
+  pathExprCode: Code;
   ctx: CompileContext;
-  /** JSON pointer path to current schema location */
-  path: string;
-  /** Variable name containing data being validated */
-  dataVar: string;
 }
 
 /**
- * A keyword handler generates validation code.
- * Returns void - side effect is appending to CodeBuilder.
+ * Options for complex keyword handlers (need sub-schema validation).
+ * Extends SimpleKeywordOptions with dependency injection.
  */
-export type KeywordHandler = (opts: KeywordGeneratorOptions) => void;
+export interface ComplexKeywordOptions extends SimpleKeywordOptions {
+  dynamicScopeVar?: Name;
+  validateSubschema: SchemaValidator;  // Required for complex handlers
+}
+
+/**
+ * Simple keyword handler - no recursive validation needed.
+ * Examples: type, const, enum, minLength, maximum
+ */
+export type SimpleKeywordHandler = (opts: SimpleKeywordOptions) => void;
+
+/**
+ * Complex keyword handler - needs recursive sub-schema validation.
+ * Examples: properties, items, allOf, $ref
+ */
+export type ComplexKeywordHandler = (opts: ComplexKeywordOptions) => void;
 ```
+
+### Why Two Handler Types?
+
+**Simple handlers** (~40% of keywords):
+- Validate leaf constraints (type checks, length limits, patterns)
+- No circular dependency risk
+- Simpler testing
+
+**Complex handlers** (~60% of keywords):
+- Validate nested schemas (properties, items, composition)
+- Receive `validateSubschema` via dependency injection
+- Can be tested with mock validator
 
 ---
 
@@ -305,56 +505,77 @@ export interface Validator<T = unknown> {
 
 ---
 
-## Implementation Phases
+## Implementation Phases (Revised)
 
 ### Phase 1: Infrastructure (1 PR)
-- [ ] Create `src/core/keywords/types.ts` with `KeywordHandler` interface
-- [ ] Create `src/core/validators/types.ts` with `Validator` interface
+- [ ] Create `src/core/keywords/types.ts` with handler interfaces
+  - `SimpleKeywordOptions`, `ComplexKeywordOptions`
+  - `SimpleKeywordHandler`, `ComplexKeywordHandler`
+  - `SchemaValidator` type
+- [ ] Move `determineRegexFlags()` to `keywords/utils.ts`
 - [ ] Add benchmark scripts to validate zero performance cost
 - [ ] Update `tsconfig.json` if needed for path resolution
 
-### Phase 2: Extract Type Keywords (1 PR)
-- [ ] Extract `type.ts`, `const.ts`, `enum.ts`
+### Phase 2: Extract Simple Keywords (1 PR)
+**No circular dependency risk - straightforward extraction**
+- [ ] Extract `type.ts` (type keyword)
+- [ ] Extract `const.ts` (const keyword)
+- [ ] Extract `enum.ts` (enum keyword)
+- [ ] Extract `string.ts` (minLength, maxLength, pattern)
+- [ ] Extract `number.ts` (minimum, maximum, multipleOf, etc.)
+- [ ] Extract `array-constraints.ts` (minItems, maxItems, uniqueItems)
+- [ ] Extract `object-constraints.ts` (minProperties, maxProperties, required)
 - [ ] Update imports in `compiler.ts`
 - [ ] Run benchmarks - must pass
 
-### Phase 3: Extract Primitive Keywords (1 PR)
-- [ ] Extract `string/` subdirectory (minLength, maxLength, pattern)
-- [ ] Extract `number/` subdirectory (min, max, multipleOf)
+### Phase 3: Introduce Dependency Injection (1 PR)
+**Critical: This enables extraction of complex keywords**
+- [ ] Update `compiler.ts` to pass `generateSchemaValidator` to complex handlers
+- [ ] Refactor one handler (e.g., `generatePropertiesChecks`) in-place to accept options object
+- [ ] Verify tests pass with new calling convention
 - [ ] Run benchmarks - must pass
 
-### Phase 4: Extract Array Keywords (1 PR)
-- [ ] Extract `array/` subdirectory
+### Phase 4: Extract Complex Object Keywords (1 PR)
+- [ ] Extract `properties.ts` (properties, patternProperties, additionalProperties)
+- [ ] Extract `property-names.ts` (propertyNames)
+- [ ] Extract `unevaluated.ts` (unevaluatedProperties, unevaluatedItems)
 - [ ] Run benchmarks - must pass
 
-### Phase 5: Extract Object Keywords (1 PR)
-- [ ] Extract `object/` subdirectory
+### Phase 5: Extract Complex Array Keywords (1 PR)
+- [ ] Extract `items.ts` (items, prefixItems, additionalItems)
+- [ ] Extract `contains.ts` (contains, minContains, maxContains)
 - [ ] Run benchmarks - must pass
 
 ### Phase 6: Extract Composition Keywords (1 PR)
-- [ ] Extract `composition/` subdirectory (allOf, anyOf, oneOf, not, if/then/else)
+- [ ] Extract `composition.ts` (allOf, anyOf, oneOf, not, if/then/else)
 - [ ] Run benchmarks - must pass
 
 ### Phase 7: Extract Ref Keywords (1 PR)
-- [ ] Extract `ref/` subdirectory ($ref, $dynamicRef, $recursiveRef)
+- [ ] Extract `ref.ts` ($ref, $dynamicRef, $recursiveRef)
 - [ ] Run benchmarks - must pass
 
-### Phase 8: Extract Content Keywords (1 PR)
-- [ ] Extract `content/` subdirectory
-- [ ] Move format keyword handler to `format/format.ts`
+### Phase 8: Extract Dependencies Keywords (1 PR)
+- [ ] Extract `dependencies.ts` (dependentRequired, dependentSchemas, dependencies)
 - [ ] Run benchmarks - must pass
 
 ### Phase 9: Extract Validators (1 PR)
-- [ ] Create `validators/validator.ts` - base factory
+- [ ] Create `validators/types.ts` - Validator interface
+- [ ] Create `validators/validator.ts` - factory
 - [ ] Create `validators/sync-validator.ts`
 - [ ] Create `validators/async-validator.ts`
 - [ ] Run benchmarks - must pass
 
-### Phase 10: Cleanup (1 PR)
+### Phase 10: Cleanup & Documentation (1 PR)
 - [ ] Remove dead code from `compiler.ts`
-- [ ] Update documentation
-- [ ] Final benchmark validation
+- [ ] Add barrel exports in `keywords/index.ts`
 - [ ] Update README if needed
+- [ ] Final benchmark validation
+
+### Key Changes from Original Plan
+1. **Fewer, larger files** - Group related keywords instead of one-file-per-keyword
+2. **Two-phase extraction** - Simple keywords first, then complex with DI
+3. **Phase 3 is critical** - Introduces DI pattern before extracting complex handlers
+4. **Defer validators** - Extract keywords first, validators last
 
 ---
 
@@ -467,10 +688,13 @@ console.timeEnd('validate');
 
 | Risk | Mitigation |
 |------|------------|
-| Circular dependencies between keywords | Use dependency injection or lazy resolution |
+| Circular dependencies between keywords | **VALIDATED**: Use dependency injection - pass `validateSubschema` as callback parameter |
 | Bundler not inlining properly | Verify with `--analyze` flag; use explicit inline hints |
 | Import overhead in dev mode | Dev performance is acceptable; production is priority |
-| Shared state between keywords | Pass all shared state via `KeywordGeneratorOptions` |
+| Shared state between keywords | Pass all shared state via options object |
+| **NEW**: Private helper functions | Extract to utils.ts (e.g., `determineRegexFlags`, `generateAdditionalPropsCheck`) |
+| **NEW**: API signature changes | Keep backward-compatible exports; deprecate old signatures if needed |
+| **NEW**: Incremental migration complexity | Phase 3 (DI introduction) is critical path - test thoroughly |
 
 ---
 
