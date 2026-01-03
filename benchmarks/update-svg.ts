@@ -68,54 +68,61 @@ function main() {
   }
 
   // Calculate weighted average ops/sec across all drafts
+  // Each validator comparison has its own test set (only tests where both pass)
   const drafts = ['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'];
-  let totalTests = 0;
-  let tjsTotalNs = 0;
-  let ajvTotalNs = 0;
-  let zodTotalNs = 0;
-  let joiTotalNs = 0;
 
-  // Use ajvData for tjs stats (they should be consistent across all)
+  // Use ajvData for tjs stats (tjs is consistent, we just need one source)
+  let tjsTotalTests = 0;
+  let tjsTotalNs = 0;
   const primaryData = ajvData || zodData || joiData;
   if (primaryData) {
     for (const draft of drafts) {
       const s = primaryData.summary[draft];
       if (!s) continue;
-      totalTests += s.tests;
+      tjsTotalTests += s.tests;
       tjsTotalNs += s.tjs.nsPerTest * s.tests;
     }
   }
 
-  // Get other validator stats from their respective files
+  // Each validator uses its own test count (only benchmarkable tests where both pass)
+  let ajvTotalTests = 0;
+  let ajvTotalNs = 0;
   if (ajvData) {
     for (const draft of drafts) {
       const s = ajvData.summary[draft];
       if (!s) continue;
+      ajvTotalTests += s.tests;
       ajvTotalNs += s.other.nsPerTest * s.tests;
     }
   }
 
+  let zodTotalTests = 0;
+  let zodTotalNs = 0;
   if (zodData) {
     for (const draft of drafts) {
       const s = zodData.summary[draft];
       if (!s) continue;
+      zodTotalTests += s.tests;
       zodTotalNs += s.other.nsPerTest * s.tests;
     }
   }
 
+  let joiTotalTests = 0;
+  let joiTotalNs = 0;
   if (joiData) {
     for (const draft of drafts) {
       const s = joiData.summary[draft];
       if (!s) continue;
+      joiTotalTests += s.tests;
       joiTotalNs += s.other.nsPerTest * s.tests;
     }
   }
 
-  // Convert to ops/sec
-  const tjsOps = totalTests > 0 && tjsTotalNs > 0 ? (1e9 * totalTests) / tjsTotalNs : 0;
-  const ajvOps = totalTests > 0 && ajvTotalNs > 0 ? (1e9 * totalTests) / ajvTotalNs : 0;
-  const zodOps = totalTests > 0 && zodTotalNs > 0 ? (1e9 * totalTests) / zodTotalNs : 0;
-  const joiOps = totalTests > 0 && joiTotalNs > 0 ? (1e9 * totalTests) / joiTotalNs : 0;
+  // Convert to ops/sec - each validator uses its own test count
+  const tjsOps = tjsTotalTests > 0 && tjsTotalNs > 0 ? (1e9 * tjsTotalTests) / tjsTotalNs : 0;
+  const ajvOps = ajvTotalTests > 0 && ajvTotalNs > 0 ? (1e9 * ajvTotalTests) / ajvTotalNs : 0;
+  const zodOps = zodTotalTests > 0 && zodTotalNs > 0 ? (1e9 * zodTotalTests) / zodTotalNs : 0;
+  const joiOps = joiTotalTests > 0 && joiTotalNs > 0 ? (1e9 * joiTotalTests) / joiTotalNs : 0;
 
   console.error(`Performance (ops/sec):`);
   console.error(`  tjs: ${formatOps(tjsOps)} ops/sec`);

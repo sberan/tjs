@@ -59,23 +59,23 @@
   <text x="360" y="440" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="600">ajv</text>
   <text x="360" y="213" text-anchor="middle" fill="#818cf8" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">13.7M</text>
 
-  <!-- zod: 785K = 10px height -->
-  <rect x="460" y="390" width="120" height="10" rx="8" fill="url(#grad-zod)"/>
+  <!-- zod: 233K = 8px height -->
+  <rect x="460" y="392" width="120" height="8" rx="8" fill="url(#grad-zod)"/>
   <text x="520" y="440" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="600">zod</text>
-  <text x="520" y="375" text-anchor="middle" fill="#fbbf24" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">785K</text>
+  <text x="520" y="377" text-anchor="middle" fill="#fbbf24" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">233K</text>
 
-  <!-- joi: 16.3M = 205px height -->
-  <rect x="620" y="195" width="120" height="205" rx="8" fill="url(#grad-joi)"/>
+  <!-- joi: 1.6M = 21px height -->
+  <rect x="620" y="379" width="120" height="21" rx="8" fill="url(#grad-joi)"/>
   <text x="680" y="440" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="600">joi</text>
-  <text x="680" y="180" text-anchor="middle" fill="#f87171" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">16.3M</text>
+  <text x="680" y="364" text-anchor="middle" fill="#f87171" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">1.6M</text>
 
   <!-- Multiplier badges -->
   <rect x="270" y="248" width="60" height="28" rx="14" fill="#1e293b" stroke="#334155" stroke-width="1"/>
   <text x="300" y="267" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600">1.7×</text>
 
-  <rect x="430" y="360" width="60" height="28" rx="14" fill="#1e293b" stroke="#334155" stroke-width="1"/>
-  <text x="460" y="379" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600">31×</text>
+  <rect x="430" y="362" width="60" height="28" rx="14" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+  <text x="460" y="381" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600">103×</text>
 
-  <rect x="590" y="165" width="60" height="28" rx="14" fill="#1e293b" stroke="#334155" stroke-width="1"/>
-  <text x="620" y="184" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600">1×</text>
+  <rect x="590" y="349" width="60" height="28" rx="14" fill="#1e293b" stroke="#334155" stroke-width="1"/>
+  <text x="620" y="368" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600">15×</text>
 </svg>
