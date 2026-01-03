@@ -3,8 +3,8 @@
 ## Summary
 
 - **Total Tests**: 1990
-- **Passed**: 1990 (100.0%)
-- **Failed**: 0
+- **Passed**: 1988 (99.9%)
+- **Failed**: 2
 - **Skipped**: 0
 
 ## By Keyword
@@ -24,7 +24,7 @@
 | date | 48 | 0 | 0 | 100% |
 | date-time | 26 | 0 | 0 | 100% |
 | default | 7 | 0 | 0 | 100% |
-| defs | 2 | 0 | 0 | 100% |
+| defs | 1 | 1 | 0 | 50% |
 | dependencies-compatibility | 36 | 0 | 0 | 100% |
 | dependentRequired | 20 | 0 | 0 | 100% |
 | dependentSchemas | 20 | 0 | 0 | 100% |
@@ -70,7 +70,7 @@
 | prefixItems | 11 | 0 | 0 | 100% |
 | properties | 28 | 0 | 0 | 100% |
 | propertyNames | 20 | 0 | 0 | 100% |
-| ref | 79 | 0 | 0 | 100% |
+| ref | 78 | 1 | 0 | 99% |
 | refOfUnknownKeyword | 10 | 0 | 0 | 100% |
 | refRemote | 31 | 0 | 0 | 100% |
 | regex | 8 | 0 | 0 | 100% |
@@ -88,3 +88,17 @@
 | uri-template | 10 | 0 | 0 | 100% |
 | uuid | 22 | 0 | 0 | 100% |
 | vocabulary | 5 | 0 | 0 | 100% |
+
+## Failures
+
+### defs / validate definition against metaschema
+
+**Test**: valid definition schema
+**Expected**: valid
+**Actual**: invalid
+
+### ref / remote ref, containing refs itself
+
+**Test**: remote ref valid
+**Expected**: valid
+**Actual**: invalid

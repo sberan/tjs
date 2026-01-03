@@ -20,17 +20,15 @@ import {
   and,
   not,
 } from './codegen.js';
-import { CompileContext, VOCABULARIES, supportsFeature, type CompileOptions } from './context.js';
+import { CompileContext, supportsFeature, type CompileOptions } from './context.js';
 import { createFormatValidators } from './keywords/format.js';
 import {
   genError,
   genSubschemaExit,
   genPropertyCheck,
-  genBatchedRequiredChecks,
   hasTypeConstraint,
   getTypeCheck,
   getOptimizedUnionTypeCheck,
-  getItemTypes,
   isNoOpSchema,
   getSimpleType,
   determineRegexFlags,
@@ -44,6 +42,16 @@ import { generateStringChecks } from './keywords/string.js';
 import { generateNumberChecks } from './keywords/number.js';
 import { generateArrayChecks } from './keywords/array-constraints.js';
 import { generateObjectChecks } from './keywords/object-constraints.js';
+
+// Simple keyword handlers (no sub-schema validation)
+import { generateDependentRequiredCheck } from './keywords/dependent-required.js';
+import { generateContentChecks } from './keywords/content.js';
+import { generateFormatCheck } from './keywords/format-check.js';
+
+// Complex keyword handlers (extracted with dependency injection)
+import { generatePropertyNamesCheck } from './keywords/property-names.js';
+import { generateDependentSchemasCheck } from './keywords/dependent-schemas.js';
+import { generateDependenciesCheck } from './keywords/dependencies.js';
 import {
   hasRestrictiveUnevaluatedProperties,
   containsUnevaluatedProperties,
@@ -326,9 +334,33 @@ function generateSchemaValidator(
     generateRecursiveRefCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
     generateContainsCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
     generateDependentRequiredCheck(code, schema, dataVar, pathExprCode, ctx);
-    generatePropertyNamesCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
-    generateDependentSchemasCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
-    generateDependenciesCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
+    generatePropertyNamesCheck(
+      code,
+      schema,
+      dataVar,
+      pathExprCode,
+      ctx,
+      scopeVar,
+      generateSchemaValidator
+    );
+    generateDependentSchemasCheck(
+      code,
+      schema,
+      dataVar,
+      pathExprCode,
+      ctx,
+      scopeVar,
+      generateSchemaValidator
+    );
+    generateDependenciesCheck(
+      code,
+      schema,
+      dataVar,
+      pathExprCode,
+      ctx,
+      scopeVar,
+      generateSchemaValidator
+    );
     // unevaluated* must be checked LAST after all other keywords
     generateUnevaluatedPropertiesCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
     generateUnevaluatedItemsCheck(code, schema, dataVar, pathExprCode, ctx, scopeVar);
@@ -446,99 +478,6 @@ function createUcs2Length(): (str: string) => number {
 // =============================================================================
 // Keyword Code Generators
 // =============================================================================
-
-/**
- * Generate content validation checks (contentMediaType, contentEncoding)
- * These are optional in draft-07 and later
- * In draft 2020-12, content is annotation-only (no validation)
- */
-export function generateContentChecks(
-  code: CodeBuilder,
-  schema: JsonSchemaBase,
-  dataVar: Name,
-  pathExprCode: Code,
-  ctx: CompileContext
-): void {
-  const hasContentChecks =
-    schema.contentMediaType !== undefined || schema.contentEncoding !== undefined;
-
-  if (!hasContentChecks) return;
-
-  // Content assertion is controlled by the contentAssertion option
-  // which is auto-detected from the schema dialect during context creation
-  if (!ctx.options.contentAssertion) {
-    return;
-  }
-
-  // Only check if data is a string
-  code.if(_`typeof ${dataVar} === 'string'`, () => {
-    // First check encoding if present
-    if (schema.contentEncoding !== undefined) {
-      if (schema.contentEncoding === 'base64') {
-        // Validate base64 encoding
-        // Base64 characters: A-Z, a-z, 0-9, +, /, and = for padding
-        const regexName = new Name(ctx.genRuntimeName('base64Re'));
-        ctx.addRuntimeFunction(regexName.str, /^[A-Za-z0-9+/]*={0,2}$/);
-        code.if(_`!${regexName}.test(${dataVar}) || ${dataVar}.length % 4 !== 0`, () => {
-          genError(
-            code,
-            pathExprCode,
-            '#/contentEncoding',
-            'contentEncoding',
-            'must be base64 encoded',
-            {},
-            ctx
-          );
-        });
-      }
-    }
-
-    // Then check media type if present
-    if (schema.contentMediaType !== undefined) {
-      if (schema.contentMediaType === 'application/json') {
-        // If there's also base64 encoding, we need to decode first
-        if (schema.contentEncoding === 'base64') {
-          const decodedVar = code.genVar('decoded');
-          code.try(
-            () => {
-              code.line(_`const ${decodedVar} = atob(${dataVar});`);
-              code.line(_`JSON.parse(${decodedVar});`);
-            },
-            () => {
-              genError(
-                code,
-                pathExprCode,
-                '#/contentMediaType',
-                'contentMediaType',
-                'must be application/json',
-                {},
-                ctx
-              );
-            }
-          );
-        } else {
-          // Validate directly as JSON
-          code.try(
-            () => {
-              code.line(_`JSON.parse(${dataVar});`);
-            },
-            () => {
-              genError(
-                code,
-                pathExprCode,
-                '#/contentMediaType',
-                'contentMediaType',
-                'must be application/json',
-                {},
-                ctx
-              );
-            }
-          );
-        }
-      }
-    }
-  });
-}
 
 /**
  * Generate properties, additionalProperties, patternProperties checks
@@ -1166,221 +1105,6 @@ export function generateContainsCheck(
         );
       });
     }
-  });
-}
-
-/**
- * Generate dependentRequired check
- */
-export function generateDependentRequiredCheck(
-  code: CodeBuilder,
-  schema: JsonSchemaBase,
-  dataVar: Name,
-  pathExprCode: Code,
-  ctx: CompileContext
-): void {
-  if (!schema.dependentRequired) return;
-
-  // dependentRequired was introduced in draft 2019-09
-  // Check if this keyword is supported in the compilation context's draft
-  if (!supportsFeature(ctx.options.defaultMeta, 'unevaluated')) {
-    // In draft-07 and earlier, dependentRequired doesn't exist - ignore it
-    // (unevaluated feature check is a proxy for 2019-09+ which includes dependentRequired)
-    return;
-  }
-
-  // Filter out empty arrays (no requirements)
-  const deps = Object.entries(schema.dependentRequired).filter(([, reqs]) => reqs.length > 0);
-  if (deps.length === 0) return;
-
-  code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
-    for (const [prop, requiredProps] of deps) {
-      code.if(_`${prop} in ${dataVar}`, () => {
-        for (const reqProp of requiredProps) {
-          const reqPathExpr = pathExpr(pathExprCode, reqProp);
-          code.if(_`!(${reqProp} in ${dataVar})`, () => {
-            genError(
-              code,
-              reqPathExpr,
-              '#/dependentRequired',
-              'dependentRequired',
-              `must have property '${reqProp}' when property '${prop}' is present`,
-              { missingProperty: reqProp },
-              ctx
-            );
-          });
-        }
-      });
-    }
-  });
-}
-
-/**
- * Generate dependentSchemas check
- */
-export function generateDependentSchemasCheck(
-  code: CodeBuilder,
-  schema: JsonSchemaBase,
-  dataVar: Name,
-  pathExprCode: Code,
-  ctx: CompileContext,
-  dynamicScopeVar?: Name
-): void {
-  if (!schema.dependentSchemas) return;
-
-  // dependentSchemas was introduced in draft 2019-09
-  if (!supportsFeature(ctx.options.defaultMeta, 'unevaluated')) {
-    return; // Skip in draft-07 and earlier
-  }
-
-  const tracker = new AnnotationTracker(ctx.getPropsTracker(), ctx.getItemsTracker());
-  tracker.ensureDynamicVars();
-
-  code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
-    for (const [prop, depSchema] of Object.entries(schema.dependentSchemas!)) {
-      // Use branch tracking: properties from dependent schemas only count as evaluated
-      // when the trigger property is present at runtime
-      const branch = tracker.enterBranch();
-
-      // Create a variable to track if the trigger property exists
-      const triggerExists = code.genVar('depTrigger');
-      code.line(_`const ${triggerExists} = ${stringify(prop)} in ${dataVar};`);
-
-      code.if(triggerExists, () => {
-        generateSchemaValidator(code, depSchema, dataVar, pathExprCode, ctx, dynamicScopeVar);
-      });
-
-      tracker.exitBranch(branch);
-      tracker.mergeBranch(branch, triggerExists);
-    }
-  });
-}
-
-/**
- * Generate legacy dependencies check (draft-07)
- * dependencies can contain either:
- * - array of strings (like dependentRequired)
- * - schema object (like dependentSchemas)
- */
-export function generateDependenciesCheck(
-  code: CodeBuilder,
-  schema: JsonSchemaBase,
-  dataVar: Name,
-  pathExprCode: Code,
-  ctx: CompileContext,
-  dynamicScopeVar?: Name
-): void {
-  if (!schema.dependencies) return;
-
-  // Check if we have any non-trivial dependencies to avoid unnecessary code generation
-  let hasNonTrivial = false;
-  for (const prop in schema.dependencies) {
-    const dep = schema.dependencies[prop];
-    if (
-      Array.isArray(dep)
-        ? dep.length > 0
-        : dep !== true &&
-          !(typeof dep === 'object' && dep !== null && Object.keys(dep).length === 0)
-    ) {
-      hasNonTrivial = true;
-      break;
-    }
-  }
-
-  if (!hasNonTrivial) return;
-
-  code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
-    for (const prop in schema.dependencies) {
-      const dep = schema.dependencies[prop];
-
-      // Skip trivial dependencies
-      if (Array.isArray(dep)) {
-        if (dep.length === 0) continue;
-      } else if (
-        dep === true ||
-        (typeof dep === 'object' && dep !== null && Object.keys(dep).length === 0)
-      ) {
-        continue;
-      }
-      code.if(_`${prop} in ${dataVar}`, () => {
-        if (Array.isArray(dep)) {
-          // Array of required property names
-          for (const reqProp of dep) {
-            const reqPathExpr = pathExpr(pathExprCode, reqProp);
-            code.if(_`!(${reqProp} in ${dataVar})`, () => {
-              genError(
-                code,
-                reqPathExpr,
-                '#/dependencies',
-                'dependencies',
-                `must have property '${reqProp}' when property '${prop}' is present`,
-                { missingProperty: reqProp },
-                ctx
-              );
-            });
-          }
-        } else {
-          // Schema that must validate
-          generateSchemaValidator(
-            code,
-            dep as JsonSchema,
-            dataVar,
-            pathExprCode,
-            ctx,
-            dynamicScopeVar
-          );
-        }
-      });
-    }
-  });
-}
-
-/**
- * Generate propertyNames check
- */
-export function generatePropertyNamesCheck(
-  code: CodeBuilder,
-  schema: JsonSchemaBase,
-  dataVar: Name,
-  pathExprCode: Code,
-  ctx: CompileContext,
-  dynamicScopeVar?: Name
-): void {
-  if (schema.propertyNames === undefined) return;
-
-  const propNamesSchema = schema.propertyNames;
-
-  // Handle boolean schema for propertyNames
-  if (propNamesSchema === true) {
-    // All property names are valid - no check needed
-    return;
-  }
-
-  if (propNamesSchema === false) {
-    // No property names are valid - object must be empty
-    code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
-      code.if(_`Object.keys(${dataVar}).length > 0`, () => {
-        genError(
-          code,
-          pathExprCode,
-          '#/propertyNames',
-          'propertyNames',
-          'property name must be valid',
-          {},
-          ctx
-        );
-      });
-    });
-    return;
-  }
-
-  code.if(_`${dataVar} && typeof ${dataVar} === 'object' && !Array.isArray(${dataVar})`, () => {
-    const keyVar = new Name('key');
-    code.forIn(keyVar, dataVar, () => {
-      // For propertyNames, the path is the key itself (with JSON pointer prefix)
-      const keyPathExpr = pathExprDynamic(pathExprCode, keyVar);
-      generateSchemaValidator(code, propNamesSchema, keyVar, keyPathExpr, ctx, dynamicScopeVar);
-    });
   });
 }
 
@@ -2796,103 +2520,6 @@ export function generateItemsChecks(
   } else {
     // Only check if data is an array
     code.if(_`Array.isArray(${dataVar})`, genChecks);
-  }
-}
-
-/**
- * Generate format check code
- */
-// Known format validators - used to skip existence check for known formats
-const KNOWN_FORMATS = new Set([
-  'email',
-  'uuid',
-  'date-time',
-  'uri',
-  'ipv4',
-  'ipv6',
-  'date',
-  'time',
-  'duration',
-  'hostname',
-  'uri-reference',
-  'json-pointer',
-  'relative-json-pointer',
-  'regex',
-]);
-
-// Pre-created format validators instances (one for full validation, one for fast regex-only)
-const sharedFormatValidators = createFormatValidators(false);
-
-export function generateFormatCheck(
-  code: CodeBuilder,
-  schema: JsonSchemaBase,
-  dataVar: Name,
-  pathExprCode: Code,
-  ctx: CompileContext
-): void {
-  if (schema.format === undefined) return;
-
-  // Determine if format validation should be enabled:
-  // 1. If there's a custom metaschema with $vocabulary, check if format-assertion is enabled
-  // 2. Otherwise, use the global formatAssertion option (auto-detected from dialect)
-  let enableFormatAssertion: boolean;
-  if (ctx.hasCustomVocabulary()) {
-    // Custom metaschema: use vocabulary to determine format validation
-    enableFormatAssertion = ctx.isVocabularyEnabled(VOCABULARIES.format_assertion);
-  } else {
-    // No custom metaschema: use the global option (respects user's explicit setting or auto-detection)
-    enableFormatAssertion = ctx.options.formatAssertion;
-  }
-
-  if (!enableFormatAssertion) return;
-
-  const format = schema.format;
-
-  // Check if schema already has type: 'string' (no need to re-check type)
-  const hasStringType = schema.type === 'string';
-
-  // For known formats, register a direct function reference for faster calls
-  const isKnownFormat = KNOWN_FORMATS.has(format);
-
-  const validators = sharedFormatValidators;
-
-  let formatCheck: Code;
-  if (isKnownFormat) {
-    // Register the specific format validator as a runtime function for direct calls
-    // This avoids the object property lookup overhead on every validation
-    const funcName = 'fmt_' + format.replace(/-/g, '_');
-    const validatorName = new Name(funcName);
-
-    // Always register the runtime function (ctx.addRuntimeFunction is idempotent for same name)
-    ctx.addRuntimeFunction(funcName, validators[format]);
-
-    formatCheck = _`!${validatorName}(${dataVar})`;
-  } else {
-    formatCheck = _`formatValidators[${format}] && !formatValidators[${format}](${dataVar})`;
-  }
-
-  const genFormatCheck = () => {
-    code.if(formatCheck, () => {
-      genError(
-        code,
-        pathExprCode,
-        '#/format',
-        'format',
-        `must match format "${format}"`,
-        {
-          format,
-        },
-        ctx
-      );
-    });
-  };
-
-  if (hasStringType) {
-    // Type already checked, just do format check
-    genFormatCheck();
-  } else {
-    // Only check if data is a string
-    code.if(_`typeof ${dataVar} === 'string'`, genFormatCheck);
   }
 }
 
