@@ -57,6 +57,12 @@ interface CompiledTestWithDesc extends CompiledTest {
   valid: boolean;
 }
 
+interface FailureDetail {
+  group: string;
+  test: string;
+  expected: boolean;
+}
+
 interface PerTestResult {
   draft: string;
   file: string;
@@ -360,6 +366,8 @@ function compileFileTests(
   tjsFail: number;
   ajvPass: number;
   ajvFail: number;
+  tjsFailures: FailureDetail[];
+  ajvFailures: FailureDetail[];
 } {
   const groups: TestGroup[] = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
   const sharedAjv = createAjv(draft, remotes, false);
@@ -370,6 +378,8 @@ function compileFileTests(
     tjsFail = 0,
     ajvPass = 0,
     ajvFail = 0;
+  const tjsFailures: FailureDetail[] = [];
+  const ajvFailures: FailureDetail[] = [];
 
   for (const group of groups) {
     const ajv = isFormat ? sharedAjvWithFormat : sharedAjv;
@@ -406,6 +416,11 @@ function compileFileTests(
       else {
         tjsFail++;
         groupTjsAllPass = false;
+        tjsFailures.push({
+          group: group.description,
+          test: test.description,
+          expected: test.valid,
+        });
       }
 
       // Check AJV compliance
@@ -419,6 +434,11 @@ function compileFileTests(
       else {
         ajvFail++;
         groupAjvAllPass = false;
+        ajvFailures.push({
+          group: group.description,
+          test: test.description,
+          expected: test.valid,
+        });
       }
 
       groupResults.push({ tjsOk, ajvOk, data: test.data });
@@ -438,7 +458,7 @@ function compileFileTests(
     }
   }
 
-  return { compiledTests, tjsPass, tjsFail, ajvPass, ajvFail };
+  return { compiledTests, tjsPass, tjsFail, ajvPass, ajvFail, tjsFailures, ajvFailures };
 }
 
 // Per-test benchmark mode: benchmarks each test case individually
@@ -635,6 +655,7 @@ async function main() {
   let filter: RegExp | null = null;
   let complianceOnly = false;
   let perTestMode = false;
+  let jsonOutput = false;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -645,6 +666,8 @@ async function main() {
       complianceOnly = true;
     } else if (arg === '--per-test' || arg === '-t') {
       perTestMode = true;
+    } else if (arg === '--json' || arg === '-j') {
+      jsonOutput = true;
     } else if (['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'].includes(arg)) {
       drafts.push(arg as Draft);
     }
@@ -657,9 +680,11 @@ async function main() {
   // Benchmark options
   const measureOpts = { min_cpu_time: 50_000_000, min_samples: 50 };
 
-  console.log('tjs vs ajv Benchmark (per-file)');
-  if (filter) console.log(`Filter: ${filter}`);
-  console.log('═'.repeat(100));
+  if (!jsonOutput) {
+    console.log('tjs vs ajv Benchmark (per-file)');
+    if (filter) console.log(`Filter: ${filter}`);
+    console.log('═'.repeat(100));
+  }
 
   const remotes = loadRemoteSchemas();
 
@@ -672,6 +697,8 @@ async function main() {
     tjsFail: number;
     ajvPass: number;
     ajvFail: number;
+    tjsFailures: FailureDetail[];
+    ajvFailures: FailureDetail[];
   }
 
   const allPrepared: PreparedFile[] = [];
@@ -682,34 +709,45 @@ async function main() {
     tjsFail: number;
     ajvPass: number;
     ajvFail: number;
+    tjsFailures: FailureDetail[];
+    ajvFailures: FailureDetail[];
   }
   const draftCompliance: Record<Draft, DraftCompliance> = {} as Record<Draft, DraftCompliance>;
 
   for (const draft of drafts) {
-    console.log(`\nLoading ${draft}...`);
+    if (!jsonOutput) console.log(`\nLoading ${draft}...`);
     let testFiles = getTestFiles(draft);
 
     if (filter) {
       testFiles = testFiles.filter((f) => filter!.test(f.relativePath));
-      console.log(`  Filtered to ${testFiles.length} files`);
+      if (!jsonOutput) console.log(`  Filtered to ${testFiles.length} files`);
     }
 
     // Initialize compliance counters for this draft
-    draftCompliance[draft] = { tjsPass: 0, tjsFail: 0, ajvPass: 0, ajvFail: 0 };
+    draftCompliance[draft] = {
+      tjsPass: 0,
+      tjsFail: 0,
+      ajvPass: 0,
+      ajvFail: 0,
+      tjsFailures: [],
+      ajvFailures: [],
+    };
 
     for (const { file, relativePath, isFormat } of testFiles) {
-      const { compiledTests, tjsPass, tjsFail, ajvPass, ajvFail } = compileFileTests(
-        file,
-        draft,
-        remotes,
-        isFormat
-      );
+      const { compiledTests, tjsPass, tjsFail, ajvPass, ajvFail, tjsFailures, ajvFailures } =
+        compileFileTests(file, draft, remotes, isFormat);
 
       // Always track compliance counts (even if no benchmarkable tests)
       draftCompliance[draft].tjsPass += tjsPass;
       draftCompliance[draft].tjsFail += tjsFail;
       draftCompliance[draft].ajvPass += ajvPass;
       draftCompliance[draft].ajvFail += ajvFail;
+      draftCompliance[draft].tjsFailures.push(
+        ...tjsFailures.map((f) => ({ ...f, file: relativePath }))
+      );
+      draftCompliance[draft].ajvFailures.push(
+        ...ajvFailures.map((f) => ({ ...f, file: relativePath }))
+      );
 
       if (compiledTests.length > 0) {
         allPrepared.push({
@@ -720,17 +758,21 @@ async function main() {
           tjsFail,
           ajvPass,
           ajvFail,
+          tjsFailures,
+          ajvFailures,
         });
       }
     }
 
     // Print compliance summary for this draft (from total counts, not just benchmarkable files)
-    const { tjsPass, tjsFail, ajvPass, ajvFail } = draftCompliance[draft];
-    console.log(
-      `  tjs: ${tjsPass}/${tjsPass + tjsFail} (${tjsFail} failures), ajv: ${ajvPass}/${ajvPass + ajvFail} (${ajvFail} failures)`
-    );
-    const draftFiles = allPrepared.filter((f) => f.draft === draft);
-    console.log(`  ${draftFiles.length} files ready for benchmark`);
+    if (!jsonOutput) {
+      const { tjsPass, tjsFail, ajvPass, ajvFail } = draftCompliance[draft];
+      console.log(
+        `  tjs: ${tjsPass}/${tjsPass + tjsFail} (${tjsFail} failures), ajv: ${ajvPass}/${ajvPass + ajvFail} (${ajvFail} failures)`
+      );
+      const draftFiles = allPrepared.filter((f) => f.draft === draft);
+      console.log(`  ${draftFiles.length} files ready for benchmark`);
+    }
   }
 
   if (complianceOnly) {
@@ -745,11 +787,12 @@ async function main() {
   }
 
   const totalTests = allPrepared.reduce((sum, f) => sum + f.compiledTests.length, 0);
-  console.log(`\nBenchmarking ${allPrepared.length} files (${totalTests} tests)...\n`);
+  if (!jsonOutput)
+    console.log(`\nBenchmarking ${allPrepared.length} files (${totalTests} tests)...\n`);
 
   // Warmup phase
   const WARMUP_ITERATIONS = 50;
-  console.log(`Warming up (${WARMUP_ITERATIONS} iterations)...`);
+  if (!jsonOutput) console.log(`Warming up (${WARMUP_ITERATIONS} iterations)...`);
   for (const { compiledTests } of allPrepared) {
     for (let w = 0; w < WARMUP_ITERATIONS; w++) {
       for (const t of compiledTests) {
@@ -758,7 +801,7 @@ async function main() {
       }
     }
   }
-  console.log('Warmup complete.\n');
+  if (!jsonOutput) console.log('Warmup complete.\n');
 
   // Benchmark each file
   const results: FileResult[] = [];
@@ -797,13 +840,66 @@ async function main() {
     });
 
     // Print progress
-    const percent = Math.round(((i + 1) / allPrepared.length) * 100);
-    const ratio = ajvNs > 0 ? tjsNs / ajvNs : 0;
-    const status =
-      ratio > 1
-        ? `${RED}+${Math.round((ratio - 1) * 100)}%${RESET}`
-        : `${GREEN}-${Math.round((1 - ratio) * 100)}%${RESET}`;
-    console.log(`${percent}% ${draft} ${filePath} ${status}`);
+    if (!jsonOutput) {
+      const percent = Math.round(((i + 1) / allPrepared.length) * 100);
+      const ratio = ajvNs > 0 ? tjsNs / ajvNs : 0;
+      const status =
+        ratio > 1
+          ? `${RED}+${Math.round((ratio - 1) * 100)}%${RESET}`
+          : `${GREEN}-${Math.round((1 - ratio) * 100)}%${RESET}`;
+      console.log(`${percent}% ${draft} ${filePath} ${status}`);
+    }
+  }
+
+  // JSON output mode
+  if (jsonOutput) {
+    const jsonResults = {
+      files: results.map((r) => ({
+        draft: r.draft,
+        file: r.file,
+        tests: r.testCount,
+        tjs: {
+          pass: r.tjsPass,
+          fail: r.tjsFail,
+          nsPerOp: Math.round(r.tjsNs),
+          opsPerSec: r.tjsNs > 0 ? Math.round(1_000_000_000 / r.tjsNs) : 0,
+        },
+        ajv: {
+          pass: r.ajvPass,
+          fail: r.ajvFail,
+          nsPerOp: Math.round(r.ajvNs),
+          opsPerSec: r.ajvNs > 0 ? Math.round(1_000_000_000 / r.ajvNs) : 0,
+        },
+      })),
+      summary: drafts.map((draft) => {
+        const draftResults = results.filter((r) => r.draft === draft);
+        const testCount = draftResults.reduce((sum, r) => sum + r.testCount, 0);
+        const tjsTotalNs = draftResults.reduce((sum, r) => sum + r.tjsNs * r.testCount, 0);
+        const ajvTotalNs = draftResults.reduce((sum, r) => sum + r.ajvNs * r.testCount, 0);
+        const compliance = draftCompliance[draft];
+        return {
+          draft,
+          files: draftResults.length,
+          tests: testCount,
+          tjs: {
+            pass: compliance.tjsPass,
+            fail: compliance.tjsFail,
+            nsPerOp: testCount > 0 ? Math.round(tjsTotalNs / testCount) : 0,
+            opsPerSec: testCount > 0 ? Math.round(1_000_000_000 / (tjsTotalNs / testCount)) : 0,
+            failures: compliance.tjsFailures,
+          },
+          ajv: {
+            pass: compliance.ajvPass,
+            fail: compliance.ajvFail,
+            nsPerOp: testCount > 0 ? Math.round(ajvTotalNs / testCount) : 0,
+            opsPerSec: testCount > 0 ? Math.round(1_000_000_000 / (ajvTotalNs / testCount)) : 0,
+            failures: compliance.ajvFailures,
+          },
+        };
+      }),
+    };
+    console.log(JSON.stringify(jsonResults, null, 2));
+    return;
   }
 
   console.log('');

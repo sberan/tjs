@@ -70,6 +70,8 @@ tjs passes the entire [JSON Schema Test Suite](https://github.com/json-schema-or
 See [COMPLIANCE.md](COMPLIANCE.md) for details.
 
 ### Blazing Fast 🔥
+
+See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance comparison.
 tjs uses JIT compilation to generate optimized validation code — **40% faster than ajv** overall:
 
 ```
