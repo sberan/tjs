@@ -7,5 +7,5 @@ coverage/
 .env
 .env.*
 
-# Benchmark intermediate files (per-draft files generated during CI)
-benchmarks/results/*-draft*.json
+# Benchmark intermediate files
+benchmarks/results/*.json
