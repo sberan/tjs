@@ -35,7 +35,8 @@
     "format:check": "prettier --check .",
     "prepare": "husky",
     "bench": "tsx benchmarks/bench.ts",
-    "bench:json": "tsx benchmarks/bench.ts --json"
+    "bench:json": "tsx benchmarks/bench.ts --json",
+    "bench:update-svg": "npm run bench:json | tsx benchmarks/update-svg.ts"
   },
   "keywords": [
     "json-schema",

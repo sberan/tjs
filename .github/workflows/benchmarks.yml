@@ -31,18 +31,44 @@ jobs:
       - name: Run benchmarks
         id: bench
         run: |
-          # Run benchmarks with JSON output
-          npm run bench:json 2>&1 | tee benchmark-output.txt
+          # Run benchmarks with JSON output (stderr to file, stdout has JSON + progress)
+          npm run bench:json 2>benchmark-stderr.txt | tee benchmark-output.txt
 
-          # Extract JSON from output (skip progress lines)
+          # Extract the JSON object from output (skip progress lines and any warnings)
           node -e "
             const fs = require('fs');
             const input = fs.readFileSync('benchmark-output.txt', 'utf-8');
-            const jsonStart = input.indexOf('{');
-            const jsonEnd = input.lastIndexOf('}');
+            // Find the outermost complete JSON object by tracking braces
+            let depth = 0;
+            let jsonStart = -1;
+            let jsonEnd = -1;
+            for (let i = 0; i < input.length; i++) {
+              if (input[i] === '{') {
+                if (depth === 0) jsonStart = i;
+                depth++;
+              } else if (input[i] === '}') {
+                depth--;
+                if (depth === 0) {
+                  jsonEnd = i;
+                  // Keep going to find the last complete JSON object
+                }
+              }
+            }
             if (jsonStart !== -1 && jsonEnd !== -1) {
-              const json = JSON.parse(input.slice(jsonStart, jsonEnd + 1));
-              fs.writeFileSync('benchmark.json', JSON.stringify(json, null, 2));
+              const jsonStr = input.slice(jsonStart, jsonEnd + 1);
+              try {
+                const json = JSON.parse(jsonStr);
+                fs.writeFileSync('benchmark.json', JSON.stringify(json, null, 2));
+                console.log('Successfully extracted JSON');
+              } catch (e) {
+                console.error('Failed to parse JSON:', e.message);
+                console.error('JSON string (first 500 chars):', jsonStr.substring(0, 500));
+                process.exit(1);
+              }
+            } else {
+              console.error('Failed to find JSON in output');
+              console.error('Output (first 500 chars):', input.substring(0, 500));
+              process.exit(1);
             }
           "
 
