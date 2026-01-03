@@ -35,7 +35,9 @@
     "format:check": "prettier --check .",
     "prepare": "husky",
     "bench": "tsx benchmarks/bench.ts",
-    "bench:json": "tsx benchmarks/bench.ts --json"
+    "bench:ajv": "tsx benchmarks/bench.ts -v ajv --json benchmarks/results/ajv.json && tsx benchmarks/json-to-markdown.ts benchmarks/results/ajv.json > benchmarks/results/BENCHMARK_AJV.md",
+    "bench:zod": "tsx benchmarks/bench.ts -v zod --json benchmarks/results/zod.json && tsx benchmarks/json-to-markdown.ts benchmarks/results/zod.json > benchmarks/results/BENCHMARK_ZOD.md",
+    "bench:joi": "tsx benchmarks/bench.ts -v joi --json benchmarks/results/joi.json && tsx benchmarks/json-to-markdown.ts benchmarks/results/joi.json > benchmarks/results/BENCHMARK_JOI.md"
   },
   "keywords": [
     "json-schema",
@@ -55,17 +57,21 @@
     "ajv-formats": "^3.0.1",
     "ajv-formats-draft2019": "^1.6.1",
     "ajv-keywords": "^5.1.0",
+    "enjoi": "^9.0.1",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-expect-type": "^0.6.2",
     "eslint-plugin-prettier": "^5.5.4",
     "husky": "^9.1.7",
+    "joi": "^17.13.3",
+    "json-schema-to-zod": "^2.7.0",
     "lint-staged": "^16.2.7",
     "mitata": "^1.0.34",
     "prettier": "^3.7.4",
     "tsx": "^4.21.0",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "vitest": "^2.1.8",
+    "zod": "^4.3.4"
   },
   "lint-staged": {
     "*.{ts,js}": [

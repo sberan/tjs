@@ -4,6 +4,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  pull-requests: write
+
 jobs:
   benchmark:
     runs-on: ubuntu-latest
@@ -25,5 +28,45 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Create results directory
+        run: mkdir -p benchmarks/results
+
       - name: Run benchmarks
-        run: npm run bench
+        run: npx tsx benchmarks/bench.ts --json benchmarks/results/ajv.json
+
+      - name: Generate PR comment
+        run: npx tsx benchmarks/generate-pr-comment.ts benchmarks/results/ajv.json > benchmark-comment.md
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const comment = fs.readFileSync('benchmark-comment.md', 'utf8');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' &&
+              c.body.includes('## Benchmark Results')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: comment
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
+              });
+            }
