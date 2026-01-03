@@ -1,5 +1,6 @@
 /**
- * Compare tjs vs ajv vs zod vs joi performance using mitata's measure() API.
+ * Compare tjs vs ajv performance using mitata's measure() API.
+ * Optionally include zod and joi with the -v flag.
  *
  * Benchmarks at the FILE level (e.g., ref.json, allOf.json) for meaningful
  * keyword-level insights with minimal overhead.
@@ -13,8 +14,8 @@
  *   npm run bench draft2019-09               # Single draft
  *   npm run bench draft7 --filter unevaluatedItems --per-test  # Per-test breakdown
  *   npm run bench --compliance-only          # Only check compliance, skip benchmark
- *   npm run bench -v tjs -v ajv              # Only benchmark tjs and ajv
- *   npm run bench -v joi                     # Only benchmark joi
+ *   npm run bench -v zod -v joi              # Also benchmark zod and joi
+ *   npm run bench -v joi                     # Also benchmark joi
  *   npm run bench --json                     # Output JSON for CI/programmatic use
  */
 
@@ -746,11 +747,11 @@ async function main() {
     drafts.push('draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12');
   }
 
-  // Default to all validators if none specified
+  // Default to tjs and ajv only; zod/joi are opt-in via -v flag
   const runTjs = validators.length === 0 || validators.includes('tjs');
   const runAjv = validators.length === 0 || validators.includes('ajv');
-  const runZod = validators.length === 0 || validators.includes('zod');
-  const runJoi = validators.length === 0 || validators.includes('joi');
+  const runZod = validators.includes('zod');
+  const runJoi = validators.includes('joi');
 
   // Benchmark options
   const measureOpts = { min_cpu_time: 50_000_000, min_samples: 50 };
