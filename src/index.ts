@@ -1,5 +1,5 @@
 import type { JsonSchema } from './types.js';
-import type { Infer } from './infer.js';
+import type { Infer, ValidatorLike } from './infer.js';
 import {
   createValidator,
   createValidatorAsync,
@@ -8,22 +8,22 @@ import {
   type Validator,
 } from './core/index.js';
 
-export function schema<const T extends JsonSchema>(
+export function schema<const T extends JsonSchema | ValidatorLike>(
   definition: T,
   options?: CompileOptions
 ): Validator<Infer<T>> {
-  return createValidator<Infer<T>>(definition, options);
+  return createValidator<Infer<T>>(definition as JsonSchema, options);
 }
 
 /**
  * Async version of schema() that automatically loads remote $ref schemas.
  * Use this when your schema references external schemas via http(s):// URLs.
  */
-export async function schemaAsync<const T extends JsonSchema>(
+export async function schemaAsync<const T extends JsonSchema | ValidatorLike>(
   definition: T,
   options?: CompileOptions & LoadRemotesOptions
 ): Promise<Validator<Infer<T>>> {
-  return createValidatorAsync<Infer<T>>(definition, options);
+  return createValidatorAsync<Infer<T>>(definition as JsonSchema, options);
 }
 
 // Re-export types

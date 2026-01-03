@@ -217,6 +217,57 @@ const validator = await schemaAsync({
 });
 ```
 
+### Schema Composition
+
+Include validators directly in other schemas for easy composition:
+
+```typescript
+// Define reusable schemas
+const Address = schema({
+  type: 'object',
+  properties: {
+    street: { type: 'string' },
+    city: { type: 'string' },
+    zip: { type: 'string' },
+  },
+  required: ['street', 'city'],
+});
+
+// Include in another schema
+const Person = schema({
+  type: 'object',
+  properties: {
+    name: { type: 'string' },
+    address: Address,  // Use validator directly
+  },
+  required: ['name', 'address'],
+});
+
+type Person = typeof Person.type;
+// { name: string; address: { street: string; city: string; zip?: string } }
+```
+
+Works in arrays, anyOf, allOf, and any other schema position:
+
+```typescript
+const Team = schema({
+  type: 'object',
+  properties: {
+    name: { type: 'string' },
+    members: { type: 'array', items: Person },  // Array of Person
+    headquarters: Address,
+  },
+  required: ['name', 'members', 'headquarters'],
+});
+```
+
+Access the underlying schema via the `.schema` property:
+
+```typescript
+console.log(Address.schema);
+// { type: 'object', properties: { ... }, required: ['street', 'city'] }
+```
+
 ## Type Coercion
 
 Automatically coerce values to match schema types:

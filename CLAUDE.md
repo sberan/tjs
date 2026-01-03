@@ -33,6 +33,7 @@ When making API changes, **always update README.md** to reflect the current API:
 - `validator.validate(data)` - Returns `{ value: T, error: undefined }` on success, `{ value: undefined, error: ValidationError[] }` on failure
 - `validator.assert(data)` - Returns typed value `T` on success, throws on failure
 - `validator.type` - Phantom property for type inference (`typeof validator.type`)
+- `validator.schema` - The JSON Schema definition, can be used for schema composition
 
 ### Important
 - There is NO `.parse()` method - use `.assert()` for throwing validation or `.validate()` for result-based
