@@ -66,9 +66,9 @@ function runBenchmark() {
   console.log('└─────────────────┴────────────────┴────────────────┘');
   console.log();
 
-  // Separate runtime and precompiled
-  const runtimeBundles = results.filter(r => r.name !== 'precompiled');
-  const precompiledBundle = results.find(r => r.name === 'precompiled');
+  // Separate runtime and precompiled bundles
+  const runtimeBundles = results.filter(r => !r.name.startsWith('precompiled'));
+  const precompiledBundles = results.filter(r => r.name.startsWith('precompiled'));
 
   console.log('═══════════════════════════════════════════════════════════════════');
   console.log('                           SUMMARY');
@@ -84,17 +84,30 @@ function runBenchmark() {
     console.log();
   }
 
-  if (precompiledBundle) {
+  if (precompiledBundles.length > 0) {
+    const minPrecompiled = precompiledBundles.reduce((a, b) => a.gzipSize < b.gzipSize ? a : b);
+    const maxPrecompiled = precompiledBundles.reduce((a, b) => a.gzipSize > b.gzipSize ? a : b);
     console.log('  BUILD-TIME COMPILATION (no compiler):');
-    console.log(`    Size: ${formatBytes(precompiledBundle.gzipSize)} (${precompiledBundle.name})`);
+    console.log(`    Min: ${formatBytes(minPrecompiled.gzipSize)} (${minPrecompiled.name})`);
+    console.log(`    Max: ${formatBytes(maxPrecompiled.gzipSize)} (${maxPrecompiled.name})`);
     console.log();
 
-    if (runtimeBundles.length > 0) {
-      const avgRuntime = runtimeBundles.reduce((s, r) => s + r.gzipSize, 0) / runtimeBundles.length;
-      const savings = ((avgRuntime - precompiledBundle.gzipSize) / avgRuntime * 100).toFixed(1);
-      console.log(`  SAVINGS: ${savings}% smaller than runtime compilation!`);
-      console.log();
+    // Compare equivalent schemas
+    const simpleRuntime = results.find(r => r.name === 'medium');
+    const simplePrecompiled = results.find(r => r.name === 'precompiled');
+    const largeRuntime = results.find(r => r.name === 'large');
+    const largePrecompiled = results.find(r => r.name === 'precompiled-large');
+
+    console.log('  SAVINGS BY SCHEMA SIZE:');
+    if (simpleRuntime && simplePrecompiled) {
+      const savings = ((simpleRuntime.gzipSize - simplePrecompiled.gzipSize) / simpleRuntime.gzipSize * 100).toFixed(1);
+      console.log(`    Simple schema: ${formatBytes(simpleRuntime.gzipSize)} → ${formatBytes(simplePrecompiled.gzipSize)} (${savings}% smaller)`);
     }
+    if (largeRuntime && largePrecompiled) {
+      const savings = ((largeRuntime.gzipSize - largePrecompiled.gzipSize) / largeRuntime.gzipSize * 100).toFixed(1);
+      console.log(`    Large schema:  ${formatBytes(largeRuntime.gzipSize)} → ${formatBytes(largePrecompiled.gzipSize)} (${savings}% smaller)`);
+    }
+    console.log();
   }
 
   // Analysis
@@ -107,11 +120,13 @@ function runBenchmark() {
   console.log('  • minimal  - Simple string schema');
   console.log('  • medium   - Object with format validation');
   console.log('  • complex  - Nested objects, $refs, conditionals');
+  console.log('  • large    - Enterprise e-commerce order (14 $defs)');
   console.log('  • full     - All exports including meta-schemas');
   console.log();
   console.log('  Build-time compilation (no compiler needed):');
   console.log('  ────────────────────────────────────────────');
-  console.log('  • precompiled - Pre-generated validator, only ~3-5KB');
+  console.log('  • precompiled       - Simple user schema (~1KB)');
+  console.log('  • precompiled-large - Complex order schema (~6KB)');
   console.log();
   console.log('  Use `tjs compile schema.json -o validator.js` to generate');
   console.log('  standalone validators at build time.');

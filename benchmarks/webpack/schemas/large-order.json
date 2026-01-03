@@ -1,0 +1,254 @@
+{
+  "$defs": {
+    "address": {
+      "type": "object",
+      "properties": {
+        "street": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "street2": { "type": "string", "maxLength": 200 },
+        "city": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "state": { "type": "string", "minLength": 2, "maxLength": 2, "pattern": "^[A-Z]{2}$" },
+        "zip": { "type": "string", "pattern": "^[0-9]{5}(-[0-9]{4})?$" },
+        "country": { "type": "string", "enum": ["US", "CA", "MX", "UK", "DE", "FR", "JP", "CN", "AU", "BR"] },
+        "coordinates": {
+          "type": "object",
+          "properties": {
+            "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+            "lng": { "type": "number", "minimum": -180, "maximum": 180 }
+          }
+        }
+      },
+      "required": ["street", "city", "state", "zip", "country"]
+    },
+    "phone": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["home", "work", "mobile", "fax", "other"] },
+        "number": { "type": "string", "pattern": "^\\+?[0-9\\-\\s\\(\\)]{7,20}$" },
+        "extension": { "type": "string", "maxLength": 10 },
+        "primary": { "type": "boolean" }
+      },
+      "required": ["type", "number"]
+    },
+    "email": {
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["personal", "work", "other"] },
+        "address": { "type": "string", "format": "email" },
+        "verified": { "type": "boolean" },
+        "verifiedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["type", "address"]
+    },
+    "money": {
+      "type": "object",
+      "properties": {
+        "amount": { "type": "number", "minimum": 0 },
+        "currency": { "type": "string", "enum": ["USD", "EUR", "GBP", "JPY", "CNY", "CAD", "AUD", "CHF", "INR", "MXN"] }
+      },
+      "required": ["amount", "currency"]
+    },
+    "dateRange": {
+      "type": "object",
+      "properties": {
+        "start": { "type": "string", "format": "date" },
+        "end": { "type": "string", "format": "date" }
+      },
+      "required": ["start"]
+    },
+    "attachment": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "filename": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "mimeType": { "type": "string", "pattern": "^[a-z]+/[a-z0-9\\-\\+\\.]+$" },
+        "size": { "type": "integer", "minimum": 0, "maximum": 104857600 },
+        "url": { "type": "string", "format": "uri" },
+        "checksum": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "uploadedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "filename", "mimeType", "size", "url"]
+    },
+    "auditInfo": {
+      "type": "object",
+      "properties": {
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "type": "string", "format": "uuid" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string", "format": "uuid" },
+        "version": { "type": "integer", "minimum": 1 }
+      },
+      "required": ["createdAt", "createdBy", "version"]
+    },
+    "user": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "username": { "type": "string", "minLength": 3, "maxLength": 50, "pattern": "^[a-zA-Z0-9_]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "emails": { "type": "array", "items": { "$ref": "#/$defs/email" }, "minItems": 1, "maxItems": 5 },
+        "phones": { "type": "array", "items": { "$ref": "#/$defs/phone" }, "maxItems": 5 },
+        "avatar": { "$ref": "#/$defs/attachment" },
+        "role": { "type": "string", "enum": ["admin", "manager", "user", "guest", "api"] },
+        "permissions": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "status": { "type": "string", "enum": ["active", "inactive", "pending", "suspended", "deleted"] },
+        "lastLoginAt": { "type": "string", "format": "date-time" },
+        "settings": {
+          "type": "object",
+          "properties": {
+            "theme": { "type": "string", "enum": ["light", "dark", "system"] },
+            "language": { "type": "string", "pattern": "^[a-z]{2}(-[A-Z]{2})?$" },
+            "timezone": { "type": "string" },
+            "notifications": {
+              "type": "object",
+              "properties": {
+                "email": { "type": "boolean" },
+                "push": { "type": "boolean" },
+                "sms": { "type": "boolean" }
+              }
+            }
+          }
+        }
+      },
+      "required": ["id", "username", "emails", "role", "status"]
+    },
+    "product": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "sku": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 5000 },
+        "category": { "type": "string" },
+        "subcategory": { "type": "string" },
+        "brand": { "type": "string" },
+        "price": { "$ref": "#/$defs/money" },
+        "compareAtPrice": { "$ref": "#/$defs/money" },
+        "cost": { "$ref": "#/$defs/money" },
+        "quantity": { "type": "integer", "minimum": 0 },
+        "weight": { "type": "number", "minimum": 0 },
+        "dimensions": {
+          "type": "object",
+          "properties": {
+            "length": { "type": "number", "minimum": 0 },
+            "width": { "type": "number", "minimum": 0 },
+            "height": { "type": "number", "minimum": 0 },
+            "unit": { "type": "string", "enum": ["in", "cm", "mm"] }
+          }
+        },
+        "images": { "type": "array", "items": { "$ref": "#/$defs/attachment" }, "maxItems": 20 },
+        "tags": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "variants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "format": "uuid" },
+              "sku": { "type": "string" },
+              "name": { "type": "string" },
+              "price": { "$ref": "#/$defs/money" },
+              "quantity": { "type": "integer", "minimum": 0 },
+              "attributes": {
+                "type": "object",
+                "additionalProperties": { "type": "string" }
+              }
+            },
+            "required": ["id", "sku", "name"]
+          }
+        },
+        "status": { "type": "string", "enum": ["draft", "active", "archived", "deleted"] },
+        "audit": { "$ref": "#/$defs/auditInfo" }
+      },
+      "required": ["id", "sku", "name", "price", "status"]
+    },
+    "lineItem": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "productId": { "type": "string", "format": "uuid" },
+        "variantId": { "type": "string", "format": "uuid" },
+        "sku": { "type": "string" },
+        "name": { "type": "string" },
+        "quantity": { "type": "integer", "minimum": 1 },
+        "unitPrice": { "$ref": "#/$defs/money" },
+        "discount": { "$ref": "#/$defs/money" },
+        "tax": { "$ref": "#/$defs/money" },
+        "total": { "$ref": "#/$defs/money" },
+        "notes": { "type": "string", "maxLength": 500 }
+      },
+      "required": ["id", "productId", "name", "quantity", "unitPrice", "total"]
+    },
+    "payment": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "method": { "type": "string", "enum": ["credit_card", "debit_card", "paypal", "bank_transfer", "cash", "check", "crypto", "gift_card"] },
+        "amount": { "$ref": "#/$defs/money" },
+        "status": { "type": "string", "enum": ["pending", "authorized", "captured", "refunded", "failed", "cancelled"] },
+        "transactionId": { "type": "string" },
+        "cardLast4": { "type": "string", "pattern": "^[0-9]{4}$" },
+        "cardBrand": { "type": "string", "enum": ["visa", "mastercard", "amex", "discover", "jcb", "unionpay"] },
+        "processedAt": { "type": "string", "format": "date-time" },
+        "metadata": { "type": "object", "additionalProperties": true }
+      },
+      "required": ["id", "method", "amount", "status"]
+    },
+    "shipment": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "carrier": { "type": "string", "enum": ["usps", "ups", "fedex", "dhl", "amazon", "other"] },
+        "service": { "type": "string" },
+        "trackingNumber": { "type": "string" },
+        "trackingUrl": { "type": "string", "format": "uri" },
+        "status": { "type": "string", "enum": ["pending", "label_created", "in_transit", "out_for_delivery", "delivered", "exception", "returned"] },
+        "estimatedDelivery": { "$ref": "#/$defs/dateRange" },
+        "actualDelivery": { "type": "string", "format": "date-time" },
+        "weight": { "type": "number", "minimum": 0 },
+        "cost": { "$ref": "#/$defs/money" },
+        "items": { "type": "array", "items": { "type": "string", "format": "uuid" } }
+      },
+      "required": ["id", "carrier", "status"]
+    }
+  },
+  "type": "object",
+  "properties": {
+    "id": { "type": "string", "format": "uuid" },
+    "orderNumber": { "type": "string", "pattern": "^ORD-[0-9]{8}-[A-Z0-9]{6}$" },
+    "type": { "type": "string", "enum": ["standard", "subscription", "preorder", "backorder", "exchange", "return"] },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "pending", "confirmed", "processing", "shipped", "partial_shipped", "delivered", "completed", "cancelled", "refunded", "on_hold"]
+    },
+    "customer": { "$ref": "#/$defs/user" },
+    "billingAddress": { "$ref": "#/$defs/address" },
+    "shippingAddress": { "$ref": "#/$defs/address" },
+    "sameAsShipping": { "type": "boolean" },
+    "items": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/lineItem" },
+      "minItems": 1,
+      "maxItems": 100
+    },
+    "subtotal": { "$ref": "#/$defs/money" },
+    "discount": { "$ref": "#/$defs/money" },
+    "discountCode": { "type": "string", "pattern": "^[A-Z0-9\\-]{4,20}$" },
+    "shipping": { "$ref": "#/$defs/money" },
+    "tax": { "$ref": "#/$defs/money" },
+    "total": { "$ref": "#/$defs/money" },
+    "payments": { "type": "array", "items": { "$ref": "#/$defs/payment" } },
+    "shipments": { "type": "array", "items": { "$ref": "#/$defs/shipment" } },
+    "notes": { "type": "string", "maxLength": 2000 },
+    "internalNotes": { "type": "string", "maxLength": 5000 },
+    "tags": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "metadata": { "type": "object", "additionalProperties": true },
+    "attachments": { "type": "array", "items": { "$ref": "#/$defs/attachment" }, "maxItems": 10 },
+    "audit": { "$ref": "#/$defs/auditInfo" }
+  },
+  "required": ["id", "orderNumber", "type", "status", "customer", "billingAddress", "shippingAddress", "items", "subtotal", "total", "audit"],
+  "if": {
+    "properties": { "sameAsShipping": { "const": false } }
+  },
+  "then": {
+    "required": ["billingAddress"]
+  }
+}

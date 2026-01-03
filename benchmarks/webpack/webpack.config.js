@@ -17,8 +17,12 @@ export default (env, argv) => {
       complex: './src/complex.js',
       // Full: includes meta-schemas and all features (runtime compilation)
       full: './src/full.js',
+      // Large: complex e-commerce order schema (runtime compilation)
+      large: './src/large.js',
       // Pre-compiled: validator generated at build time (NO COMPILER)
       precompiled: './src/precompiled.js',
+      // Pre-compiled large: complex schema without compiler
+      'precompiled-large': './src/precompiled-large.js',
     },
     output: {
       path: path.resolve(__dirname, 'dist'),
