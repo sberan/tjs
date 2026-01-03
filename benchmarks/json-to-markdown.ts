@@ -114,46 +114,89 @@ function main() {
   );
   lines.push('');
 
-  // Summary table
+  // Summary table - only count files where ALL tests pass for that validator
   lines.push('## Summary');
   lines.push('');
   lines.push(
-    `| Draft | Files | Tests | tjs pass | tjs fail | tjs ops/s | ${validator} pass | ${validator} fail | ${validator} ops/s | tjs vs ${validator} |`
+    `| Draft | Files | Tests | tjs files | tjs tests | tjs ops/s | ${validator} files | ${validator} tests | ${validator} ops/s | tjs vs ${validator} |`
   );
   lines.push(
-    '|-------|------:|------:|---------:|---------:|----------:|---------:|---------:|----------:|-----:|'
+    '|-------|------:|------:|----------:|----------:|----------:|-----------:|-----------:|----------:|-----:|'
   );
 
   let totalFiles = 0;
   let totalTests = 0;
-  let totalTjs = { pass: 0, fail: 0, ns: 0 };
-  let totalOther = { pass: 0, fail: 0, ns: 0 };
+  // Only count files/tests where ALL tests pass
+  let totalTjsFiles = 0;
+  let totalTjsTests = 0;
+  let totalTjsNs = 0;
+  let totalOtherFiles = 0;
+  let totalOtherTests = 0;
+  let totalOtherNs = 0;
 
   for (const draft of drafts) {
     const s = data.summary[draft];
     if (!s) continue;
-
-    const other = s[validatorKey];
+    const draftResults = data.results.filter((r) => r.draft === draft);
 
     totalFiles += s.files;
     totalTests += s.tests;
-    totalTjs.pass += s.tjs.pass;
-    totalTjs.fail += s.tjs.fail;
-    totalTjs.ns += s.tjs.nsPerTest * s.tests;
-    totalOther.pass += other.pass;
-    totalOther.fail += other.fail;
-    totalOther.ns += other.nsPerTest * s.tests;
+
+    // Compute stats only from files where all tests pass for that validator
+    let tjsFiles = 0;
+    let tjsTests = 0;
+    let tjsNsSum = 0;
+    let otherFiles = 0;
+    let otherTests = 0;
+    let otherNsSum = 0;
+
+    for (const r of draftResults) {
+      // tjs: only count if all tests pass (fail === 0)
+      if (r.tjs.fail === 0 && r.tjs.nsPerTest > 0) {
+        tjsFiles++;
+        tjsTests += r.testCount;
+        tjsNsSum += r.tjs.nsPerTest * r.testCount;
+      }
+      // Other validator: only count if all tests pass
+      const otherStats = r[validatorKey];
+      if (otherStats.fail === 0 && otherStats.nsPerTest > 0) {
+        otherFiles++;
+        otherTests += r.testCount;
+        otherNsSum += otherStats.nsPerTest * r.testCount;
+      }
+    }
+
+    totalTjsFiles += tjsFiles;
+    totalTjsTests += tjsTests;
+    totalTjsNs += tjsNsSum;
+    totalOtherFiles += otherFiles;
+    totalOtherTests += otherTests;
+    totalOtherNs += otherNsSum;
+
+    const tjsAvgNs = tjsTests > 0 ? tjsNsSum / tjsTests : 0;
+    const otherAvgNs = otherTests > 0 ? otherNsSum / otherTests : 0;
+
+    const tjsDisplay = tjsFiles === s.files ? `✅ ${tjsFiles}` : `⚠️ ${tjsFiles}/${s.files}`;
+    const otherDisplay =
+      otherFiles === s.files ? `✅ ${otherFiles}` : `⚠️ ${otherFiles}/${s.files}`;
 
     lines.push(
-      `| ${draft} | ${s.files} | ${s.tests} | ${formatPassFail(s.tjs.pass, s.tjs.fail)} | ${s.tjs.fail} | ${formatOpsPerSec(s.tjs.nsPerTest)} | ${formatPassFail(other.pass, other.fail)} | ${other.fail} | ${formatOpsPerSec(other.nsPerTest)} | ${formatDiff(s.tjs.nsPerTest, other.nsPerTest)} |`
+      `| ${draft} | ${s.files} | ${s.tests} | ${tjsDisplay} | ${tjsTests} | ${formatOpsPerSec(tjsAvgNs)} | ${otherDisplay} | ${otherTests} | ${formatOpsPerSec(otherAvgNs)} | ${formatDiff(tjsAvgNs, otherAvgNs)} |`
     );
   }
 
-  const avgTjsNs = totalTests > 0 ? totalTjs.ns / totalTests : 0;
-  const avgOtherNs = totalTests > 0 ? totalOther.ns / totalTests : 0;
+  const avgTjsNs = totalTjsTests > 0 ? totalTjsNs / totalTjsTests : 0;
+  const avgOtherNs = totalOtherTests > 0 ? totalOtherNs / totalOtherTests : 0;
+
+  const totalTjsDisplay =
+    totalTjsFiles === totalFiles ? `✅ ${totalTjsFiles}` : `⚠️ ${totalTjsFiles}/${totalFiles}`;
+  const totalOtherDisplay =
+    totalOtherFiles === totalFiles
+      ? `✅ ${totalOtherFiles}`
+      : `⚠️ ${totalOtherFiles}/${totalFiles}`;
 
   lines.push(
-    `| **Total** | ${totalFiles} | ${totalTests} | ✅ ${totalTjs.pass} | ${totalTjs.fail} | ${formatOpsPerSec(avgTjsNs)} | ✅ ${totalOther.pass} | ${totalOther.fail} | ${formatOpsPerSec(avgOtherNs)} | ${formatDiff(avgTjsNs, avgOtherNs)} |`
+    `| **Total** | ${totalFiles} | ${totalTests} | ${totalTjsDisplay} | ${totalTjsTests} | ${formatOpsPerSec(avgTjsNs)} | ${totalOtherDisplay} | ${totalOtherTests} | ${formatOpsPerSec(avgOtherNs)} | ${formatDiff(avgTjsNs, avgOtherNs)} |`
   );
   lines.push('');
 
@@ -177,6 +220,8 @@ function main() {
   // Detailed results by draft
   lines.push('## Detailed Results');
   lines.push('');
+  lines.push('Only showing ops/s for files where all tests pass.');
+  lines.push('');
 
   for (const draft of drafts) {
     const draftResults = data.results.filter((r) => r.draft === draft);
@@ -184,17 +229,20 @@ function main() {
 
     lines.push(`### ${draft}`);
     lines.push('');
-    lines.push(
-      `| File | Tests | tjs pass | tjs fail | tjs ops/s | ${validator} pass | ${validator} fail | ${validator} ops/s | Diff |`
-    );
-    lines.push(
-      '|------|------:|---------:|---------:|----------:|---------:|---------:|----------:|-----:|'
-    );
+    lines.push(`| File | Tests | tjs | tjs ops/s | ${validator} | ${validator} ops/s | Diff |`);
+    lines.push('|------|------:|----:|----------:|----:|----------:|-----:|');
 
     for (const r of draftResults) {
       const other = r[validatorKey];
+      // Only show ops/s if all tests pass
+      const tjsOps = r.tjs.fail === 0 ? formatOpsPerSec(r.tjs.nsPerTest) : '-';
+      const otherOps = other.fail === 0 ? formatOpsPerSec(other.nsPerTest) : '-';
+      const diff =
+        r.tjs.fail === 0 && other.fail === 0 ? formatDiff(r.tjs.nsPerTest, other.nsPerTest) : '-';
+      const tjsStatus = r.tjs.fail === 0 ? '✅' : `⚠️ ${r.tjs.fail} fail`;
+      const otherStatus = other.fail === 0 ? '✅' : `⚠️ ${other.fail} fail`;
       lines.push(
-        `| ${r.file} | ${r.testCount} | ${formatPassFail(r.tjs.pass, r.tjs.fail)} | ${r.tjs.fail} | ${formatOpsPerSec(r.tjs.nsPerTest)} | ${formatPassFail(other.pass, other.fail)} | ${other.fail} | ${formatOpsPerSec(other.nsPerTest)} | ${formatDiff(r.tjs.nsPerTest, other.nsPerTest)} |`
+        `| ${r.file} | ${r.testCount} | ${tjsStatus} | ${tjsOps} | ${otherStatus} | ${otherOps} | ${diff} |`
       );
     }
     lines.push('');

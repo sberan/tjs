@@ -4,323 +4,325 @@ Performance comparison of **tjs** vs **[joi](https://joi.dev/)** using the offic
 
 ## Summary
 
-| Draft | Files | Tests | tjs pass | tjs fail | tjs ops/s | joi pass | joi fail | joi ops/s | tjs vs joi |
-|-------|------:|------:|---------:|---------:|----------:|---------:|---------:|----------:|-----:|
-| draft4 | 38 | 790 | ⚠️ 881 | 1 | 29.3M | ⚠️ 358 | 524 | - | - |
-| draft6 | 49 | 1120 | ✅ 1170 | 0 | 30.1M | ⚠️ 433 | 737 | - | - |
-| draft7 | 54 | 1324 | ✅ 1534 | 0 | 26.4M | ⚠️ 534 | 1000 | - | - |
-| draft2019-09 | 69 | 1703 | ✅ 1941 | 0 | 19.7M | ⚠️ 646 | 1295 | 598.3M | 🔴 **+2937%** |
-| draft2020-12 | 68 | 1665 | ✅ 1990 | 0 | 20.8M | ⚠️ 670 | 1320 | 548.1M | 🔴 **+2529%** |
-| **Total** | 278 | 6602 | ✅ 7516 | 1 | 23.5M | ✅ 2641 | 4876 | 1121.9M | 🔴 **+4669%** |
+| Draft | Files | Tests | tjs files | tjs tests | tjs ops/s | joi files | joi tests | joi ops/s | tjs vs joi |
+|-------|------:|------:|----------:|----------:|----------:|-----------:|-----------:|----------:|-----:|
+| draft4 | 38 | 790 | ✅ 38 | 790 | 28.3M | ⚠️ 0/38 | 0 | - | - |
+| draft6 | 49 | 1120 | ✅ 49 | 1120 | 28.4M | ⚠️ 0/49 | 0 | - | - |
+| draft7 | 54 | 1324 | ✅ 54 | 1324 | 26.3M | ⚠️ 0/54 | 0 | - | - |
+| draft2019-09 | 69 | 1703 | ✅ 69 | 1703 | 19.8M | ⚠️ 1/69 | 18 | 6.1M | 🟢 **-69%** |
+| draft2020-12 | 68 | 1665 | ✅ 68 | 1665 | 20.5M | ⚠️ 1/68 | 18 | 6.2M | 🟢 **-70%** |
+| **Total** | 278 | 6602 | ✅ 278 | 6602 | 23.2M | ⚠️ 2/278 | 36 | 6.2M | 🟢 **-73%** |
 
 ## Head-to-Head Performance
 
 Comparison on test groups where both validators pass all tests:
 
-**tjs vs joi**: 🟢 tjs is 7.30x faster (22 ns vs 163 ns, 36 tests)
+**tjs vs joi**: 🟢 tjs is 7.15x faster (23 ns vs 162 ns, 36 tests)
 
 ## Detailed Results
 
+Only showing ops/s for files where all tests pass.
+
 ### draft4
 
-| File | Tests | tjs pass | tjs fail | tjs ops/s | joi pass | joi fail | joi ops/s | Diff |
-|------|------:|---------:|---------:|----------:|---------:|---------:|----------:|-----:|
-| additionalItems.json | 17 | ✅ 17 | 0 | 66.1M | ⚠️ 12 | 5 | - | - |
-| additionalProperties.json | 16 | ✅ 16 | 0 | 40.6M | ⚠️ 3 | 13 | - | - |
-| allOf.json | 27 | ✅ 27 | 0 | 46.9M | ⚠️ 6 | 21 | - | - |
-| anyOf.json | 15 | ✅ 15 | 0 | 53.8M | ⚠️ 2 | 13 | - | - |
-| default.json | 7 | ✅ 7 | 0 | 59.9M | ⚠️ 0 | 7 | - | - |
-| dependencies.json | 29 | ✅ 29 | 0 | 37.8M | ⚠️ 14 | 15 | - | - |
-| enum.json | 49 | ✅ 49 | 0 | 24.9M | ⚠️ 26 | 23 | - | - |
-| format.json | 36 | ✅ 36 | 0 | 75.7M | ⚠️ 0 | 36 | - | - |
-| infinite-loop-detection.json | 2 | ✅ 2 | 0 | 45.6M | ⚠️ 0 | 2 | - | - |
-| items.json | 21 | ✅ 21 | 0 | 35.3M | ⚠️ 10 | 11 | - | - |
-| maxItems.json | 4 | ✅ 4 | 0 | 73.6M | ⚠️ 3 | 1 | - | - |
-| maxLength.json | 5 | ✅ 5 | 0 | 61.3M | ⚠️ 4 | 1 | - | - |
-| maxProperties.json | 8 | ✅ 8 | 0 | 51.8M | ⚠️ 6 | 2 | - | - |
-| maximum.json | 8 | ✅ 14 | 0 | 68.6M | ⚠️ 10 | 4 | - | - |
-| minItems.json | 4 | ✅ 4 | 0 | 74.1M | ⚠️ 3 | 1 | - | - |
-| minLength.json | 5 | ✅ 5 | 0 | 58.1M | ⚠️ 3 | 2 | - | - |
-| minProperties.json | 6 | ✅ 6 | 0 | 58.9M | ⚠️ 5 | 1 | - | - |
-| minimum.json | 11 | ✅ 17 | 0 | 69.6M | ⚠️ 12 | 5 | - | - |
-| multipleOf.json | 10 | ✅ 10 | 0 | 62.9M | ⚠️ 5 | 5 | - | - |
-| not.json | 20 | ✅ 20 | 0 | 53.6M | ⚠️ 0 | 20 | - | - |
-| oneOf.json | 23 | ✅ 23 | 0 | 45.3M | ⚠️ 2 | 21 | - | - |
-| pattern.json | 9 | ✅ 9 | 0 | 54.0M | ⚠️ 8 | 1 | - | - |
-| patternProperties.json | 18 | ✅ 18 | 0 | 23.7M | ⚠️ 11 | 7 | - | - |
-| properties.json | 17 | ✅ 24 | 0 | 35.4M | ⚠️ 0 | 24 | - | - |
-| ref.json | 26 | ✅ 45 | 0 | 40.8M | ⚠️ 3 | 42 | - | - |
-| refRemote.json | 6 | ✅ 17 | 0 | 47.4M | ⚠️ 1 | 16 | - | - |
-| required.json | 8 | ✅ 15 | 0 | 62.3M | ⚠️ 4 | 11 | - | - |
-| type.json | 79 | ✅ 79 | 0 | 51.7M | ⚠️ 20 | 59 | - | - |
-| uniqueItems.json | 69 | ✅ 69 | 0 | 26.1M | ⚠️ 50 | 19 | - | - |
-| optional/bignum.json | 7 | ✅ 9 | 0 | 66.0M | ⚠️ 2 | 7 | - | - |
-| optional/ecmascript-regex.json | 74 | ✅ 74 | 0 | 24.1M | ⚠️ 8 | 66 | - | - |
-| optional/format/date-time.json | 26 | ✅ 26 | 0 | 23.5M | ⚠️ 17 | 9 | - | - |
-| optional/format/email.json | 17 | ✅ 17 | 0 | 19.7M | ⚠️ 11 | 6 | - | - |
-| optional/format/ipv4.json | 16 | ✅ 16 | 0 | 39.4M | ⚠️ 8 | 8 | - | - |
-| optional/format/ipv6.json | 40 | ✅ 40 | 0 | 14.4M | ⚠️ 33 | 7 | - | - |
-| optional/format/unknown.json | 7 | ✅ 7 | 0 | 82.9M | ⚠️ 0 | 7 | - | - |
-| optional/format/uri.json | 36 | ✅ 36 | 0 | 8.3M | ⚠️ 29 | 7 | - | - |
-| optional/non-bmp-regex.json | 12 | ✅ 12 | 0 | 27.4M | ⚠️ 6 | 6 | - | - |
+| File | Tests | tjs | tjs ops/s | joi | joi ops/s | Diff |
+|------|------:|----:|----------:|----:|----------:|-----:|
+| additionalItems.json | 17 | ✅ | 64.1M | ⚠️ 5 fail | - | - |
+| additionalProperties.json | 16 | ✅ | 36.2M | ⚠️ 13 fail | - | - |
+| allOf.json | 27 | ✅ | 44.1M | ⚠️ 21 fail | - | - |
+| anyOf.json | 15 | ✅ | 50.1M | ⚠️ 13 fail | - | - |
+| default.json | 7 | ✅ | 58.1M | ⚠️ 7 fail | - | - |
+| dependencies.json | 29 | ✅ | 35.9M | ⚠️ 15 fail | - | - |
+| enum.json | 49 | ✅ | 23.1M | ⚠️ 23 fail | - | - |
+| format.json | 36 | ✅ | 71.9M | ⚠️ 36 fail | - | - |
+| infinite-loop-detection.json | 2 | ✅ | 42.4M | ⚠️ 2 fail | - | - |
+| items.json | 21 | ✅ | 30.3M | ⚠️ 11 fail | - | - |
+| maxItems.json | 4 | ✅ | 66.6M | ⚠️ 1 fail | - | - |
+| maxLength.json | 5 | ✅ | 57.9M | ⚠️ 1 fail | - | - |
+| maxProperties.json | 8 | ✅ | 51.0M | ⚠️ 2 fail | - | - |
+| maximum.json | 8 | ✅ | 67.4M | ⚠️ 4 fail | - | - |
+| minItems.json | 4 | ✅ | 67.3M | ⚠️ 1 fail | - | - |
+| minLength.json | 5 | ✅ | 56.0M | ⚠️ 2 fail | - | - |
+| minProperties.json | 6 | ✅ | 57.1M | ⚠️ 1 fail | - | - |
+| minimum.json | 11 | ✅ | 69.0M | ⚠️ 5 fail | - | - |
+| multipleOf.json | 10 | ✅ | 63.5M | ⚠️ 5 fail | - | - |
+| not.json | 20 | ✅ | 52.2M | ⚠️ 20 fail | - | - |
+| oneOf.json | 23 | ✅ | 44.5M | ⚠️ 21 fail | - | - |
+| pattern.json | 9 | ✅ | 52.5M | ⚠️ 1 fail | - | - |
+| patternProperties.json | 18 | ✅ | 22.6M | ⚠️ 7 fail | - | - |
+| properties.json | 17 | ✅ | 34.1M | ⚠️ 24 fail | - | - |
+| ref.json | 26 | ✅ | 39.4M | ⚠️ 42 fail | - | - |
+| refRemote.json | 6 | ✅ | 47.5M | ⚠️ 16 fail | - | - |
+| required.json | 8 | ✅ | 60.0M | ⚠️ 11 fail | - | - |
+| type.json | 79 | ✅ | 50.2M | ⚠️ 59 fail | - | - |
+| uniqueItems.json | 69 | ✅ | 25.6M | ⚠️ 19 fail | - | - |
+| optional/bignum.json | 7 | ✅ | 63.8M | ⚠️ 7 fail | - | - |
+| optional/ecmascript-regex.json | 74 | ✅ | 24.2M | ⚠️ 66 fail | - | - |
+| optional/format/date-time.json | 26 | ✅ | 23.3M | ⚠️ 9 fail | - | - |
+| optional/format/email.json | 17 | ✅ | 19.5M | ⚠️ 6 fail | - | - |
+| optional/format/ipv4.json | 16 | ✅ | 37.9M | ⚠️ 8 fail | - | - |
+| optional/format/ipv6.json | 40 | ✅ | 13.6M | ⚠️ 7 fail | - | - |
+| optional/format/unknown.json | 7 | ✅ | 72.5M | ⚠️ 7 fail | - | - |
+| optional/format/uri.json | 36 | ✅ | 8.2M | ⚠️ 7 fail | - | - |
+| optional/non-bmp-regex.json | 12 | ✅ | 26.7M | ⚠️ 6 fail | - | - |
 
 ### draft6
 
-| File | Tests | tjs pass | tjs fail | tjs ops/s | joi pass | joi fail | joi ops/s | Diff |
-|------|------:|---------:|---------:|----------:|---------:|---------:|----------:|-----:|
-| additionalItems.json | 19 | ✅ 19 | 0 | 61.9M | ⚠️ 13 | 6 | - | - |
-| additionalProperties.json | 16 | ✅ 16 | 0 | 39.9M | ⚠️ 3 | 13 | - | - |
-| allOf.json | 30 | ✅ 30 | 0 | 48.1M | ⚠️ 7 | 23 | - | - |
-| anyOf.json | 18 | ✅ 18 | 0 | 56.0M | ⚠️ 4 | 14 | - | - |
-| boolean_schema.json | 18 | ✅ 18 | 0 | 60.4M | ⚠️ 0 | 18 | - | - |
-| const.json | 54 | ✅ 54 | 0 | 30.0M | ⚠️ 22 | 32 | - | - |
-| contains.json | 19 | ✅ 19 | 0 | 29.5M | ⚠️ 10 | 9 | - | - |
-| default.json | 7 | ✅ 7 | 0 | 59.6M | ⚠️ 0 | 7 | - | - |
-| definitions.json | 2 | ✅ 2 | 0 | 17.3M | ⚠️ 0 | 2 | - | - |
-| dependencies.json | 36 | ✅ 36 | 0 | 40.2M | ⚠️ 19 | 17 | - | - |
-| enum.json | 45 | ✅ 45 | 0 | 24.6M | ⚠️ 22 | 23 | - | - |
-| exclusiveMaximum.json | 4 | ✅ 4 | 0 | 61.1M | ⚠️ 2 | 2 | - | - |
-| exclusiveMinimum.json | 4 | ✅ 4 | 0 | 60.5M | ⚠️ 2 | 2 | - | - |
-| format.json | 54 | ✅ 54 | 0 | 74.4M | ⚠️ 0 | 54 | - | - |
-| infinite-loop-detection.json | 2 | ✅ 2 | 0 | 45.6M | ⚠️ 0 | 2 | - | - |
-| items.json | 28 | ✅ 28 | 0 | 30.1M | ⚠️ 15 | 13 | - | - |
-| maxItems.json | 6 | ✅ 6 | 0 | 58.0M | ⚠️ 4 | 2 | - | - |
-| maxLength.json | 7 | ✅ 7 | 0 | 49.3M | ⚠️ 5 | 2 | - | - |
-| maxProperties.json | 10 | ✅ 10 | 0 | 46.2M | ⚠️ 7 | 3 | - | - |
-| maximum.json | 8 | ✅ 8 | 0 | 68.1M | ⚠️ 6 | 2 | - | - |
-| minItems.json | 6 | ✅ 6 | 0 | 57.9M | ⚠️ 4 | 2 | - | - |
-| minLength.json | 7 | ✅ 7 | 0 | 48.2M | ⚠️ 4 | 3 | - | - |
-| minProperties.json | 8 | ✅ 8 | 0 | 48.8M | ⚠️ 6 | 2 | - | - |
-| minimum.json | 11 | ✅ 11 | 0 | 69.1M | ⚠️ 8 | 3 | - | - |
-| multipleOf.json | 10 | ✅ 10 | 0 | 64.8M | ⚠️ 5 | 5 | - | - |
-| not.json | 38 | ✅ 38 | 0 | 53.1M | ⚠️ 9 | 29 | - | - |
-| oneOf.json | 27 | ✅ 27 | 0 | 47.0M | ⚠️ 5 | 22 | - | - |
-| pattern.json | 9 | ✅ 9 | 0 | 55.4M | ⚠️ 8 | 1 | - | - |
-| patternProperties.json | 23 | ✅ 23 | 0 | 23.3M | ⚠️ 13 | 10 | - | - |
-| properties.json | 21 | ✅ 28 | 0 | 37.8M | ⚠️ 0 | 28 | - | - |
-| propertyNames.json | 20 | ✅ 20 | 0 | 43.2M | ⚠️ 15 | 5 | - | - |
-| ref.json | 65 | ✅ 70 | 0 | 37.2M | ⚠️ 5 | 65 | - | - |
-| refRemote.json | 23 | ✅ 23 | 0 | 41.9M | ⚠️ 1 | 22 | - | - |
-| required.json | 9 | ✅ 16 | 0 | 65.1M | ⚠️ 4 | 12 | - | - |
-| type.json | 80 | ✅ 80 | 0 | 52.6M | ⚠️ 20 | 60 | - | - |
-| uniqueItems.json | 69 | ✅ 69 | 0 | 26.1M | ⚠️ 50 | 19 | - | - |
-| optional/bignum.json | 9 | ✅ 9 | 0 | 60.5M | ⚠️ 2 | 7 | - | - |
-| optional/ecmascript-regex.json | 74 | ✅ 74 | 0 | 25.1M | ⚠️ 8 | 66 | - | - |
-| optional/format/date-time.json | 26 | ✅ 26 | 0 | 23.4M | ⚠️ 17 | 9 | - | - |
-| optional/format/email.json | 17 | ✅ 17 | 0 | 19.7M | ⚠️ 11 | 6 | - | - |
-| optional/format/ipv4.json | 16 | ✅ 16 | 0 | 33.6M | ⚠️ 8 | 8 | - | - |
-| optional/format/ipv6.json | 40 | ✅ 40 | 0 | 13.6M | ⚠️ 33 | 7 | - | - |
-| optional/format/json-pointer.json | 38 | ✅ 38 | 0 | 31.1M | ⚠️ 0 | 38 | - | - |
-| optional/format/unknown.json | 7 | ✅ 7 | 0 | 81.7M | ⚠️ 0 | 7 | - | - |
-| optional/format/uri-reference.json | 15 | ✅ 15 | 0 | 12.3M | ⚠️ 0 | 15 | - | - |
-| optional/format/uri-template.json | 10 | ✅ 10 | 0 | 21.8M | ⚠️ 0 | 10 | - | - |
-| optional/format/uri.json | 36 | ✅ 36 | 0 | 8.0M | ⚠️ 29 | 7 | - | - |
-| optional/id.json | 7 | ✅ 7 | 0 | 31.2M | ⚠️ 1 | 6 | - | - |
-| optional/non-bmp-regex.json | 12 | ✅ 12 | 0 | 26.0M | ⚠️ 6 | 6 | - | - |
+| File | Tests | tjs | tjs ops/s | joi | joi ops/s | Diff |
+|------|------:|----:|----------:|----:|----------:|-----:|
+| additionalItems.json | 19 | ✅ | 59.5M | ⚠️ 6 fail | - | - |
+| additionalProperties.json | 16 | ✅ | 34.9M | ⚠️ 13 fail | - | - |
+| allOf.json | 30 | ✅ | 44.5M | ⚠️ 23 fail | - | - |
+| anyOf.json | 18 | ✅ | 52.0M | ⚠️ 14 fail | - | - |
+| boolean_schema.json | 18 | ✅ | 54.9M | ⚠️ 18 fail | - | - |
+| const.json | 54 | ✅ | 26.8M | ⚠️ 32 fail | - | - |
+| contains.json | 19 | ✅ | 28.1M | ⚠️ 9 fail | - | - |
+| default.json | 7 | ✅ | 56.7M | ⚠️ 7 fail | - | - |
+| definitions.json | 2 | ✅ | 16.5M | ⚠️ 2 fail | - | - |
+| dependencies.json | 36 | ✅ | 39.5M | ⚠️ 17 fail | - | - |
+| enum.json | 45 | ✅ | 23.8M | ⚠️ 23 fail | - | - |
+| exclusiveMaximum.json | 4 | ✅ | 58.8M | ⚠️ 2 fail | - | - |
+| exclusiveMinimum.json | 4 | ✅ | 58.8M | ⚠️ 2 fail | - | - |
+| format.json | 54 | ✅ | 70.0M | ⚠️ 54 fail | - | - |
+| infinite-loop-detection.json | 2 | ✅ | 41.5M | ⚠️ 2 fail | - | - |
+| items.json | 28 | ✅ | 37.1M | ⚠️ 13 fail | - | - |
+| maxItems.json | 6 | ✅ | 56.1M | ⚠️ 2 fail | - | - |
+| maxLength.json | 7 | ✅ | 47.8M | ⚠️ 2 fail | - | - |
+| maxProperties.json | 10 | ✅ | 43.4M | ⚠️ 3 fail | - | - |
+| maximum.json | 8 | ✅ | 64.8M | ⚠️ 2 fail | - | - |
+| minItems.json | 6 | ✅ | 51.6M | ⚠️ 2 fail | - | - |
+| minLength.json | 7 | ✅ | 45.6M | ⚠️ 3 fail | - | - |
+| minProperties.json | 8 | ✅ | 45.9M | ⚠️ 2 fail | - | - |
+| minimum.json | 11 | ✅ | 66.1M | ⚠️ 3 fail | - | - |
+| multipleOf.json | 10 | ✅ | 61.8M | ⚠️ 5 fail | - | - |
+| not.json | 38 | ✅ | 49.3M | ⚠️ 29 fail | - | - |
+| oneOf.json | 27 | ✅ | 44.5M | ⚠️ 22 fail | - | - |
+| pattern.json | 9 | ✅ | 53.5M | ⚠️ 1 fail | - | - |
+| patternProperties.json | 23 | ✅ | 22.5M | ⚠️ 10 fail | - | - |
+| properties.json | 21 | ✅ | 36.8M | ⚠️ 28 fail | - | - |
+| propertyNames.json | 20 | ✅ | 40.9M | ⚠️ 5 fail | - | - |
+| ref.json | 65 | ✅ | 35.8M | ⚠️ 65 fail | - | - |
+| refRemote.json | 23 | ✅ | 24.1M | ⚠️ 22 fail | - | - |
+| required.json | 9 | ✅ | 35.4M | ⚠️ 12 fail | - | - |
+| type.json | 80 | ✅ | 48.6M | ⚠️ 60 fail | - | - |
+| uniqueItems.json | 69 | ✅ | 24.8M | ⚠️ 19 fail | - | - |
+| optional/bignum.json | 9 | ✅ | 58.8M | ⚠️ 7 fail | - | - |
+| optional/ecmascript-regex.json | 74 | ✅ | 24.2M | ⚠️ 66 fail | - | - |
+| optional/format/date-time.json | 26 | ✅ | 21.6M | ⚠️ 9 fail | - | - |
+| optional/format/email.json | 17 | ✅ | 17.9M | ⚠️ 6 fail | - | - |
+| optional/format/ipv4.json | 16 | ✅ | 33.3M | ⚠️ 8 fail | - | - |
+| optional/format/ipv6.json | 40 | ✅ | 12.9M | ⚠️ 7 fail | - | - |
+| optional/format/json-pointer.json | 38 | ✅ | 26.9M | ⚠️ 38 fail | - | - |
+| optional/format/unknown.json | 7 | ✅ | 79.2M | ⚠️ 7 fail | - | - |
+| optional/format/uri-reference.json | 15 | ✅ | 11.5M | ⚠️ 15 fail | - | - |
+| optional/format/uri-template.json | 10 | ✅ | 19.7M | ⚠️ 10 fail | - | - |
+| optional/format/uri.json | 36 | ✅ | 8.1M | ⚠️ 7 fail | - | - |
+| optional/id.json | 7 | ✅ | 31.8M | ⚠️ 6 fail | - | - |
+| optional/non-bmp-regex.json | 12 | ✅ | 27.4M | ⚠️ 6 fail | - | - |
 
 ### draft7
 
-| File | Tests | tjs pass | tjs fail | tjs ops/s | joi pass | joi fail | joi ops/s | Diff |
-|------|------:|---------:|---------:|----------:|---------:|---------:|----------:|-----:|
-| additionalItems.json | 19 | ✅ 19 | 0 | 59.3M | ⚠️ 13 | 6 | - | - |
-| additionalProperties.json | 16 | ✅ 16 | 0 | 38.9M | ⚠️ 3 | 13 | - | - |
-| allOf.json | 30 | ✅ 30 | 0 | 45.9M | ⚠️ 7 | 23 | - | - |
-| anyOf.json | 18 | ✅ 18 | 0 | 54.8M | ⚠️ 4 | 14 | - | - |
-| boolean_schema.json | 18 | ✅ 18 | 0 | 53.6M | ⚠️ 0 | 18 | - | - |
-| const.json | 54 | ✅ 54 | 0 | 29.8M | ⚠️ 22 | 32 | - | - |
-| contains.json | 21 | ✅ 21 | 0 | 31.0M | ⚠️ 11 | 10 | - | - |
-| default.json | 7 | ✅ 7 | 0 | 58.7M | ⚠️ 0 | 7 | - | - |
-| definitions.json | 2 | ✅ 2 | 0 | 16.6M | ⚠️ 0 | 2 | - | - |
-| dependencies.json | 36 | ✅ 36 | 0 | 40.2M | ⚠️ 19 | 17 | - | - |
-| enum.json | 45 | ✅ 45 | 0 | 24.8M | ⚠️ 22 | 23 | - | - |
-| exclusiveMaximum.json | 4 | ✅ 4 | 0 | 60.0M | ⚠️ 2 | 2 | - | - |
-| exclusiveMinimum.json | 4 | ✅ 4 | 0 | 58.5M | ⚠️ 2 | 2 | - | - |
-| format.json | 102 | ✅ 102 | 0 | 70.5M | ⚠️ 0 | 102 | - | - |
-| if-then-else.json | 26 | ✅ 26 | 0 | 55.8M | ⚠️ 18 | 8 | - | - |
-| infinite-loop-detection.json | 2 | ✅ 2 | 0 | 40.9M | ⚠️ 0 | 2 | - | - |
-| items.json | 28 | ✅ 28 | 0 | 38.8M | ⚠️ 15 | 13 | - | - |
-| maxItems.json | 6 | ✅ 6 | 0 | 57.1M | ⚠️ 4 | 2 | - | - |
-| maxLength.json | 7 | ✅ 7 | 0 | 45.9M | ⚠️ 5 | 2 | - | - |
-| maxProperties.json | 10 | ✅ 10 | 0 | 42.5M | ⚠️ 7 | 3 | - | - |
-| maximum.json | 8 | ✅ 8 | 0 | 66.5M | ⚠️ 6 | 2 | - | - |
-| minItems.json | 6 | ✅ 6 | 0 | 46.9M | ⚠️ 4 | 2 | - | - |
-| minLength.json | 7 | ✅ 7 | 0 | 44.9M | ⚠️ 4 | 3 | - | - |
-| minProperties.json | 8 | ✅ 8 | 0 | 40.5M | ⚠️ 6 | 2 | - | - |
-| minimum.json | 11 | ✅ 11 | 0 | 63.2M | ⚠️ 8 | 3 | - | - |
-| multipleOf.json | 10 | ✅ 10 | 0 | 62.7M | ⚠️ 5 | 5 | - | - |
-| not.json | 38 | ✅ 38 | 0 | 48.1M | ⚠️ 9 | 29 | - | - |
-| oneOf.json | 27 | ✅ 27 | 0 | 46.5M | ⚠️ 5 | 22 | - | - |
-| pattern.json | 9 | ✅ 9 | 0 | 53.9M | ⚠️ 8 | 1 | - | - |
-| patternProperties.json | 23 | ✅ 23 | 0 | 22.9M | ⚠️ 13 | 10 | - | - |
-| properties.json | 21 | ✅ 28 | 0 | 36.5M | ⚠️ 0 | 28 | - | - |
-| propertyNames.json | 20 | ✅ 20 | 0 | 43.0M | ⚠️ 15 | 5 | - | - |
-| ref.json | 73 | ✅ 78 | 0 | 37.1M | ⚠️ 5 | 73 | - | - |
-| refRemote.json | 23 | ✅ 23 | 0 | 41.7M | ⚠️ 1 | 22 | - | - |
-| required.json | 9 | ✅ 16 | 0 | 64.9M | ⚠️ 4 | 12 | - | - |
-| type.json | 80 | ✅ 80 | 0 | 51.6M | ⚠️ 20 | 60 | - | - |
-| uniqueItems.json | 69 | ✅ 69 | 0 | 25.7M | ⚠️ 50 | 19 | - | - |
-| optional/bignum.json | 9 | ✅ 9 | 0 | 59.9M | ⚠️ 2 | 7 | - | - |
-| optional/ecmascript-regex.json | 74 | ✅ 74 | 0 | 24.2M | ⚠️ 8 | 66 | - | - |
-| optional/format/date-time.json | 26 | ✅ 26 | 0 | 22.2M | ⚠️ 17 | 9 | - | - |
-| optional/format/date.json | 48 | ✅ 48 | 0 | 9.8M | ⚠️ 34 | 14 | - | - |
-| optional/format/email.json | 17 | ✅ 17 | 0 | 19.3M | ⚠️ 11 | 6 | - | - |
-| optional/format/ipv4.json | 16 | ✅ 16 | 0 | 35.8M | ⚠️ 8 | 8 | - | - |
-| optional/format/ipv6.json | 40 | ✅ 40 | 0 | 13.8M | ⚠️ 33 | 7 | - | - |
-| optional/format/json-pointer.json | 38 | ✅ 38 | 0 | 29.8M | ⚠️ 0 | 38 | - | - |
-| optional/format/regex.json | 8 | ✅ 8 | 0 | 68.2M | ⚠️ 0 | 8 | - | - |
-| optional/format/relative-json-pointer.json | 18 | ✅ 18 | 0 | 37.4M | ⚠️ 0 | 18 | - | - |
-| optional/format/time.json | 46 | ✅ 46 | 0 | 8.2M | ⚠️ 30 | 16 | - | - |
-| optional/format/unknown.json | 7 | ✅ 7 | 0 | 74.0M | ⚠️ 0 | 7 | - | - |
-| optional/format/uri-reference.json | 15 | ✅ 15 | 0 | 11.8M | ⚠️ 0 | 15 | - | - |
-| optional/format/uri-template.json | 10 | ✅ 10 | 0 | 20.6M | ⚠️ 0 | 10 | - | - |
-| optional/format/uri.json | 36 | ✅ 36 | 0 | 8.2M | ⚠️ 29 | 7 | - | - |
-| optional/id.json | 7 | ✅ 7 | 0 | 26.6M | ⚠️ 3 | 4 | - | - |
-| optional/non-bmp-regex.json | 12 | ✅ 12 | 0 | 27.2M | ⚠️ 6 | 6 | - | - |
+| File | Tests | tjs | tjs ops/s | joi | joi ops/s | Diff |
+|------|------:|----:|----------:|----:|----------:|-----:|
+| additionalItems.json | 19 | ✅ | 58.4M | ⚠️ 6 fail | - | - |
+| additionalProperties.json | 16 | ✅ | 39.2M | ⚠️ 13 fail | - | - |
+| allOf.json | 30 | ✅ | 46.3M | ⚠️ 23 fail | - | - |
+| anyOf.json | 18 | ✅ | 52.9M | ⚠️ 14 fail | - | - |
+| boolean_schema.json | 18 | ✅ | 55.1M | ⚠️ 18 fail | - | - |
+| const.json | 54 | ✅ | 28.3M | ⚠️ 32 fail | - | - |
+| contains.json | 21 | ✅ | 29.7M | ⚠️ 10 fail | - | - |
+| default.json | 7 | ✅ | 58.8M | ⚠️ 7 fail | - | - |
+| definitions.json | 2 | ✅ | 16.9M | ⚠️ 2 fail | - | - |
+| dependencies.json | 36 | ✅ | 39.1M | ⚠️ 17 fail | - | - |
+| enum.json | 45 | ✅ | 23.7M | ⚠️ 23 fail | - | - |
+| exclusiveMaximum.json | 4 | ✅ | 59.2M | ⚠️ 2 fail | - | - |
+| exclusiveMinimum.json | 4 | ✅ | 58.1M | ⚠️ 2 fail | - | - |
+| format.json | 102 | ✅ | 65.4M | ⚠️ 102 fail | - | - |
+| if-then-else.json | 26 | ✅ | 60.6M | ⚠️ 8 fail | - | - |
+| infinite-loop-detection.json | 2 | ✅ | 45.6M | ⚠️ 2 fail | - | - |
+| items.json | 28 | ✅ | 38.6M | ⚠️ 13 fail | - | - |
+| maxItems.json | 6 | ✅ | 56.7M | ⚠️ 2 fail | - | - |
+| maxLength.json | 7 | ✅ | 48.4M | ⚠️ 2 fail | - | - |
+| maxProperties.json | 10 | ✅ | 44.5M | ⚠️ 3 fail | - | - |
+| maximum.json | 8 | ✅ | 68.0M | ⚠️ 2 fail | - | - |
+| minItems.json | 6 | ✅ | 56.7M | ⚠️ 2 fail | - | - |
+| minLength.json | 7 | ✅ | 47.0M | ⚠️ 3 fail | - | - |
+| minProperties.json | 8 | ✅ | 46.4M | ⚠️ 2 fail | - | - |
+| minimum.json | 11 | ✅ | 68.9M | ⚠️ 3 fail | - | - |
+| multipleOf.json | 10 | ✅ | 63.7M | ⚠️ 5 fail | - | - |
+| not.json | 38 | ✅ | 51.2M | ⚠️ 29 fail | - | - |
+| oneOf.json | 27 | ✅ | 45.8M | ⚠️ 22 fail | - | - |
+| pattern.json | 9 | ✅ | 53.3M | ⚠️ 1 fail | - | - |
+| patternProperties.json | 23 | ✅ | 22.9M | ⚠️ 10 fail | - | - |
+| properties.json | 21 | ✅ | 36.2M | ⚠️ 28 fail | - | - |
+| propertyNames.json | 20 | ✅ | 42.1M | ⚠️ 5 fail | - | - |
+| ref.json | 73 | ✅ | 36.8M | ⚠️ 73 fail | - | - |
+| refRemote.json | 23 | ✅ | 40.1M | ⚠️ 22 fail | - | - |
+| required.json | 9 | ✅ | 62.3M | ⚠️ 12 fail | - | - |
+| type.json | 80 | ✅ | 49.9M | ⚠️ 60 fail | - | - |
+| uniqueItems.json | 69 | ✅ | 24.7M | ⚠️ 19 fail | - | - |
+| optional/bignum.json | 9 | ✅ | 59.7M | ⚠️ 7 fail | - | - |
+| optional/ecmascript-regex.json | 74 | ✅ | 24.5M | ⚠️ 66 fail | - | - |
+| optional/format/date-time.json | 26 | ✅ | 22.8M | ⚠️ 9 fail | - | - |
+| optional/format/date.json | 48 | ✅ | 9.8M | ⚠️ 14 fail | - | - |
+| optional/format/email.json | 17 | ✅ | 19.3M | ⚠️ 6 fail | - | - |
+| optional/format/ipv4.json | 16 | ✅ | 37.3M | ⚠️ 8 fail | - | - |
+| optional/format/ipv6.json | 40 | ✅ | 14.0M | ⚠️ 7 fail | - | - |
+| optional/format/json-pointer.json | 38 | ✅ | 29.2M | ⚠️ 38 fail | - | - |
+| optional/format/regex.json | 8 | ✅ | 57.5M | ⚠️ 8 fail | - | - |
+| optional/format/relative-json-pointer.json | 18 | ✅ | 35.5M | ⚠️ 18 fail | - | - |
+| optional/format/time.json | 46 | ✅ | 8.2M | ⚠️ 16 fail | - | - |
+| optional/format/unknown.json | 7 | ✅ | 78.2M | ⚠️ 7 fail | - | - |
+| optional/format/uri-reference.json | 15 | ✅ | 11.8M | ⚠️ 15 fail | - | - |
+| optional/format/uri-template.json | 10 | ✅ | 20.3M | ⚠️ 10 fail | - | - |
+| optional/format/uri.json | 36 | ✅ | 8.3M | ⚠️ 7 fail | - | - |
+| optional/id.json | 7 | ✅ | 26.8M | ⚠️ 4 fail | - | - |
+| optional/non-bmp-regex.json | 12 | ✅ | 27.1M | ⚠️ 6 fail | - | - |
 
 ### draft2019-09
 
-| File | Tests | tjs pass | tjs fail | tjs ops/s | joi pass | joi fail | joi ops/s | Diff |
-|------|------:|---------:|---------:|----------:|---------:|---------:|----------:|-----:|
-| additionalItems.json | 19 | ✅ 19 | 0 | 36.3M | ⚠️ 13 | 6 | - | - |
-| additionalProperties.json | 21 | ✅ 21 | 0 | 27.2M | ⚠️ 4 | 17 | - | - |
-| allOf.json | 30 | ✅ 30 | 0 | 29.6M | ⚠️ 7 | 23 | - | - |
-| anchor.json | 8 | ✅ 8 | 0 | 33.9M | ⚠️ 0 | 8 | - | - |
-| anyOf.json | 18 | ✅ 18 | 0 | 34.0M | ⚠️ 4 | 14 | - | - |
-| boolean_schema.json | 18 | ✅ 18 | 0 | 36.3M | ⚠️ 0 | 18 | - | - |
-| const.json | 54 | ✅ 54 | 0 | 22.0M | ⚠️ 22 | 32 | - | - |
-| contains.json | 21 | ✅ 21 | 0 | 22.6M | ⚠️ 11 | 10 | - | - |
-| content.json | 18 | ✅ 18 | 0 | 45.5M | ✅ 18 | 0 | 6.3M | 🟢 **-86%** |
-| default.json | 7 | ✅ 7 | 0 | 38.0M | ⚠️ 0 | 7 | - | - |
-| defs.json | 2 | ✅ 2 | 0 | 2.8M | ⚠️ 0 | 2 | - | - |
-| dependentRequired.json | 20 | ✅ 20 | 0 | 34.5M | ⚠️ 14 | 6 | - | - |
-| dependentSchemas.json | 20 | ✅ 20 | 0 | 31.9M | ⚠️ 8 | 12 | - | - |
-| enum.json | 45 | ✅ 45 | 0 | 18.9M | ⚠️ 22 | 23 | - | - |
-| exclusiveMaximum.json | 4 | ✅ 4 | 0 | 36.3M | ⚠️ 2 | 2 | - | - |
-| exclusiveMinimum.json | 4 | ✅ 4 | 0 | 34.9M | ⚠️ 2 | 2 | - | - |
-| format.json | 114 | ✅ 114 | 0 | 44.6M | ⚠️ 0 | 114 | - | - |
-| if-then-else.json | 26 | ✅ 26 | 0 | 35.9M | ⚠️ 18 | 8 | - | - |
-| infinite-loop-detection.json | 2 | ✅ 2 | 0 | 31.9M | ⚠️ 0 | 2 | - | - |
-| items.json | 28 | ✅ 28 | 0 | 28.1M | ⚠️ 15 | 13 | - | - |
-| maxContains.json | 12 | ✅ 12 | 0 | 29.5M | ⚠️ 6 | 6 | - | - |
-| maxItems.json | 6 | ✅ 6 | 0 | 39.2M | ⚠️ 4 | 2 | - | - |
-| maxLength.json | 7 | ✅ 7 | 0 | 34.0M | ⚠️ 5 | 2 | - | - |
-| maxProperties.json | 10 | ✅ 10 | 0 | 31.1M | ⚠️ 7 | 3 | - | - |
-| maximum.json | 8 | ✅ 8 | 0 | 39.6M | ⚠️ 6 | 2 | - | - |
-| minContains.json | 28 | ✅ 28 | 0 | 30.0M | ⚠️ 14 | 14 | - | - |
-| minItems.json | 6 | ✅ 6 | 0 | 40.8M | ⚠️ 4 | 2 | - | - |
-| minLength.json | 7 | ✅ 7 | 0 | 32.7M | ⚠️ 4 | 3 | - | - |
-| minProperties.json | 8 | ✅ 8 | 0 | 32.2M | ⚠️ 6 | 2 | - | - |
-| minimum.json | 11 | ✅ 11 | 0 | 33.8M | ⚠️ 8 | 3 | - | - |
-| multipleOf.json | 10 | ✅ 10 | 0 | 35.2M | ⚠️ 5 | 5 | - | - |
-| not.json | 40 | ✅ 40 | 0 | 31.8M | ⚠️ 9 | 31 | - | - |
-| oneOf.json | 27 | ✅ 27 | 0 | 30.3M | ⚠️ 5 | 22 | - | - |
-| pattern.json | 9 | ✅ 9 | 0 | 33.8M | ⚠️ 8 | 1 | - | - |
-| patternProperties.json | 23 | ✅ 23 | 0 | 19.1M | ⚠️ 13 | 10 | - | - |
-| properties.json | 21 | ✅ 28 | 0 | 27.1M | ⚠️ 0 | 28 | - | - |
-| propertyNames.json | 20 | ✅ 20 | 0 | 28.8M | ⚠️ 15 | 5 | - | - |
-| recursiveRef.json | 31 | ✅ 34 | 0 | 8.6M | ⚠️ 2 | 32 | - | - |
-| ref.json | 73 | ✅ 81 | 0 | 20.1M | ⚠️ 5 | 76 | - | - |
-| refRemote.json | 31 | ✅ 31 | 0 | 27.9M | ⚠️ 1 | 30 | - | - |
-| required.json | 9 | ✅ 16 | 0 | 35.4M | ⚠️ 4 | 12 | - | - |
-| type.json | 80 | ✅ 80 | 0 | 31.4M | ⚠️ 20 | 60 | - | - |
-| unevaluatedItems.json | 51 | ✅ 56 | 0 | 19.7M | ⚠️ 33 | 23 | - | - |
-| unevaluatedProperties.json | 117 | ✅ 123 | 0 | 14.4M | ⚠️ 9 | 114 | - | - |
-| uniqueItems.json | 69 | ✅ 69 | 0 | 19.1M | ⚠️ 50 | 19 | - | - |
-| vocabulary.json | 2 | ✅ 5 | 0 | 32.1M | ⚠️ 0 | 5 | - | - |
-| optional/anchor.json | 4 | ✅ 4 | 0 | 20.7M | ⚠️ 1 | 3 | - | - |
-| optional/bignum.json | 9 | ✅ 9 | 0 | 35.0M | ⚠️ 2 | 7 | - | - |
-| optional/dependencies-compatibility.json | 36 | ✅ 36 | 0 | 33.1M | ⚠️ 22 | 14 | - | - |
-| optional/ecmascript-regex.json | 74 | ✅ 74 | 0 | 18.3M | ⚠️ 8 | 66 | - | - |
-| optional/format/date-time.json | 26 | ✅ 26 | 0 | 16.8M | ⚠️ 17 | 9 | - | - |
-| optional/format/date.json | 48 | ✅ 48 | 0 | 8.9M | ⚠️ 34 | 14 | - | - |
-| optional/format/email.json | 17 | ✅ 17 | 0 | 16.8M | ⚠️ 11 | 6 | - | - |
-| optional/format/idn-email.json | 10 | ✅ 10 | 0 | 18.2M | ⚠️ 0 | 10 | - | - |
-| optional/format/ipv4.json | 16 | ✅ 16 | 0 | 27.7M | ⚠️ 8 | 8 | - | - |
-| optional/format/ipv6.json | 40 | ✅ 40 | 0 | 12.5M | ⚠️ 33 | 7 | - | - |
-| optional/format/json-pointer.json | 38 | ✅ 38 | 0 | 23.3M | ⚠️ 0 | 38 | - | - |
-| optional/format/regex.json | 8 | ✅ 8 | 0 | 35.5M | ⚠️ 0 | 8 | - | - |
-| optional/format/relative-json-pointer.json | 18 | ✅ 18 | 0 | 24.3M | ⚠️ 0 | 18 | - | - |
-| optional/format/time.json | 46 | ✅ 46 | 0 | 7.7M | ⚠️ 30 | 16 | - | - |
-| optional/format/unknown.json | 7 | ✅ 7 | 0 | 38.4M | ⚠️ 0 | 7 | - | - |
-| optional/format/uri-reference.json | 15 | ✅ 15 | 0 | 10.6M | ⚠️ 0 | 15 | - | - |
-| optional/format/uri-template.json | 10 | ✅ 10 | 0 | 16.9M | ⚠️ 0 | 10 | - | - |
-| optional/format/uri.json | 36 | ✅ 36 | 0 | 7.6M | ⚠️ 29 | 7 | - | - |
-| optional/format/uuid.json | 22 | ✅ 22 | 0 | 14.2M | ⚠️ 9 | 13 | - | - |
-| optional/id.json | 3 | ✅ 3 | 0 | 19.2M | ⚠️ 1 | 2 | - | - |
-| optional/no-schema.json | 3 | ✅ 3 | 0 | 35.8M | ⚠️ 2 | 1 | - | - |
-| optional/non-bmp-regex.json | 12 | ✅ 12 | 0 | 21.1M | ⚠️ 6 | 6 | - | - |
-| optional/refOfUnknownKeyword.json | 10 | ✅ 10 | 0 | 32.8M | ⚠️ 0 | 10 | - | - |
+| File | Tests | tjs | tjs ops/s | joi | joi ops/s | Diff |
+|------|------:|----:|----------:|----:|----------:|-----:|
+| additionalItems.json | 19 | ✅ | 36.3M | ⚠️ 6 fail | - | - |
+| additionalProperties.json | 21 | ✅ | 27.4M | ⚠️ 17 fail | - | - |
+| allOf.json | 30 | ✅ | 31.4M | ⚠️ 23 fail | - | - |
+| anchor.json | 8 | ✅ | 32.0M | ⚠️ 8 fail | - | - |
+| anyOf.json | 18 | ✅ | 33.8M | ⚠️ 14 fail | - | - |
+| boolean_schema.json | 18 | ✅ | 35.4M | ⚠️ 18 fail | - | - |
+| const.json | 54 | ✅ | 21.6M | ⚠️ 32 fail | - | - |
+| contains.json | 21 | ✅ | 21.9M | ⚠️ 10 fail | - | - |
+| content.json | 18 | ✅ | 43.7M | ✅ | 6.1M | 🟢 **-86%** |
+| default.json | 7 | ✅ | 37.1M | ⚠️ 7 fail | - | - |
+| defs.json | 2 | ✅ | 2.7M | ⚠️ 2 fail | - | - |
+| dependentRequired.json | 20 | ✅ | 33.4M | ⚠️ 6 fail | - | - |
+| dependentSchemas.json | 20 | ✅ | 31.3M | ⚠️ 12 fail | - | - |
+| enum.json | 45 | ✅ | 18.7M | ⚠️ 23 fail | - | - |
+| exclusiveMaximum.json | 4 | ✅ | 36.5M | ⚠️ 2 fail | - | - |
+| exclusiveMinimum.json | 4 | ✅ | 35.6M | ⚠️ 2 fail | - | - |
+| format.json | 114 | ✅ | 44.5M | ⚠️ 114 fail | - | - |
+| if-then-else.json | 26 | ✅ | 35.4M | ⚠️ 8 fail | - | - |
+| infinite-loop-detection.json | 2 | ✅ | 31.4M | ⚠️ 2 fail | - | - |
+| items.json | 28 | ✅ | 28.7M | ⚠️ 13 fail | - | - |
+| maxContains.json | 12 | ✅ | 30.0M | ⚠️ 6 fail | - | - |
+| maxItems.json | 6 | ✅ | 40.6M | ⚠️ 2 fail | - | - |
+| maxLength.json | 7 | ✅ | 38.2M | ⚠️ 2 fail | - | - |
+| maxProperties.json | 10 | ✅ | 26.6M | ⚠️ 3 fail | - | - |
+| maximum.json | 8 | ✅ | 39.4M | ⚠️ 2 fail | - | - |
+| minContains.json | 28 | ✅ | 29.4M | ⚠️ 14 fail | - | - |
+| minItems.json | 6 | ✅ | 40.6M | ⚠️ 2 fail | - | - |
+| minLength.json | 7 | ✅ | 33.4M | ⚠️ 3 fail | - | - |
+| minProperties.json | 8 | ✅ | 33.0M | ⚠️ 2 fail | - | - |
+| minimum.json | 11 | ✅ | 35.1M | ⚠️ 3 fail | - | - |
+| multipleOf.json | 10 | ✅ | 36.1M | ⚠️ 5 fail | - | - |
+| not.json | 40 | ✅ | 33.1M | ⚠️ 31 fail | - | - |
+| oneOf.json | 27 | ✅ | 31.5M | ⚠️ 22 fail | - | - |
+| pattern.json | 9 | ✅ | 33.6M | ⚠️ 1 fail | - | - |
+| patternProperties.json | 23 | ✅ | 18.6M | ⚠️ 10 fail | - | - |
+| properties.json | 21 | ✅ | 26.5M | ⚠️ 28 fail | - | - |
+| propertyNames.json | 20 | ✅ | 29.5M | ⚠️ 5 fail | - | - |
+| recursiveRef.json | 31 | ✅ | 8.3M | ⚠️ 32 fail | - | - |
+| ref.json | 73 | ✅ | 20.9M | ⚠️ 76 fail | - | - |
+| refRemote.json | 31 | ✅ | 29.4M | ⚠️ 30 fail | - | - |
+| required.json | 9 | ✅ | 37.2M | ⚠️ 12 fail | - | - |
+| type.json | 80 | ✅ | 31.6M | ⚠️ 60 fail | - | - |
+| unevaluatedItems.json | 51 | ✅ | 19.2M | ⚠️ 23 fail | - | - |
+| unevaluatedProperties.json | 117 | ✅ | 14.4M | ⚠️ 114 fail | - | - |
+| uniqueItems.json | 69 | ✅ | 20.0M | ⚠️ 19 fail | - | - |
+| vocabulary.json | 2 | ✅ | 34.0M | ⚠️ 5 fail | - | - |
+| optional/anchor.json | 4 | ✅ | 20.9M | ⚠️ 3 fail | - | - |
+| optional/bignum.json | 9 | ✅ | 33.2M | ⚠️ 7 fail | - | - |
+| optional/dependencies-compatibility.json | 36 | ✅ | 33.1M | ⚠️ 14 fail | - | - |
+| optional/ecmascript-regex.json | 74 | ✅ | 19.4M | ⚠️ 66 fail | - | - |
+| optional/format/date-time.json | 26 | ✅ | 19.5M | ⚠️ 9 fail | - | - |
+| optional/format/date.json | 48 | ✅ | 9.2M | ⚠️ 14 fail | - | - |
+| optional/format/email.json | 17 | ✅ | 16.8M | ⚠️ 6 fail | - | - |
+| optional/format/idn-email.json | 10 | ✅ | 17.9M | ⚠️ 10 fail | - | - |
+| optional/format/ipv4.json | 16 | ✅ | 26.9M | ⚠️ 8 fail | - | - |
+| optional/format/ipv6.json | 40 | ✅ | 12.2M | ⚠️ 7 fail | - | - |
+| optional/format/json-pointer.json | 38 | ✅ | 22.6M | ⚠️ 38 fail | - | - |
+| optional/format/regex.json | 8 | ✅ | 38.2M | ⚠️ 8 fail | - | - |
+| optional/format/relative-json-pointer.json | 18 | ✅ | 25.3M | ⚠️ 18 fail | - | - |
+| optional/format/time.json | 46 | ✅ | 7.7M | ⚠️ 16 fail | - | - |
+| optional/format/unknown.json | 7 | ✅ | 45.3M | ⚠️ 7 fail | - | - |
+| optional/format/uri-reference.json | 15 | ✅ | 10.2M | ⚠️ 15 fail | - | - |
+| optional/format/uri-template.json | 10 | ✅ | 16.6M | ⚠️ 10 fail | - | - |
+| optional/format/uri.json | 36 | ✅ | 7.7M | ⚠️ 7 fail | - | - |
+| optional/format/uuid.json | 22 | ✅ | 13.9M | ⚠️ 13 fail | - | - |
+| optional/id.json | 3 | ✅ | 18.8M | ⚠️ 2 fail | - | - |
+| optional/no-schema.json | 3 | ✅ | 37.0M | ⚠️ 1 fail | - | - |
+| optional/non-bmp-regex.json | 12 | ✅ | 21.3M | ⚠️ 6 fail | - | - |
+| optional/refOfUnknownKeyword.json | 10 | ✅ | 32.9M | ⚠️ 10 fail | - | - |
 
 ### draft2020-12
 
-| File | Tests | tjs pass | tjs fail | tjs ops/s | joi pass | joi fail | joi ops/s | Diff |
-|------|------:|---------:|---------:|----------:|---------:|---------:|----------:|-----:|
-| additionalProperties.json | 21 | ✅ 21 | 0 | 27.4M | ⚠️ 4 | 17 | - | - |
-| allOf.json | 30 | ✅ 30 | 0 | 29.5M | ⚠️ 7 | 23 | - | - |
-| anchor.json | 8 | ✅ 8 | 0 | 31.2M | ⚠️ 0 | 8 | - | - |
-| anyOf.json | 18 | ✅ 18 | 0 | 33.6M | ⚠️ 4 | 14 | - | - |
-| boolean_schema.json | 18 | ✅ 18 | 0 | 34.0M | ⚠️ 0 | 18 | - | - |
-| const.json | 54 | ✅ 54 | 0 | 22.2M | ⚠️ 22 | 32 | - | - |
-| contains.json | 21 | ✅ 21 | 0 | 22.6M | ⚠️ 11 | 10 | - | - |
-| content.json | 18 | ✅ 18 | 0 | 43.9M | ✅ 18 | 0 | 5.9M | 🟢 **-87%** |
-| default.json | 7 | ✅ 7 | 0 | 37.4M | ⚠️ 0 | 7 | - | - |
-| defs.json | 2 | ✅ 2 | 0 | 3.4M | ⚠️ 0 | 2 | - | - |
-| dependentRequired.json | 20 | ✅ 20 | 0 | 33.9M | ⚠️ 14 | 6 | - | - |
-| dependentSchemas.json | 20 | ✅ 20 | 0 | 31.1M | ⚠️ 8 | 12 | - | - |
-| dynamicRef.json | 4 | ✅ 44 | 0 | 11.2M | ⚠️ 3 | 41 | - | - |
-| enum.json | 45 | ✅ 45 | 0 | 18.7M | ⚠️ 22 | 23 | - | - |
-| exclusiveMaximum.json | 4 | ✅ 4 | 0 | 34.5M | ⚠️ 2 | 2 | - | - |
-| exclusiveMinimum.json | 4 | ✅ 4 | 0 | 34.6M | ⚠️ 2 | 2 | - | - |
-| format.json | 133 | ✅ 133 | 0 | 43.6M | ⚠️ 1 | 132 | - | - |
-| if-then-else.json | 26 | ✅ 26 | 0 | 35.8M | ⚠️ 18 | 8 | - | - |
-| infinite-loop-detection.json | 2 | ✅ 2 | 0 | 31.5M | ⚠️ 0 | 2 | - | - |
-| items.json | 29 | ✅ 29 | 0 | 27.4M | ⚠️ 14 | 15 | - | - |
-| maxContains.json | 12 | ✅ 12 | 0 | 28.5M | ⚠️ 6 | 6 | - | - |
-| maxItems.json | 6 | ✅ 6 | 0 | 37.4M | ⚠️ 4 | 2 | - | - |
-| maxLength.json | 7 | ✅ 7 | 0 | 33.7M | ⚠️ 5 | 2 | - | - |
-| maxProperties.json | 10 | ✅ 10 | 0 | 30.3M | ⚠️ 7 | 3 | - | - |
-| maximum.json | 8 | ✅ 8 | 0 | 38.4M | ⚠️ 6 | 2 | - | - |
-| minContains.json | 28 | ✅ 28 | 0 | 29.1M | ⚠️ 14 | 14 | - | - |
-| minItems.json | 6 | ✅ 6 | 0 | 37.7M | ⚠️ 4 | 2 | - | - |
-| minLength.json | 7 | ✅ 7 | 0 | 31.6M | ⚠️ 4 | 3 | - | - |
-| minProperties.json | 8 | ✅ 8 | 0 | 30.3M | ⚠️ 6 | 2 | - | - |
-| minimum.json | 11 | ✅ 11 | 0 | 34.6M | ⚠️ 8 | 3 | - | - |
-| multipleOf.json | 10 | ✅ 10 | 0 | 36.2M | ⚠️ 5 | 5 | - | - |
-| not.json | 40 | ✅ 40 | 0 | 31.9M | ⚠️ 9 | 31 | - | - |
-| oneOf.json | 27 | ✅ 27 | 0 | 31.6M | ⚠️ 5 | 22 | - | - |
-| pattern.json | 9 | ✅ 9 | 0 | 35.2M | ⚠️ 8 | 1 | - | - |
-| patternProperties.json | 23 | ✅ 23 | 0 | 18.9M | ⚠️ 13 | 10 | - | - |
-| prefixItems.json | 11 | ✅ 11 | 0 | 38.0M | ⚠️ 9 | 2 | - | - |
-| properties.json | 21 | ✅ 28 | 0 | 26.8M | ⚠️ 0 | 28 | - | - |
-| propertyNames.json | 20 | ✅ 20 | 0 | 28.3M | ⚠️ 15 | 5 | - | - |
-| ref.json | 71 | ✅ 79 | 0 | 22.8M | ⚠️ 5 | 74 | - | - |
-| refRemote.json | 31 | ✅ 31 | 0 | 28.9M | ⚠️ 1 | 30 | - | - |
-| required.json | 9 | ✅ 16 | 0 | 36.4M | ⚠️ 4 | 12 | - | - |
-| type.json | 80 | ✅ 80 | 0 | 31.8M | ⚠️ 20 | 60 | - | - |
-| unevaluatedItems.json | 47 | ✅ 71 | 0 | 24.4M | ⚠️ 40 | 31 | - | - |
-| unevaluatedProperties.json | 117 | ✅ 125 | 0 | 15.2M | ⚠️ 23 | 102 | - | - |
-| uniqueItems.json | 69 | ✅ 69 | 0 | 22.0M | ⚠️ 50 | 19 | - | - |
-| vocabulary.json | 2 | ✅ 5 | 0 | 35.6M | ⚠️ 0 | 5 | - | - |
-| optional/anchor.json | 4 | ✅ 4 | 0 | 22.1M | ⚠️ 1 | 3 | - | - |
-| optional/bignum.json | 9 | ✅ 9 | 0 | 36.5M | ⚠️ 2 | 7 | - | - |
-| optional/dependencies-compatibility.json | 36 | ✅ 36 | 0 | 34.0M | ⚠️ 22 | 14 | - | - |
-| optional/ecmascript-regex.json | 74 | ✅ 74 | 0 | 19.7M | ⚠️ 8 | 66 | - | - |
-| optional/format/date-time.json | 26 | ✅ 26 | 0 | 18.3M | ⚠️ 17 | 9 | - | - |
-| optional/format/date.json | 48 | ✅ 48 | 0 | 9.1M | ⚠️ 34 | 14 | - | - |
-| optional/format/idn-email.json | 10 | ✅ 10 | 0 | 18.2M | ⚠️ 0 | 10 | - | - |
-| optional/format/ipv4.json | 16 | ✅ 16 | 0 | 25.7M | ⚠️ 8 | 8 | - | - |
-| optional/format/ipv6.json | 40 | ✅ 40 | 0 | 12.5M | ⚠️ 33 | 7 | - | - |
-| optional/format/json-pointer.json | 38 | ✅ 38 | 0 | 23.4M | ⚠️ 0 | 38 | - | - |
-| optional/format/regex.json | 8 | ✅ 8 | 0 | 39.3M | ⚠️ 0 | 8 | - | - |
-| optional/format/relative-json-pointer.json | 18 | ✅ 18 | 0 | 26.4M | ⚠️ 0 | 18 | - | - |
-| optional/format/time.json | 46 | ✅ 46 | 0 | 7.8M | ⚠️ 30 | 16 | - | - |
-| optional/format/unknown.json | 7 | ✅ 7 | 0 | 45.3M | ⚠️ 0 | 7 | - | - |
-| optional/format/uri-reference.json | 15 | ✅ 15 | 0 | 10.8M | ⚠️ 0 | 15 | - | - |
-| optional/format/uri-template.json | 10 | ✅ 10 | 0 | 17.0M | ⚠️ 0 | 10 | - | - |
-| optional/format/uri.json | 36 | ✅ 36 | 0 | 7.5M | ⚠️ 29 | 7 | - | - |
-| optional/format/uuid.json | 22 | ✅ 22 | 0 | 14.0M | ⚠️ 9 | 13 | - | - |
-| optional/id.json | 3 | ✅ 3 | 0 | 18.5M | ⚠️ 1 | 2 | - | - |
-| optional/no-schema.json | 3 | ✅ 3 | 0 | 35.1M | ⚠️ 2 | 1 | - | - |
-| optional/non-bmp-regex.json | 12 | ✅ 12 | 0 | 19.8M | ⚠️ 6 | 6 | - | - |
-| optional/refOfUnknownKeyword.json | 10 | ✅ 10 | 0 | 30.1M | ⚠️ 0 | 10 | - | - |
+| File | Tests | tjs | tjs ops/s | joi | joi ops/s | Diff |
+|------|------:|----:|----------:|----:|----------:|-----:|
+| additionalProperties.json | 21 | ✅ | 27.4M | ⚠️ 17 fail | - | - |
+| allOf.json | 30 | ✅ | 29.2M | ⚠️ 23 fail | - | - |
+| anchor.json | 8 | ✅ | 30.4M | ⚠️ 8 fail | - | - |
+| anyOf.json | 18 | ✅ | 34.0M | ⚠️ 14 fail | - | - |
+| boolean_schema.json | 18 | ✅ | 34.3M | ⚠️ 18 fail | - | - |
+| const.json | 54 | ✅ | 21.6M | ⚠️ 32 fail | - | - |
+| contains.json | 21 | ✅ | 22.4M | ⚠️ 10 fail | - | - |
+| content.json | 18 | ✅ | 44.3M | ✅ | 6.2M | 🟢 **-86%** |
+| default.json | 7 | ✅ | 37.8M | ⚠️ 7 fail | - | - |
+| defs.json | 2 | ✅ | 3.5M | ⚠️ 2 fail | - | - |
+| dependentRequired.json | 20 | ✅ | 33.9M | ⚠️ 6 fail | - | - |
+| dependentSchemas.json | 20 | ✅ | 30.8M | ⚠️ 12 fail | - | - |
+| dynamicRef.json | 4 | ✅ | 11.5M | ⚠️ 41 fail | - | - |
+| enum.json | 45 | ✅ | 18.5M | ⚠️ 23 fail | - | - |
+| exclusiveMaximum.json | 4 | ✅ | 35.8M | ⚠️ 2 fail | - | - |
+| exclusiveMinimum.json | 4 | ✅ | 36.4M | ⚠️ 2 fail | - | - |
+| format.json | 133 | ✅ | 43.9M | ⚠️ 132 fail | - | - |
+| if-then-else.json | 26 | ✅ | 35.5M | ⚠️ 8 fail | - | - |
+| infinite-loop-detection.json | 2 | ✅ | 31.4M | ⚠️ 2 fail | - | - |
+| items.json | 29 | ✅ | 27.0M | ⚠️ 15 fail | - | - |
+| maxContains.json | 12 | ✅ | 28.3M | ⚠️ 6 fail | - | - |
+| maxItems.json | 6 | ✅ | 34.3M | ⚠️ 2 fail | - | - |
+| maxLength.json | 7 | ✅ | 30.5M | ⚠️ 2 fail | - | - |
+| maxProperties.json | 10 | ✅ | 28.6M | ⚠️ 3 fail | - | - |
+| maximum.json | 8 | ✅ | 36.8M | ⚠️ 2 fail | - | - |
+| minContains.json | 28 | ✅ | 27.5M | ⚠️ 14 fail | - | - |
+| minItems.json | 6 | ✅ | 34.9M | ⚠️ 2 fail | - | - |
+| minLength.json | 7 | ✅ | 29.4M | ⚠️ 3 fail | - | - |
+| minProperties.json | 8 | ✅ | 29.3M | ⚠️ 2 fail | - | - |
+| minimum.json | 11 | ✅ | 34.0M | ⚠️ 3 fail | - | - |
+| multipleOf.json | 10 | ✅ | 35.9M | ⚠️ 5 fail | - | - |
+| not.json | 40 | ✅ | 31.4M | ⚠️ 31 fail | - | - |
+| oneOf.json | 27 | ✅ | 31.0M | ⚠️ 22 fail | - | - |
+| pattern.json | 9 | ✅ | 35.2M | ⚠️ 1 fail | - | - |
+| patternProperties.json | 23 | ✅ | 18.9M | ⚠️ 10 fail | - | - |
+| prefixItems.json | 11 | ✅ | 39.2M | ⚠️ 2 fail | - | - |
+| properties.json | 21 | ✅ | 26.8M | ⚠️ 28 fail | - | - |
+| propertyNames.json | 20 | ✅ | 29.4M | ⚠️ 5 fail | - | - |
+| ref.json | 71 | ✅ | 22.6M | ⚠️ 74 fail | - | - |
+| refRemote.json | 31 | ✅ | 27.8M | ⚠️ 30 fail | - | - |
+| required.json | 9 | ✅ | 36.9M | ⚠️ 12 fail | - | - |
+| type.json | 80 | ✅ | 30.3M | ⚠️ 60 fail | - | - |
+| unevaluatedItems.json | 47 | ✅ | 23.7M | ⚠️ 31 fail | - | - |
+| unevaluatedProperties.json | 117 | ✅ | 14.2M | ⚠️ 102 fail | - | - |
+| uniqueItems.json | 69 | ✅ | 21.5M | ⚠️ 19 fail | - | - |
+| vocabulary.json | 2 | ✅ | 36.1M | ⚠️ 5 fail | - | - |
+| optional/anchor.json | 4 | ✅ | 22.3M | ⚠️ 3 fail | - | - |
+| optional/bignum.json | 9 | ✅ | 34.3M | ⚠️ 7 fail | - | - |
+| optional/dependencies-compatibility.json | 36 | ✅ | 33.6M | ⚠️ 14 fail | - | - |
+| optional/ecmascript-regex.json | 74 | ✅ | 19.5M | ⚠️ 66 fail | - | - |
+| optional/format/date-time.json | 26 | ✅ | 19.2M | ⚠️ 9 fail | - | - |
+| optional/format/date.json | 48 | ✅ | 9.2M | ⚠️ 14 fail | - | - |
+| optional/format/idn-email.json | 10 | ✅ | 18.1M | ⚠️ 10 fail | - | - |
+| optional/format/ipv4.json | 16 | ✅ | 25.3M | ⚠️ 8 fail | - | - |
+| optional/format/ipv6.json | 40 | ✅ | 12.2M | ⚠️ 7 fail | - | - |
+| optional/format/json-pointer.json | 38 | ✅ | 22.7M | ⚠️ 38 fail | - | - |
+| optional/format/regex.json | 8 | ✅ | 38.7M | ⚠️ 8 fail | - | - |
+| optional/format/relative-json-pointer.json | 18 | ✅ | 25.6M | ⚠️ 18 fail | - | - |
+| optional/format/time.json | 46 | ✅ | 7.6M | ⚠️ 16 fail | - | - |
+| optional/format/unknown.json | 7 | ✅ | 44.9M | ⚠️ 7 fail | - | - |
+| optional/format/uri-reference.json | 15 | ✅ | 10.5M | ⚠️ 15 fail | - | - |
+| optional/format/uri-template.json | 10 | ✅ | 16.6M | ⚠️ 10 fail | - | - |
+| optional/format/uri.json | 36 | ✅ | 7.7M | ⚠️ 7 fail | - | - |
+| optional/format/uuid.json | 22 | ✅ | 13.8M | ⚠️ 13 fail | - | - |
+| optional/id.json | 3 | ✅ | 19.1M | ⚠️ 2 fail | - | - |
+| optional/no-schema.json | 3 | ✅ | 36.2M | ⚠️ 1 fail | - | - |
+| optional/non-bmp-regex.json | 12 | ✅ | 21.1M | ⚠️ 6 fail | - | - |
+| optional/refOfUnknownKeyword.json | 10 | ✅ | 31.6M | ⚠️ 10 fail | - | - |
 
