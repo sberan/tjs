@@ -18,8 +18,47 @@ permissions:
   pull-requests: write
 
 jobs:
-  regenerate:
+  # Run benchmarks for each draft in parallel
+  benchmark-draft:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        draft: [draft4, draft6, draft7, draft2019-09, draft2020-12]
+        validator: [ajv, zod, joi]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run benchmark for ${{ matrix.validator }} ${{ matrix.draft }}
+        run: |
+          mkdir -p benchmarks/results
+          npx tsx benchmarks/bench.ts ${{ matrix.draft }} -v ${{ matrix.validator }} \
+            --json benchmarks/results/${{ matrix.validator }}-${{ matrix.draft }}.json
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-${{ matrix.validator }}-${{ matrix.draft }}
+          path: benchmarks/results/${{ matrix.validator }}-${{ matrix.draft }}.json
+
+  # Merge results and create PR
+  finalize:
+    runs-on: ubuntu-latest
+    needs: benchmark-draft
 
     steps:
       - uses: actions/checkout@v4
@@ -42,25 +81,30 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Create results directory
-        run: mkdir -p benchmarks/results
+      - name: Download all benchmark results
+        uses: actions/download-artifact@v4
+        with:
+          path: benchmarks/results
+          pattern: benchmark-*
+          merge-multiple: true
 
-      - name: Run benchmarks
+      - name: Merge benchmark results per validator
         run: |
-          INPUT="${{ github.event.inputs.validators }}"
-          VALIDATORS=${INPUT:-all}
+          for v in ajv zod joi; do
+            echo "Merging results for $v..."
+            npx tsx benchmarks/merge-benchmarks.ts "benchmarks/results/${v}.json" \
+              "benchmarks/results/${v}-draft4.json" \
+              "benchmarks/results/${v}-draft6.json" \
+              "benchmarks/results/${v}-draft7.json" \
+              "benchmarks/results/${v}-draft2019-09.json" \
+              "benchmarks/results/${v}-draft2020-12.json"
 
-          if [ "$VALIDATORS" = "all" ]; then
-            VALIDATORS="ajv,zod,joi"
-          fi
-
-          IFS=',' read -ra VALS <<< "$VALIDATORS"
-          for v in "${VALS[@]}"; do
-            v=$(echo "$v" | xargs)  # trim whitespace
-            echo "Running benchmark for $v..."
-            npx tsx benchmarks/bench.ts -v "$v" --json "benchmarks/results/${v}.json"
+            # Generate markdown report
             npx tsx benchmarks/json-to-markdown.ts "benchmarks/results/${v}.json" > "benchmarks/results/BENCHMARK_${v^^}.md"
           done
+
+          # Clean up per-draft files
+          rm -f benchmarks/results/*-draft*.json
 
       - name: Run compliance tests
         run: npm test -- --reporter=verbose 2>&1 || true
