@@ -140,6 +140,32 @@ Compare to ajv which requires:
 - `require-from-string`
 - `uri-js` (which itself has dependencies)
 
+### Build-Time Compilation for Minimal Bundles 📦
+
+For production bundles, tjs supports compiling schemas at build time, producing standalone validators that don't require the compiler at runtime:
+
+| Schema | Runtime | Build-Time | Savings |
+|--------|---------|------------|---------|
+| Simple | ~23 KB | ~1 KB | **95%** |
+| Complex (14 $defs) | ~25 KB | ~6 KB | **77%** |
+
+```bash
+# Compile schema to standalone validator
+npx tjs compile schema.json -o validator.js
+```
+
+```javascript
+// Use the pre-compiled validator (no tjs import needed!)
+import { validate } from './validator.js';
+
+const result = validate(data);
+if (result.valid) {
+  console.log('Valid!');
+}
+```
+
+See [Build-Time Compilation Guide](docs/BUILD_TIME_COMPILATION.md) for webpack/vite integration and API details.
+
 ## API
 
 ### `schema(definition, options?)`
