@@ -2121,14 +2121,28 @@ export function generateContainsCheck(
         }
       });
     } else {
-      // Queue the contains schema for compilation (reuses all existing generators)
-      const containsFuncName = ctx.queueCompile(containsSchema);
+      // Use inline subschema check instead of spawning a function
+      // This avoids function call overhead for each array item
+      const lenVar = code.genVar('len');
+      code.line(_`const ${lenVar} = ${dataVar}.length;`);
 
-      code.forArray(iVar, dataVar, () => {
+      code.for(_`let ${iVar} = 0`, _`${iVar} < ${lenVar}`, _`${iVar}++`, () => {
         const itemAccess = indexAccess(dataVar, iVar);
 
-        // Call the compiled contains validator (pass null for errors to skip collection)
-        code.if(_`${containsFuncName}(${itemAccess}, null, '')`, () => {
+        // Store item in a variable for generateSubschemaCheck
+        const itemVar = code.genVar('item');
+        code.line(_`const ${itemVar} = ${itemAccess};`);
+
+        // Generate inline check (will use labeled blocks for complex schemas)
+        const checkExpr = generateSubschemaCheck(
+          code,
+          containsSchema as JsonSchema,
+          itemVar,
+          ctx,
+          _dynamicScopeVar
+        );
+
+        code.if(checkExpr, () => {
           code.line(_`${countVar}++;`);
           // Track matched index for unevaluatedItems
           if (needsItemsTracking) {
