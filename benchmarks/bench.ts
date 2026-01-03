@@ -1,6 +1,5 @@
 /**
- * Benchmark tjs performance using mitata's measure() API.
- * Optionally compare against ajv, zod, and joi with the -v flag.
+ * Benchmark tjs vs another validator using mitata's measure() API.
  *
  * Benchmarks at the FILE level (e.g., ref.json, allOf.json) for meaningful
  * keyword-level insights with minimal overhead.
@@ -9,9 +8,9 @@
  *   npm run bench [drafts...] [--filter <regex>] [--per-test] [--validator <name>] [--json]
  *
  * Examples:
- *   npm run bench                            # tjs only (default)
- *   npm run bench -v ajv                     # Compare tjs vs ajv
- *   npm run bench -v ajv -v zod -v joi       # Compare all validators
+ *   npm run bench                            # tjs vs ajv (default)
+ *   npm run bench -v zod                     # tjs vs zod
+ *   npm run bench -v joi                     # tjs vs joi
  *   npm run bench draft7 --filter ref        # Only ref-related files
  *   npm run bench --filter "format|pattern"  # format or pattern files
  *   npm run bench draft2019-09               # Single draft
@@ -748,16 +747,17 @@ async function main() {
     drafts.push('draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12');
   }
 
-  // Default to tjs only; ajv/zod/joi are opt-in via -v flag
-  const runTjs = validators.length === 0 || validators.includes('tjs');
-  const runAjv = validators.includes('ajv');
-  const runZod = validators.includes('zod');
-  const runJoi = validators.includes('joi');
+  // Default to ajv; only one comparison validator at a time
+  const runTjs = true; // Always run tjs
+  const compareValidator = validators.length > 0 ? validators[0] : 'ajv';
+  const runAjv = compareValidator === 'ajv';
+  const runZod = compareValidator === 'zod';
+  const runJoi = compareValidator === 'joi';
 
   // Benchmark options
   const measureOpts = { min_cpu_time: 50_000_000, min_samples: 50 };
 
-  console.log('tjs vs ajv Benchmark (per-file)');
+  console.log(`tjs vs ${compareValidator} Benchmark (per-file)`);
   if (filter) console.log(`Filter: ${filter}`);
   console.log('═'.repeat(100));
 
