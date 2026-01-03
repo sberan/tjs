@@ -979,11 +979,14 @@ async function main() {
 
     // Print progress
     const percent = Math.round(((i + 1) / allPrepared.length) * 100);
-    const ratio = ajvNs > 0 ? tjsNs / ajvNs : 0;
-    const status =
-      ratio > 1
-        ? `${RED}+${Math.round((ratio - 1) * 100)}%${RESET}`
-        : `${GREEN}-${Math.round((1 - ratio) * 100)}%${RESET}`;
+    let status = '';
+    if (runAjv && ajvNs > 0) {
+      const ratio = tjsNs / ajvNs;
+      status =
+        ratio > 1
+          ? `${RED}+${Math.round((ratio - 1) * 100)}%${RESET}`
+          : `${GREEN}-${Math.round((1 - ratio) * 100)}%${RESET}`;
+    }
     console.log(`${percent}% ${draft} ${filePath} ${status}`);
   }
 
