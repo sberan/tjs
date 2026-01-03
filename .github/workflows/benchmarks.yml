@@ -31,34 +31,83 @@ jobs:
       - name: Run benchmarks
         id: bench
         run: |
-          # Run benchmarks and capture output (strip ANSI codes)
-          npm run bench 2>&1 | sed 's/\x1b\[[0-9;]*m//g' > benchmark-output.txt
+          # Run benchmarks with JSON output
+          npm run bench:json 2>&1 | tee benchmark-output.txt
 
-          # Extract key sections for the comment
-          echo "## Benchmark Results" > benchmark-comment.md
-          echo "" >> benchmark-comment.md
-          echo "<details>" >> benchmark-comment.md
-          echo "<summary>Full benchmark output</summary>" >> benchmark-comment.md
-          echo "" >> benchmark-comment.md
-          echo '```' >> benchmark-comment.md
-          cat benchmark-output.txt >> benchmark-comment.md
-          echo '```' >> benchmark-comment.md
-          echo "</details>" >> benchmark-comment.md
-          echo "" >> benchmark-comment.md
+          # Extract JSON from output (skip progress lines)
+          node -e "
+            const fs = require('fs');
+            const input = fs.readFileSync('benchmark-output.txt', 'utf-8');
+            const jsonStart = input.indexOf('{');
+            const jsonEnd = input.lastIndexOf('}');
+            if (jsonStart !== -1 && jsonEnd !== -1) {
+              const json = JSON.parse(input.slice(jsonStart, jsonEnd + 1));
+              fs.writeFileSync('benchmark.json', JSON.stringify(json, null, 2));
+            }
+          "
 
-          # Extract the summary sections
-          echo "### Performance Summary" >> benchmark-comment.md
-          echo "" >> benchmark-comment.md
-          echo '```' >> benchmark-comment.md
-          sed -n '/OVERALL PERFORMANCE SUMMARY/,/HEAD-TO-HEAD/p' benchmark-output.txt | head -20 >> benchmark-comment.md
-          echo '```' >> benchmark-comment.md
-          echo "" >> benchmark-comment.md
+      - name: Generate PR comment
+        run: |
+          node -e "
+            const fs = require('fs');
+            const data = JSON.parse(fs.readFileSync('benchmark.json', 'utf-8'));
 
-          echo "### Head-to-Head Comparisons" >> benchmark-comment.md
-          echo "" >> benchmark-comment.md
-          echo '```' >> benchmark-comment.md
-          sed -n '/HEAD-TO-HEAD COMPARISONS/,/─────────────────────/p' benchmark-output.txt >> benchmark-comment.md
-          echo '```' >> benchmark-comment.md
+            const formatOps = (ns) => ns === 0 ? '-' : ((1e9/ns)/1e6).toFixed(1) + 'M';
+            const formatDiff = (a, b) => {
+              if (b === 0) return '-';
+              const diff = ((a - b) / b) * 100;
+              return (diff > 0 ? '+' : '') + Math.round(diff) + '%';
+            };
+
+            let md = '## Benchmark Results\n\n';
+
+            // Summary table
+            md += '### Performance Summary\n\n';
+            md += '| Draft | tjs | ajv | zod | joi | tjs vs ajv |\n';
+            md += '|-------|----:|----:|----:|----:|:----------:|\n';
+
+            const drafts = ['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'];
+            for (const draft of drafts) {
+              const s = data.summary[draft];
+              if (!s) continue;
+              const diff = formatDiff(s.tjs.nsPerTest, s.ajv.nsPerTest);
+              const emoji = s.tjs.nsPerTest < s.ajv.nsPerTest ? '🟢' : '🔴';
+              md += '| ' + draft + ' | ' + formatOps(s.tjs.nsPerTest) + ' | ' + formatOps(s.ajv.nsPerTest) + ' | ' + formatOps(s.zod.nsPerTest) + ' | ' + formatOps(s.joi.nsPerTest) + ' | ' + emoji + ' ' + diff + ' |\n';
+            }
+            md += '\n';
+
+            // Head-to-head
+            md += '### Head-to-Head (on mutually passing tests)\n\n';
+            const h2h = data.headToHead;
+            if (h2h.tjsVsAjv) {
+              const emoji = h2h.tjsVsAjv.faster === 'tjs' ? '🟢' : '🔴';
+              md += '- **tjs vs ajv**: ' + emoji + ' ' + h2h.tjsVsAjv.faster + ' is ' + h2h.tjsVsAjv.ratio.toFixed(2) + 'x faster (' + h2h.tjsVsAjv.totalTests + ' tests)\n';
+            }
+            if (h2h.tjsVsZod) {
+              md += '- **tjs vs zod**: 🟢 tjs is ' + h2h.tjsVsZod.ratio.toFixed(0) + 'x faster (' + h2h.tjsVsZod.totalTests + ' tests)\n';
+            }
+            if (h2h.tjsVsJoi) {
+              const emoji = h2h.tjsVsJoi.faster === 'tjs' ? '🟢' : '🔴';
+              md += '- **tjs vs joi**: ' + emoji + ' ' + h2h.tjsVsJoi.faster + ' is ' + h2h.tjsVsJoi.ratio.toFixed(2) + 'x faster (' + h2h.tjsVsJoi.totalTests + ' tests)\n';
+            }
+            md += '\n';
+
+            // Compliance
+            md += '### Compliance\n\n';
+            md += '| Draft | tjs | ajv | zod | joi |\n';
+            md += '|-------|----:|----:|----:|----:|\n';
+            for (const draft of drafts) {
+              const s = data.summary[draft];
+              if (!s) continue;
+              const tjsTotal = s.tjs.pass + s.tjs.fail;
+              const ajvTotal = s.ajv.pass + s.ajv.fail;
+              const zodTotal = s.zod.pass + s.zod.fail;
+              const joiTotal = s.joi.pass + s.joi.fail;
+              md += '| ' + draft + ' | ' + s.tjs.pass + '/' + tjsTotal + ' | ' + s.ajv.pass + '/' + ajvTotal + ' | ' + s.zod.pass + '/' + zodTotal + ' | ' + s.joi.pass + '/' + joiTotal + ' |\n';
+            }
+
+            fs.writeFileSync('benchmark-comment.md', md);
+          "
 
       - name: Comment on PR
         uses: actions/github-script@v7

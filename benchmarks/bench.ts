@@ -5,7 +5,7 @@
  * keyword-level insights with minimal overhead.
  *
  * Usage:
- *   npm run bench [drafts...] [--filter <regex>] [--per-test] [--validator <name>]
+ *   npm run bench [drafts...] [--filter <regex>] [--per-test] [--validator <name>] [--json]
  *
  * Examples:
  *   npm run bench draft7 --filter ref        # Only ref-related files
@@ -15,6 +15,7 @@
  *   npm run bench --compliance-only          # Only check compliance, skip benchmark
  *   npm run bench -v tjs -v ajv              # Only benchmark tjs and ajv
  *   npm run bench -v joi                     # Only benchmark joi
+ *   npm run bench --json                     # Output JSON for CI/programmatic use
  */
 
 import * as fs from 'fs';
@@ -717,6 +718,7 @@ async function main() {
   let filter: RegExp | null = null;
   let complianceOnly = false;
   let perTestMode = false;
+  let jsonOutput = false;
   const validators: Validator[] = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -728,6 +730,8 @@ async function main() {
       complianceOnly = true;
     } else if (arg === '--per-test' || arg === '-t') {
       perTestMode = true;
+    } else if (arg === '--json') {
+      jsonOutput = true;
     } else if (arg === '--validator' || arg === '-v') {
       const v = args[++i]?.toLowerCase();
       if (v && ['tjs', 'ajv', 'zod', 'joi'].includes(v)) {
@@ -982,6 +986,121 @@ async function main() {
   }
 
   console.log('');
+
+  // JSON output mode - output structured data and exit
+  if (jsonOutput) {
+    // Compute head-to-head stats for JSON
+    const computeH2HJson = (
+      validatorA: string,
+      validatorB: string,
+      getNsA: (r: FileResult) => number,
+      getNsB: (r: FileResult) => number,
+      isAvailable: (r: FileResult) => boolean
+    ) => {
+      const applicable = results.filter((r) => isAvailable(r) && getNsA(r) > 0 && getNsB(r) > 0);
+      if (applicable.length === 0) return null;
+
+      const totalA = applicable.reduce((sum, r) => sum + getNsA(r) * r.testCount, 0);
+      const totalB = applicable.reduce((sum, r) => sum + getNsB(r) * r.testCount, 0);
+      const totalTests = applicable.reduce((sum, r) => sum + r.testCount, 0);
+      const avgA = totalA / totalTests;
+      const avgB = totalB / totalTests;
+      const faster = avgA < avgB ? validatorA : validatorB;
+      const ratio = avgA < avgB ? avgB / avgA : avgA / avgB;
+
+      return { validatorA, validatorB, avgNsA: avgA, avgNsB: avgB, faster, ratio, totalTests };
+    };
+
+    const jsonData = {
+      results: results.map((r) => ({
+        draft: r.draft,
+        file: r.file,
+        testCount: r.testCount,
+        tjs: { nsPerTest: r.tjsNs, pass: r.tjsPass, fail: r.tjsFail },
+        ajv: { nsPerTest: r.ajvNs, pass: r.ajvPass, fail: r.ajvFail },
+        zod: { nsPerTest: r.zodNs, pass: r.zodPass, fail: r.zodFail },
+        joi: { nsPerTest: r.joiNs, pass: r.joiPass, fail: r.joiFail },
+      })),
+      summary: Object.fromEntries(
+        drafts.map((draft) => {
+          const draftResults = results.filter((r) => r.draft === draft);
+          const compliance = draftCompliance[draft];
+          const testCount = draftResults.reduce((sum, r) => sum + r.testCount, 0);
+          const tjsTotalNs = draftResults.reduce((sum, r) => sum + r.tjsNs * r.testCount, 0);
+          const ajvTotalNs = draftResults.reduce((sum, r) => sum + r.ajvNs * r.testCount, 0);
+          const zodTotalNs = draftResults.reduce((sum, r) => sum + r.zodNs * r.testCount, 0);
+          const joiTotalNs = draftResults.reduce((sum, r) => sum + r.joiNs * r.testCount, 0);
+          return [
+            draft,
+            {
+              files: draftResults.length,
+              tests: testCount,
+              tjs: {
+                nsPerTest: testCount > 0 ? tjsTotalNs / testCount : 0,
+                pass: compliance.tjsPass,
+                fail: compliance.tjsFail,
+              },
+              ajv: {
+                nsPerTest: testCount > 0 ? ajvTotalNs / testCount : 0,
+                pass: compliance.ajvPass,
+                fail: compliance.ajvFail,
+              },
+              zod: {
+                nsPerTest: testCount > 0 ? zodTotalNs / testCount : 0,
+                pass: compliance.zodPass,
+                fail: compliance.zodFail,
+              },
+              joi: {
+                nsPerTest: testCount > 0 ? joiTotalNs / testCount : 0,
+                pass: compliance.joiPass,
+                fail: compliance.joiFail,
+              },
+            },
+          ];
+        })
+      ),
+      headToHead: {
+        tjsVsAjv: computeH2HJson(
+          'tjs',
+          'ajv',
+          (r) => r.tjsNs,
+          (r) => r.ajvNs,
+          () => true
+        ),
+        tjsVsZod: computeH2HJson(
+          'tjs',
+          'zod',
+          (r) => r.tjsNs,
+          (r) => r.zodNs,
+          (r) => r.zodNs > 0
+        ),
+        tjsVsJoi: computeH2HJson(
+          'tjs',
+          'joi',
+          (r) => r.tjsNs,
+          (r) => r.joiNs,
+          (r) => r.joiNs > 0
+        ),
+        ajvVsZod: computeH2HJson(
+          'ajv',
+          'zod',
+          (r) => r.ajvNs,
+          (r) => r.zodNs,
+          (r) => r.zodNs > 0
+        ),
+        ajvVsJoi: computeH2HJson(
+          'ajv',
+          'joi',
+          (r) => r.ajvNs,
+          (r) => r.joiNs,
+          (r) => r.joiNs > 0
+        ),
+      },
+    };
+
+    console.log(JSON.stringify(jsonData, null, 2));
+    return;
+  }
 
   // Sort results - weight by total time impact (per-test diff × test count)
   const slowestVsAjv = results
