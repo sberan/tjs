@@ -1,11 +1,11 @@
 /**
- * Compare tjs vs ajv performance using mitata's measure() API.
+ * Compare tjs vs ajv vs zod vs joi performance using mitata's measure() API.
  *
  * Benchmarks at the FILE level (e.g., ref.json, allOf.json) for meaningful
  * keyword-level insights with minimal overhead.
  *
  * Usage:
- *   npm run bench [drafts...] [--filter <regex>] [--per-test]
+ *   npm run bench [drafts...] [--filter <regex>] [--per-test] [--validator <name>]
  *
  * Examples:
  *   npm run bench draft7 --filter ref        # Only ref-related files
@@ -13,6 +13,8 @@
  *   npm run bench draft2019-09               # Single draft
  *   npm run bench draft7 --filter unevaluatedItems --per-test  # Per-test breakdown
  *   npm run bench --compliance-only          # Only check compliance, skip benchmark
+ *   npm run bench -v tjs -v ajv              # Only benchmark tjs and ajv
+ *   npm run bench -v joi                     # Only benchmark joi
  */
 
 import * as fs from 'fs';
@@ -707,12 +709,15 @@ async function runPerTestBenchmark(
   );
 }
 
+type Validator = 'tjs' | 'ajv' | 'zod' | 'joi';
+
 async function main() {
   const args = process.argv.slice(2);
   const drafts: Draft[] = [];
   let filter: RegExp | null = null;
   let complianceOnly = false;
   let perTestMode = false;
+  const validators: Validator[] = [];
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -723,6 +728,11 @@ async function main() {
       complianceOnly = true;
     } else if (arg === '--per-test' || arg === '-t') {
       perTestMode = true;
+    } else if (arg === '--validator' || arg === '-v') {
+      const v = args[++i]?.toLowerCase();
+      if (v && ['tjs', 'ajv', 'zod', 'joi'].includes(v)) {
+        validators.push(v as Validator);
+      }
     } else if (['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'].includes(arg)) {
       drafts.push(arg as Draft);
     }
@@ -731,6 +741,12 @@ async function main() {
   if (drafts.length === 0) {
     drafts.push('draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12');
   }
+
+  // Default to all validators if none specified
+  const runTjs = validators.length === 0 || validators.includes('tjs');
+  const runAjv = validators.length === 0 || validators.includes('ajv');
+  const runZod = validators.length === 0 || validators.includes('zod');
+  const runJoi = validators.length === 0 || validators.includes('joi');
 
   // Benchmark options
   const measureOpts = { min_cpu_time: 50_000_000, min_samples: 50 };
@@ -862,10 +878,10 @@ async function main() {
   for (const { compiledTests } of allPrepared) {
     for (let w = 0; w < WARMUP_ITERATIONS; w++) {
       for (const t of compiledTests) {
-        t.tjsValidator(t.data);
-        t.ajvValidator(t.data);
-        if (t.zodValidator) t.zodValidator(t.data);
-        if (t.joiValidator) t.joiValidator(t.data);
+        if (runTjs) t.tjsValidator(t.data);
+        if (runAjv) t.ajvValidator(t.data);
+        if (runZod && t.zodValidator) t.zodValidator(t.data);
+        if (runJoi && t.joiValidator) t.joiValidator(t.data);
       }
     }
   }
@@ -890,22 +906,30 @@ async function main() {
     } = allPrepared[i];
 
     // Check if Zod/Joi are available for all tests in this file
-    const hasZod = compiledTests.every((t) => t.zodValidator !== null);
-    const hasJoi = compiledTests.every((t) => t.joiValidator !== null);
+    const hasZod = runZod && compiledTests.every((t) => t.zodValidator !== null);
+    const hasJoi = runJoi && compiledTests.every((t) => t.joiValidator !== null);
 
     // Benchmark tjs
-    const tjsResult = await measure(() => {
-      for (const t of compiledTests) {
-        t.tjsValidator(t.data);
-      }
-    }, measureOpts);
+    let tjsNs = 0;
+    if (runTjs) {
+      const tjsResult = await measure(() => {
+        for (const t of compiledTests) {
+          t.tjsValidator(t.data);
+        }
+      }, measureOpts);
+      tjsNs = ((tjsResult as any).p50 ?? tjsResult.avg) / compiledTests.length;
+    }
 
     // Benchmark ajv
-    const ajvResult = await measure(() => {
-      for (const t of compiledTests) {
-        t.ajvValidator(t.data);
-      }
-    }, measureOpts);
+    let ajvNs = 0;
+    if (runAjv) {
+      const ajvResult = await measure(() => {
+        for (const t of compiledTests) {
+          t.ajvValidator(t.data);
+        }
+      }, measureOpts);
+      ajvNs = ((ajvResult as any).p50 ?? ajvResult.avg) / compiledTests.length;
+    }
 
     // Benchmark zod (if available)
     let zodNs = 0;
@@ -928,10 +952,6 @@ async function main() {
       }, measureOpts);
       joiNs = ((joiResult as any).p50 ?? joiResult.avg) / compiledTests.length;
     }
-
-    // Use p50 (median) for outlier resistance
-    const tjsNs = ((tjsResult as any).p50 ?? tjsResult.avg) / compiledTests.length;
-    const ajvNs = ((ajvResult as any).p50 ?? ajvResult.avg) / compiledTests.length;
 
     results.push({
       draft,
@@ -1167,6 +1187,126 @@ async function main() {
       `${totalJoiFail > 0 ? RED : DIM}${totalJoiFail}${RESET}`.padStart(19)
   );
   console.log('─'.repeat(160));
+
+  // Head-to-head comparisons (only on tests where BOTH validators pass all tests in the group)
+  console.log('\n' + '═'.repeat(100));
+  console.log('HEAD-TO-HEAD COMPARISONS (on mutually passing test groups only)');
+  console.log('─'.repeat(100));
+
+  // Helper to compute head-to-head stats
+  const computeH2H = (
+    validatorA: string,
+    validatorB: string,
+    getNsA: (r: FileResult) => number,
+    getNsB: (r: FileResult) => number,
+    isAvailable: (r: FileResult) => boolean
+  ) => {
+    const applicable = results.filter((r) => isAvailable(r) && getNsA(r) > 0 && getNsB(r) > 0);
+    if (applicable.length === 0) return null;
+
+    const totalA = applicable.reduce((sum, r) => sum + getNsA(r) * r.testCount, 0);
+    const totalB = applicable.reduce((sum, r) => sum + getNsB(r) * r.testCount, 0);
+    const totalTests = applicable.reduce((sum, r) => sum + r.testCount, 0);
+    const avgA = totalA / totalTests;
+    const avgB = totalB / totalTests;
+    const faster = avgA < avgB ? validatorA : validatorB;
+    const ratio = avgA < avgB ? avgB / avgA : avgA / avgB;
+    const diffPercent = ((avgA - avgB) / avgB) * 100;
+
+    return {
+      validatorA,
+      validatorB,
+      avgA,
+      avgB,
+      faster,
+      ratio,
+      diffPercent,
+      totalTests,
+      fileCount: applicable.length,
+    };
+  };
+
+  // tjs vs ajv
+  const tjsVsAjv = computeH2H(
+    'tjs',
+    'ajv',
+    (r) => r.tjsNs,
+    (r) => r.ajvNs,
+    () => true
+  );
+  if (tjsVsAjv) {
+    const color = tjsVsAjv.faster === 'tjs' ? GREEN : RED;
+    console.log(
+      `tjs vs ajv:  ${color}${tjsVsAjv.faster} is ${tjsVsAjv.ratio.toFixed(2)}x faster${RESET} ` +
+        `(${Math.round(tjsVsAjv.avgA)} ns vs ${Math.round(tjsVsAjv.avgB)} ns, ${tjsVsAjv.totalTests} tests)`
+    );
+  }
+
+  // tjs vs zod
+  const tjsVsZod = computeH2H(
+    'tjs',
+    'zod',
+    (r) => r.tjsNs,
+    (r) => r.zodNs,
+    (r) => r.zodNs > 0
+  );
+  if (tjsVsZod) {
+    const color = tjsVsZod.faster === 'tjs' ? GREEN : RED;
+    console.log(
+      `tjs vs zod:  ${color}${tjsVsZod.faster} is ${tjsVsZod.ratio.toFixed(1)}x faster${RESET} ` +
+        `(${Math.round(tjsVsZod.avgA)} ns vs ${Math.round(tjsVsZod.avgB).toLocaleString()} ns, ${tjsVsZod.totalTests} tests)`
+    );
+  }
+
+  // tjs vs joi
+  const tjsVsJoi = computeH2H(
+    'tjs',
+    'joi',
+    (r) => r.tjsNs,
+    (r) => r.joiNs,
+    (r) => r.joiNs > 0
+  );
+  if (tjsVsJoi) {
+    const color = tjsVsJoi.faster === 'tjs' ? GREEN : RED;
+    console.log(
+      `tjs vs joi:  ${color}${tjsVsJoi.faster} is ${tjsVsJoi.ratio.toFixed(2)}x faster${RESET} ` +
+        `(${Math.round(tjsVsJoi.avgA)} ns vs ${Math.round(tjsVsJoi.avgB)} ns, ${tjsVsJoi.totalTests} tests)`
+    );
+  }
+
+  // ajv vs zod
+  const ajvVsZod = computeH2H(
+    'ajv',
+    'zod',
+    (r) => r.ajvNs,
+    (r) => r.zodNs,
+    (r) => r.zodNs > 0
+  );
+  if (ajvVsZod) {
+    const color = ajvVsZod.faster === 'ajv' ? GREEN : RED;
+    console.log(
+      `ajv vs zod:  ${color}${ajvVsZod.faster} is ${ajvVsZod.ratio.toFixed(1)}x faster${RESET} ` +
+        `(${Math.round(ajvVsZod.avgA)} ns vs ${Math.round(ajvVsZod.avgB).toLocaleString()} ns, ${ajvVsZod.totalTests} tests)`
+    );
+  }
+
+  // ajv vs joi
+  const ajvVsJoi = computeH2H(
+    'ajv',
+    'joi',
+    (r) => r.ajvNs,
+    (r) => r.joiNs,
+    (r) => r.joiNs > 0
+  );
+  if (ajvVsJoi) {
+    const color = ajvVsJoi.faster === 'ajv' ? GREEN : RED;
+    console.log(
+      `ajv vs joi:  ${color}${ajvVsJoi.faster} is ${ajvVsJoi.ratio.toFixed(2)}x faster${RESET} ` +
+        `(${Math.round(ajvVsJoi.avgA)} ns vs ${Math.round(ajvVsJoi.avgB)} ns, ${ajvVsJoi.totalTests} tests)`
+    );
+  }
+
+  console.log('─'.repeat(100));
 }
 
 main().catch(console.error);
