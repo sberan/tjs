@@ -196,9 +196,11 @@ return true;
 `;
 
   // Create the function with runtime dependencies injected
+  // Note: The main function takes only 'data' parameter for performance.
+  // Sub-validators take (data, errors, path, [dynamicScope]) where 'errors' controls path computation.
   const factory = new Function(
     ...runtimeNames,
-    `return function ${mainFuncName}(data, errors) {\n${fullCode}\n}`
+    `return function ${mainFuncName}(data) {\n${fullCode}\n}`
   );
   return factory(...runtimeValues) as ValidateFn;
 }

@@ -42,17 +42,17 @@ export default function generateRecursiveRefCheck(ctx: CompileContext): void {
   }
 
   if (!dynamicScopeVar) {
-    code.if(_`!${staticFuncName}(${data}, errors, ${path}, [])`, () => {
+    code.if(_`!${staticFuncName}(${data}, true, ${path}, [])`, () => {
       genSubschemaExit(code, ctx);
     });
   } else if (!hasRecursiveAnchor) {
-    code.if(_`!${staticFuncName}(${data}, errors, ${path}, ${dynamicScopeVar})`, () => {
+    code.if(_`!${staticFuncName}(${data}, true, ${path}, ${dynamicScopeVar})`, () => {
       genSubschemaExit(code, ctx);
     });
   } else {
     const allRecursiveAnchors = ctx.getAllRecursiveAnchorSchemas();
     if (allRecursiveAnchors.length === 1) {
-      code.if(_`!${staticFuncName}(${data}, errors, ${path}, ${dynamicScopeVar})`, () => {
+      code.if(_`!${staticFuncName}(${data}, true, ${path}, ${dynamicScopeVar})`, () => {
         genSubschemaExit(code, ctx);
       });
     } else {
@@ -60,7 +60,7 @@ export default function generateRecursiveRefCheck(ctx: CompileContext): void {
       code.line(
         _`const ${validatorVar} = ${dynamicScopeVar}.get('__recursive__') || ${staticFuncName};`
       );
-      code.if(_`!${validatorVar}(${data}, errors, ${path}, ${dynamicScopeVar})`, () => {
+      code.if(_`!${validatorVar}(${data}, true, ${path}, ${dynamicScopeVar})`, () => {
         genSubschemaExit(code, ctx);
       });
     }
