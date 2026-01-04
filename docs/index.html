@@ -557,11 +557,11 @@
 
           <div class="panel" style="grid-column: 1 / -1;">
             <div class="panel-header">
-              <span>usage.ts</span>
-              <span style="color: var(--blue); font-size: 10px;">TypeScript infers the type at compile time from the schema</span>
+              <span>inferred type</span>
+              <span style="color: var(--text-dim); font-size: 10px;">typeof validator.type</span>
             </div>
             <div class="panel-body">
-              <pre id="usage-code" class="editor" style="min-height: 200px; padding: 16px; white-space: pre; overflow-x: auto;"></pre>
+              <pre id="inferred-type" class="editor" style="min-height: 80px; padding: 16px; white-space: pre; overflow-x: auto; color: var(--purple);"></pre>
             </div>
           </div>
         </div>
@@ -968,7 +968,7 @@ declare const result: Result;
     const dataEditor = document.getElementById('data-editor');
     const resultMessage = document.getElementById('result-message');
     const statusBadge = document.getElementById('status-badge');
-    const usageCode = document.getElementById('usage-code');
+    const inferredTypeEl = document.getElementById('inferred-type');
     const tabs = document.querySelectorAll('.panel-tab');
 
     async function init() {
@@ -996,7 +996,7 @@ declare const result: Result;
         schema = JSON.parse(schemaEditor.value);
       } catch (e) {
         showStatus('error', 'Invalid schema JSON: ' + e.message);
-        usageCode.textContent = '// invalid schema JSON';
+        inferredTypeEl.textContent = 'unknown';
         return;
       }
       try {
@@ -1010,19 +1010,8 @@ declare const result: Result;
       const schemaStr = JSON.stringify(schema, null, 2);
       const inferredType = getInferredType(schemaStr);
 
-      // Show usage code with actual type
-      const indentedSchema = schemaStr.split('\n').map((l, i) => i === 0 ? l : '  ' + l).join('\n');
-      usageCode.textContent = `import { schema } from 'tjs';
-
-const validator = schema(${indentedSchema} as const);
-
-type T = typeof validator.type;
-// T = ${inferredType}
-
-const result = validator.validate(data);
-if (result.error === undefined) {
-  const value: T = result.value; // fully typed!
-}`;
+      // Show the inferred type
+      inferredTypeEl.textContent = inferredType;
 
       if (!tjs) {
         showStatus('error', 'tjs not loaded');
