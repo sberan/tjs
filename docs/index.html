@@ -541,7 +541,7 @@
               <span>data.json</span>
             </div>
             <div class="panel-body">
-              <textarea id="data-editor" class="editor" spellcheck="false"></textarea>
+              <div id="data-editor" class="editor" style="min-height: 280px;"></div>
             </div>
           </div>
 
@@ -551,7 +551,7 @@
               <span style="color: var(--text-dim); font-size: 10px;">typeof validator.type</span>
             </div>
             <div class="panel-body">
-              <pre id="inferred-type" class="editor" style="min-height: 100px; max-height: 280px; padding: 16px; white-space: pre; overflow: auto; color: var(--purple);"></pre>
+              <div id="inferred-type" class="editor" style="height: 280px;"></div>
             </div>
           </div>
 
@@ -891,7 +891,6 @@ declare const result: Result;
             if (decl && decl.name.getText() === 'result') {
               const type = checker.getTypeAtLocation(decl);
               resultType = checker.typeToString(type, undefined,
-                ts.TypeFormatFlags.NoTruncation |
                 ts.TypeFormatFlags.MultilineObjectLiterals |
                 ts.TypeFormatFlags.WriteClassExpressionAsTypeLiteral
               );
@@ -1012,12 +1011,14 @@ declare const result: Result;
     };
 
     let tjs = null;
-    let monacoEditor = null;
+    let schemaEditor = null;
+    let dataEditor = null;
+    let typeEditor = null;
     const schemaEditorEl = document.getElementById('schema-editor');
-    const dataEditor = document.getElementById('data-editor');
+    const dataEditorEl = document.getElementById('data-editor');
+    const typeEditorEl = document.getElementById('inferred-type');
     const resultMessage = document.getElementById('result-message');
     const statusBadge = document.getElementById('status-badge');
-    const inferredTypeEl = document.getElementById('inferred-type');
     const tabs = document.querySelectorAll('.panel-tab');
 
     // Extract schema object from TypeScript code like "schema({...})"
@@ -1076,8 +1077,7 @@ declare const result: Result;
         // Use actual tjs types - strip the declare global block and make exports global
         const monacoTypes = tjsDts
           .replace(/declare global \{[\s\S]*?\}\ndeclare type Record[^\n]+\n/, '') // Remove lib.d.ts shims
-          .replace(/^export /gm, '') // Make exports global for Monaco
-          + '\ndeclare function schema<T extends JsonSchema>(definition: T): Validator<Infer<T>>;';
+          .replace(/^export /gm, ''); // Make exports global for Monaco
 
         monaco.languages.typescript.typescriptDefaults.addExtraLib(monacoTypes, 'ts:tjs.d.ts');
 
@@ -1086,13 +1086,8 @@ declare const result: Result;
           noSyntaxValidation: false,
         });
 
-        // Create a model with proper URI for TypeScript
-        const modelUri = monaco.Uri.parse('file:///schema.ts');
-        const model = monaco.editor.createModel(examples.user.schema, 'typescript', modelUri);
-
-        // Create editor
-        monacoEditor = monaco.editor.create(schemaEditorEl, {
-          model: model,
+        // Shared editor options
+        const editorOptions = {
           theme: 'tjs-dark',
           minimap: { enabled: false },
           fontSize: 13,
@@ -1110,10 +1105,28 @@ declare const result: Result;
             verticalScrollbarSize: 8,
             horizontalScrollbarSize: 8,
           },
+        };
+
+        // Create schema editor (TypeScript)
+        const schemaModel = monaco.editor.createModel(examples.user.schema, 'typescript', monaco.Uri.parse('file:///schema.ts'));
+        schemaEditor = monaco.editor.create(schemaEditorEl, { ...editorOptions, model: schemaModel });
+
+        // Create data editor (JSON)
+        const dataModel = monaco.editor.createModel(JSON.stringify(examples.user.data, null, 2), 'json');
+        dataEditor = monaco.editor.create(dataEditorEl, { ...editorOptions, model: dataModel });
+
+        // Create type editor (TypeScript, read-only)
+        const typeModel = monaco.editor.createModel('// loading...', 'typescript');
+        typeEditor = monaco.editor.create(typeEditorEl, {
+          ...editorOptions,
+          model: typeModel,
+          readOnly: true,
+          domReadOnly: true,
         });
 
         // Validate on change
-        monacoEditor.onDidChangeModelContent(() => debounce(validate));
+        schemaEditor.onDidChangeModelContent(() => debounce(validate));
+        dataEditor.onDidChangeModelContent(() => debounce(validate));
 
         // Initial load
         loadExample('user');
@@ -1122,29 +1135,31 @@ declare const result: Result;
 
     function loadExample(name) {
       const ex = examples[name];
-      if (monacoEditor) {
-        monacoEditor.getModel().setValue(ex.schema);
+      if (schemaEditor) {
+        schemaEditor.getModel().setValue(ex.schema);
       }
-      dataEditor.value = JSON.stringify(ex.data, null, 2);
+      if (dataEditor) {
+        dataEditor.getModel().setValue(JSON.stringify(ex.data, null, 2));
+      }
       tabs.forEach(t => t.classList.toggle('active', t.dataset.example === name));
       validate();
     }
 
     function validate() {
-      if (!monacoEditor) return;
+      if (!schemaEditor || !dataEditor) return;
 
       let schema, data;
-      const code = monacoEditor.getValue();
+      const code = schemaEditor.getValue();
 
       try {
         schema = extractSchemaFromCode(code);
       } catch (e) {
         showStatus('error', e.message);
-        inferredTypeEl.textContent = 'unknown';
+        if (typeEditor) typeEditor.setValue('unknown');
         return;
       }
       try {
-        data = JSON.parse(dataEditor.value);
+        data = JSON.parse(dataEditor.getValue());
       } catch (e) {
         showStatus('error', 'Invalid data JSON: ' + e.message);
         return;
@@ -1155,7 +1170,9 @@ declare const result: Result;
       const inferredType = getInferredType(schemaStr);
 
       // Show the inferred type
-      inferredTypeEl.textContent = inferredType;
+      if (typeEditor) {
+        typeEditor.setValue('type Result = ' + inferredType);
+      }
 
       if (!tjs) {
         showStatus('error', 'tjs not loaded');
@@ -1195,7 +1212,6 @@ declare const result: Result;
 
     let timer;
     const debounce = fn => { clearTimeout(timer); timer = setTimeout(fn, 200); };
-    dataEditor.addEventListener('input', () => debounce(validate));
 
     init();
   </script>
