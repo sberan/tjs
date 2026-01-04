@@ -79,9 +79,6 @@ const AllOptional = schema({
   },
 });
 AllOptional.type; // $ExpectType { a?: string; b?: number } & { [x: string]: JsonValue }
-expectTypeOf(AllOptional.type).toEqualTypeOf<
-  { a?: string; b?: number } & { [x: string]: JsonValue }
->();
 
 // Some required properties (no additionalProperties = allows any additional properties)
 const SomeRequired = schema({
@@ -93,9 +90,6 @@ const SomeRequired = schema({
   required: ['a'],
 });
 SomeRequired.type; // $ExpectType { a: string; b?: number } & { [x: string]: JsonValue }
-expectTypeOf(SomeRequired.type).toEqualTypeOf<
-  { a: string; b?: number } & { [x: string]: JsonValue }
->();
 
 // All required properties (no additionalProperties = allows any additional properties)
 const AllRequired = schema({
@@ -107,9 +101,6 @@ const AllRequired = schema({
   required: ['a', 'b'],
 });
 AllRequired.type; // $ExpectType { a: string; b: number } & { [x: string]: JsonValue }
-expectTypeOf(AllRequired.type).toEqualTypeOf<
-  { a: string; b: number } & { [x: string]: JsonValue }
->();
 
 // =============================================================================
 // Nested Objects
@@ -203,9 +194,6 @@ const WithAdditionalTrue = schema({
   additionalProperties: true,
 });
 WithAdditionalTrue.type; // $ExpectType { a: string; b?: boolean } & { [x: string]: unknown }
-expectTypeOf(WithAdditionalTrue.type).toEqualTypeOf<
-  { a: string; b?: boolean } & { [x: string]: unknown }
->();
 
 // additionalProperties not specified (defaults to true - allows any JsonValue)
 const WithoutAdditional = schema({
@@ -217,9 +205,6 @@ const WithoutAdditional = schema({
   required: ['a'],
 });
 WithoutAdditional.type; // $ExpectType { a: string; b?: boolean } & { [x: string]: JsonValue }
-expectTypeOf(WithoutAdditional.type).toEqualTypeOf<
-  { a: string; b?: boolean } & { [x: string]: JsonValue }
->();
 
 // additionalProperties: schema (index signature with specific type)
 const Dict = schema({

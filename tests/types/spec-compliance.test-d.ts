@@ -1,6 +1,5 @@
 import type { JsonArray, JsonObject, JsonValue } from 'type-fest';
 import { schema } from 'tjs';
-import { expectTypeOf } from 'expect-type';
 
 // =============================================================================
 // JSON Schema Test Suite - Type Level Tests
@@ -142,9 +141,6 @@ const AdditionalPropertiesDefault = schema({
   properties: { foo: {}, bar: {} },
 });
 AdditionalPropertiesDefault.type; // $ExpectType { foo?: unknown; bar?: unknown } & { [x: string]: JsonValue }
-expectTypeOf(AdditionalPropertiesDefault.type).toEqualTypeOf<
-  { foo?: unknown; bar?: unknown } & { [x: string]: JsonValue }
->();
 
 // additionalProperties with null valued instance properties
 const AdditionalPropertiesNull = schema({
