@@ -175,11 +175,6 @@ ${mainFuncName}.errors = null;
 return true;
 `;
 
-  // DEBUG: Uncomment to see generated code
-  if (process.env.DEBUG_TJS) {
-    console.log('Generated code:', `function ${mainFuncName}(data, errors) {\n${fullCode}\n}`);
-  }
-
   // Create the function with runtime dependencies injected
   const factory = new Function(
     ...runtimeNames,

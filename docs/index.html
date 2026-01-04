@@ -929,6 +929,7 @@ declare const result: Result;
             if (decl && decl.name.getText() === 'result') {
               const type = checker.getTypeAtLocation(decl);
               resultType = checker.typeToString(type, undefined,
+                ts.TypeFormatFlags.NoTruncation |
                 ts.TypeFormatFlags.MultilineObjectLiterals |
                 ts.TypeFormatFlags.WriteClassExpressionAsTypeLiteral
               );
