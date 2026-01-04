@@ -37,7 +37,13 @@
     "bench": "tsx benchmarks/bench.ts",
     "bench:ajv": "tsx benchmarks/bench.ts -v ajv --json benchmarks/results/ajv.json && tsx benchmarks/json-to-markdown.ts benchmarks/results/ajv.json > benchmarks/results/BENCHMARK_AJV.md",
     "bench:zod": "tsx benchmarks/bench.ts -v zod --json benchmarks/results/zod.json && tsx benchmarks/json-to-markdown.ts benchmarks/results/zod.json > benchmarks/results/BENCHMARK_ZOD.md",
-    "bench:joi": "tsx benchmarks/bench.ts -v joi --json benchmarks/results/joi.json && tsx benchmarks/json-to-markdown.ts benchmarks/results/joi.json > benchmarks/results/BENCHMARK_JOI.md"
+    "bench:joi": "tsx benchmarks/bench.ts -v joi --json benchmarks/results/joi.json && tsx benchmarks/json-to-markdown.ts benchmarks/results/joi.json > benchmarks/results/BENCHMARK_JOI.md",
+    "bench:jsonschema": "tsx benchmarks/bench.ts -v jsonschema --json benchmarks/results/jsonschema.json && tsx benchmarks/json-to-markdown.ts benchmarks/results/jsonschema.json > benchmarks/results/BENCHMARK_JSONSCHEMA.md",
+    "bench:is-my-json-valid": "tsx benchmarks/bench.ts -v is-my-json-valid --json benchmarks/results/is-my-json-valid.json && tsx benchmarks/json-to-markdown.ts benchmarks/results/is-my-json-valid.json > benchmarks/results/BENCHMARK_IS_MY_JSON_VALID.md",
+    "bench:z-schema": "tsx benchmarks/bench.ts -v z-schema --json benchmarks/results/z-schema.json && tsx benchmarks/json-to-markdown.ts benchmarks/results/z-schema.json > benchmarks/results/BENCHMARK_Z_SCHEMA.md",
+    "bench:djv": "tsx benchmarks/bench.ts -v djv --json benchmarks/results/djv.json && tsx benchmarks/json-to-markdown.ts benchmarks/results/djv.json > benchmarks/results/BENCHMARK_DJV.md",
+    "bench:jsen": "tsx benchmarks/bench.ts -v jsen --json benchmarks/results/jsen.json && tsx benchmarks/json-to-markdown.ts benchmarks/results/jsen.json > benchmarks/results/BENCHMARK_JSEN.md",
+    "bench:schemasafe": "tsx benchmarks/bench.ts -v schemasafe --json benchmarks/results/schemasafe.json && tsx benchmarks/json-to-markdown.ts benchmarks/results/schemasafe.json > benchmarks/results/BENCHMARK_SCHEMASAFE.md"
   },
   "keywords": [
     "json-schema",
@@ -50,6 +56,8 @@
     "node": ">=18"
   },
   "devDependencies": {
+    "@exodus/schemasafe": "^1.3.0",
+    "@hyperjump/json-schema": "^1.17.2",
     "@typescript-eslint/eslint-plugin": "^8.50.1",
     "@typescript-eslint/parser": "^8.50.1",
     "ajv": "^8.17.1",
@@ -57,20 +65,25 @@
     "ajv-formats": "^3.0.1",
     "ajv-formats-draft2019": "^1.6.1",
     "ajv-keywords": "^5.1.0",
+    "djv": "^2.1.4",
     "enjoi": "^9.0.1",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-expect-type": "^0.6.2",
     "eslint-plugin-prettier": "^5.5.4",
     "husky": "^9.1.7",
+    "is-my-json-valid": "^2.20.6",
     "joi": "^17.13.3",
+    "jsen": "^0.6.6",
     "json-schema-to-zod": "^2.7.0",
+    "jsonschema": "^1.5.0",
     "lint-staged": "^16.2.7",
     "mitata": "^1.0.34",
     "prettier": "^3.7.4",
     "tsx": "^4.21.0",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8",
+    "z-schema": "^6.0.2",
     "zod": "^4.3.4"
   },
   "lint-staged": {
