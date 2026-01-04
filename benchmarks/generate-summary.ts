@@ -1,11 +1,13 @@
 /**
  * Generate a comprehensive summary BENCHMARKS.md from all validator results
+ * using a template file for clean generation.
  *
  * Usage:
  *   npx tsx benchmarks/generate-summary.ts
  *
  * Reads from:
  *   benchmarks/results/*.json
+ *   benchmarks/BENCHMARKS.template.md
  */
 
 import * as fs from 'fs';
@@ -128,38 +130,9 @@ function formatPercent(value: number): string {
   return `${Math.round(value)}%`;
 }
 
-function main() {
+function generateSummaryTable(validatorData: Map<string, BenchmarkData>): string {
   const lines: string[] = [];
 
-  lines.push('# Benchmarks');
-  lines.push('');
-  lines.push(
-    'Performance comparison of **tjs** against all major JSON Schema validators using the official [JSON Schema Test Suite](https://github.com/json-schema-org/JSON-Schema-Test-Suite).'
-  );
-  lines.push('');
-
-  // Load all validators
-  const validatorData: Map<string, BenchmarkData> = new Map();
-  for (const validator of ALL_VALIDATORS) {
-    const data = loadBenchmarkData(validator);
-    if (data) {
-      validatorData.set(validator, data);
-    }
-  }
-
-  if (validatorData.size === 0) {
-    lines.push('No benchmark data available. Run `npm run bench:all` to generate benchmarks.');
-    console.log(lines.join('\n'));
-    return;
-  }
-
-  // Summary table - head-to-head comparison
-  lines.push('## Summary');
-  lines.push('');
-  lines.push(
-    'Head-to-head performance comparison (tjs vs each validator). Only test groups where **both** validators pass all tests are included.'
-  );
-  lines.push('');
   lines.push('| Validator | Compliance | tjs ops/s | Other ops/s | Winner | Speedup |');
   lines.push('|-----------|----------:|----------:|------------:|:------:|--------:|');
 
@@ -181,8 +154,8 @@ function main() {
 
     const tjsOps = formatOps(h2h.avgNsA);
     const otherOps = formatOps(h2h.avgNsB);
-    const winner = h2h.faster === 'tjs' ? '🟢 tjs' : `🔴 ${validator}`;
-    const speedup = `${h2h.ratio.toFixed(2)}×`;
+    const winner = h2h.faster === 'tjs' ? '**tjs**' : `${validator}`;
+    const speedup = `${h2h.ratio.toFixed(2)}x`;
 
     const info = validatorInfo[validator];
     const validatorLink = info ? `[${info.name}](${info.link})` : validator;
@@ -192,13 +165,11 @@ function main() {
     );
   }
 
-  lines.push('');
+  return lines.join('\n');
+}
 
-  // Detailed reports links
-  lines.push('## Detailed Reports');
-  lines.push('');
-  lines.push('Click on a validator below to see the full benchmark report:');
-  lines.push('');
+function generateDetailedReports(validatorData: Map<string, BenchmarkData>): string {
+  const lines: string[] = [];
 
   for (const validator of ALL_VALIDATORS) {
     const data = validatorData.get(validator);
@@ -214,15 +185,12 @@ function main() {
     }
   }
 
-  lines.push('');
+  return lines.join('\n');
+}
 
-  // Draft breakdown table
-  lines.push('## Performance by Draft');
-  lines.push('');
-  lines.push('Average nanoseconds per test for each JSON Schema draft version (lower is better):');
-  lines.push('');
-
+function generateDraftTable(validatorData: Map<string, BenchmarkData>): string {
   const drafts = ['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'];
+  const lines: string[] = [];
 
   // Build header
   let header = '| Draft | tjs |';
@@ -263,30 +231,45 @@ function main() {
     lines.push(row);
   }
 
-  lines.push('');
+  return lines.join('\n');
+}
 
-  // Methodology
-  lines.push('## Methodology');
-  lines.push('');
-  lines.push(
-    'We only benchmark test **groups** where **both** validators pass **all** tests in that group. '
-  );
-  lines.push(
-    'A file contains multiple groups (each with a schema and test cases). If either validator fails any test in a group, that entire group is excluded from benchmarking. '
-  );
-  lines.push(
-    'This ensures we compare actual validation performance, not no-op functions that return early due to unsupported features.'
-  );
-  lines.push('');
-  lines.push('Benchmarks are run using [mitata](https://github.com/evanwashere/mitata) with:');
-  lines.push('- Minimum 50ms CPU time per benchmark');
-  lines.push('- Minimum 50 samples');
-  lines.push('- Warm-up phase before measurements');
-  lines.push('');
+function main() {
+  // Load template
+  const templatePath = path.join(__dirname, 'BENCHMARKS.template.md');
+  if (!fs.existsSync(templatePath)) {
+    console.error(`Template file not found: ${templatePath}`);
+    process.exit(1);
+  }
+  let template = fs.readFileSync(templatePath, 'utf-8');
+
+  // Load all validators
+  const validatorData: Map<string, BenchmarkData> = new Map();
+  for (const validator of ALL_VALIDATORS) {
+    const data = loadBenchmarkData(validator);
+    if (data) {
+      validatorData.set(validator, data);
+    }
+  }
+
+  if (validatorData.size === 0) {
+    console.error('No benchmark data available. Run `npm run bench:all` to generate benchmarks.');
+    process.exit(1);
+  }
+
+  // Generate each section
+  const summaryTable = generateSummaryTable(validatorData);
+  const detailedReports = generateDetailedReports(validatorData);
+  const draftTable = generateDraftTable(validatorData);
+
+  // Replace placeholders in template
+  template = template.replace('{{SUMMARY_TABLE}}', summaryTable);
+  template = template.replace('{{DETAILED_REPORTS}}', detailedReports);
+  template = template.replace('{{DRAFT_TABLE}}', draftTable);
 
   // Write to BENCHMARKS.md
   const outputPath = path.join(__dirname, '..', 'BENCHMARKS.md');
-  fs.writeFileSync(outputPath, lines.join('\n'));
+  fs.writeFileSync(outputPath, template);
   console.error(`Generated ${outputPath}`);
 }
 

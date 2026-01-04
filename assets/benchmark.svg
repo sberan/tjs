@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480">
   <defs>
     <!-- Gradients for bars -->
     <linearGradient id="grad-tjs" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -9,17 +9,9 @@
       <stop offset="0%" style="stop-color:#818cf8;stop-opacity:1" />
       <stop offset="100%" style="stop-color:#6366f1;stop-opacity:1" />
     </linearGradient>
-    <linearGradient id="grad-joi" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#f87171;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#ef4444;stop-opacity:1" />
-    </linearGradient>
-    <linearGradient id="grad-zod" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#fbbf24;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#f59e0b;stop-opacity:1" />
-    </linearGradient>
     <!-- Glow effects -->
     <filter id="glow-tjs" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
+      <feGaussianBlur stdDeviation="6" result="coloredBlur"/>
       <feMerge>
         <feMergeNode in="coloredBlur"/>
         <feMergeNode in="SourceGraphic"/>
@@ -28,54 +20,37 @@
   </defs>
 
   <!-- Background -->
-  <rect width="800" height="500" fill="#0f172a"/>
+  <rect width="800" height="480" fill="#0f172a"/>
 
   <!-- Subtle grid pattern -->
   <g opacity="0.1">
-    <line x1="100" y1="400" x2="750" y2="400" stroke="#94a3b8" stroke-width="1"/>
-    <line x1="100" y1="300" x2="750" y2="300" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
-    <line x1="100" y1="200" x2="750" y2="200" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
-    <line x1="100" y1="100" x2="750" y2="100" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
+    <line x1="80" y1="400" x2="260" y2="400" stroke="#94a3b8" stroke-width="1"/>
+    <line x1="80" y1="300" x2="260" y2="300" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
+    <line x1="80" y1="200" x2="260" y2="200" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
+    <line x1="80" y1="100" x2="260" y2="100" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
   </g>
 
   <!-- Y-axis labels -->
-  <text x="90" y="405" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="14">0</text>
-  <text x="90" y="305" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="14">7.3M</text>
-  <text x="90" y="205" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="14">14.7M</text>
-  <text x="90" y="105" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="14">22.0M</text>
+  <text x="70" y="405" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">0</text>
+  <text x="70" y="305" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">7.7M</text>
+  <text x="70" y="205" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">15.3M</text>
+  <text x="70" y="105" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">23.0M</text>
 
   <!-- Title -->
-  <text x="400" y="45" text-anchor="middle" fill="#f1f5f9" font-family="system-ui, -apple-system, sans-serif" font-size="24" font-weight="bold">Validation Performance</text>
-  <text x="400" y="75" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="16">Operations per second (higher is better)</text>
+  <text x="400" y="35" text-anchor="middle" fill="#f1f5f9" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">JSON Schema Validator Performance</text>
+  <text x="400" y="60" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="14">Operations per second (higher is better)</text>
 
   <!-- Bars -->
-  <!-- tjs: 21.6M = 300px height -->
-  <rect x="140" y="100" width="120" height="300" rx="8" fill="url(#grad-tjs)" filter="url(#glow-tjs)"/>
-  <text x="200" y="440" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="600">tjs</text>
-  <text x="200" y="85" text-anchor="middle" fill="#34d399" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">21.6M</text>
+  <!-- tjs: 22.4M = 300px height -->
+  <rect x="100" y="100" width="60" height="300" rx="6" fill="url(#grad-tjs)" filter="url(#glow-tjs)"/>
+  <text x="130" y="425" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">tjs</text>
+  <text x="130" y="92" text-anchor="middle" fill="#34d399" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">22.4M</text>
 
-  <!-- ajv: 7.5M = 105px height -->
-  <rect x="300" y="295" width="120" height="105" rx="8" fill="url(#grad-ajv)"/>
-  <text x="360" y="440" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="600">ajv</text>
-  <text x="360" y="280" text-anchor="middle" fill="#818cf8" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">7.5M</text>
+  <!-- ajv: 7.9M = 106px height -->
+  <rect x="180" y="294" width="60" height="106" rx="6" fill="url(#grad-ajv)"/>
+  <text x="210" y="425" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">ajv</text>
+  <text x="210" y="286" text-anchor="middle" fill="#818cf8" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">7.9M</text>
 
-  <!-- joi: 437K = 8px height -->
-  <rect x="460" y="392" width="120" height="8" rx="4" fill="url(#grad-joi)"/>
-  <text x="520" y="440" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="600">joi</text>
-  <text x="520" y="377" text-anchor="middle" fill="#f87171" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">437K</text>
-
-  <!-- zod: 148K = 8px height -->
-  <rect x="620" y="392" width="120" height="8" rx="4" fill="url(#grad-zod)"/>
-  <text x="680" y="440" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="600">zod</text>
-  <text x="680" y="377" text-anchor="middle" fill="#fbbf24" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">148K</text>
-
-  <!-- Multiplier badges -->
-  <rect x="250" y="265" width="60" height="28" rx="14" fill="#1e293b" stroke="#334155" stroke-width="1"/>
-  <text x="280" y="284" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600">2.9×</text>
-
-  <rect x="410" y="362" width="60" height="28" rx="14" fill="#1e293b" stroke="#334155" stroke-width="1"/>
-  <text x="440" y="381" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600">49×</text>
-
-  <rect x="570" y="362" width="60" height="28" rx="14" fill="#1e293b" stroke="#334155" stroke-width="1"/>
-  <text x="600" y="381" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600">146×</text>
+  <!-- Legend note -->
+  <text x="400" y="460" text-anchor="middle" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="11">Using JSON Schema Test Suite · Only tests where both validators pass are compared</text>
 </svg>
