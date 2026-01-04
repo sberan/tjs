@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
-  <!-- Shield with dark fill and gray border -->
-  <path d="M24 4 L44 12 L44 24 C44 36 24 46 24 46 C24 46 4 36 4 24 L4 12 Z"
-        fill="#1a1a1a" stroke="#6b7280" stroke-width="2"/>
-  <!-- Lightning bolt - bright green -->
-  <path d="M27 10 L15 26 L22 26 L19 38 L33 22 L26 22 L29 10 Z"
-        fill="#4ade80"/>
-</svg>
