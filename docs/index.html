@@ -803,21 +803,20 @@
       fetch('./dist/infer.d.ts').then(r => r.text()),
     ]);
 
-    // Minimal lib.d.ts shims needed for type inference
+    // Minimal lib.d.ts shims needed for type inference (noLib: true)
     const libShims = `
-declare global {
-  interface Boolean {}
-  interface CallableFunction {}
-  interface NewableFunction {}
-  interface String {}
-  interface Number {}
-  interface Function {}
-  interface Object {}
-  interface IArguments {}
-  interface RegExp {}
-  interface Array<T> { length: number; [n: number]: T; }
-  interface ReadonlyArray<T> { readonly length: number; readonly [n: number]: T; }
-}
+interface Boolean {}
+interface CallableFunction {}
+interface NewableFunction {}
+interface String {}
+interface Number {}
+interface Function {}
+interface Object {}
+interface IArguments {}
+interface RegExp {}
+interface Array<T> { length: number; [n: number]: T; }
+interface ReadonlyArray<T> { readonly length: number; readonly [n: number]: T; }
+type Record<K extends keyof any, T> = { [P in K]: T };
 `;
 
     // Validator interface and schema function
@@ -874,14 +873,14 @@ declare function schema<const T extends JsonSchema>(definition: T): Validator<In
 
     // Get inferred type using TypeScript compiler
     function getInferredType(schemaJson) {
+      // Use type alias syntax for evaluation, but only display the resolved type
       const code = `
-import { schema, Infer, JsonSchema } from './tjs';
 const s = ${schemaJson} as const;
 type Result = Infer<typeof s>;
 declare const result: Result;
 `;
       const files = {
-        '/tjs.d.ts': tjsDts,
+        '/lib.d.ts': tjsDts,
         '/main.ts': code,
       };
 
@@ -905,13 +904,12 @@ declare const result: Result;
         getCanonicalFileName: (f) => f,
         useCaseSensitiveFileNames: () => true,
         getNewLine: () => '\n',
-        fileExists: (name) => name in files || name === '/lib.d.ts',
+        fileExists: (name) => name in files,
         readFile: (name) => files[name] || '',
-        resolveModuleNames: (names) => names.map(n => n === './tjs' ? { resolvedFileName: '/tjs.d.ts' } : undefined),
       };
 
       try {
-        const program = ts.createProgram(['/main.ts'], options, host);
+        const program = ts.createProgram(['/lib.d.ts', '/main.ts'], options, host);
         const checker = program.getTypeChecker();
         const sourceFile = program.getSourceFile('/main.ts');
 
@@ -1210,7 +1208,7 @@ declare const result: Result;
 
       // Show the inferred type
       if (typeEditor) {
-        typeEditor.setValue('type Result = ' + inferredType);
+        typeEditor.setValue(inferredType);
       }
 
       if (!tjs) {
