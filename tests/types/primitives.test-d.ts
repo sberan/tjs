@@ -100,16 +100,17 @@ NullableString.type; // $ExpectType string | null
 const MultiPrimitive = schema({ type: ['string', 'number', 'boolean'] });
 MultiPrimitive.type; // $ExpectType string | number | boolean
 
-// Type array - nullable object with properties
+// Type array - nullable object with properties (using additionalProperties: false)
 const NullableObject = schema({
   type: ['object', 'null'],
   properties: {
     foo: { type: 'string' },
   },
+  additionalProperties: false,
 });
 NullableObject.type; // $ExpectType { foo?: string } | null
 
-// Type array - nullable object with required
+// Type array - nullable object with required (using additionalProperties: false)
 const NullableObjectRequired = schema({
   type: ['object', 'null'],
   properties: {
@@ -117,6 +118,7 @@ const NullableObjectRequired = schema({
     name: { type: 'string' },
   },
   required: ['id'],
+  additionalProperties: false,
 });
 NullableObjectRequired.type; // $ExpectType { id: string; name?: string } | null
 
@@ -127,21 +129,23 @@ const NullableArray = schema({
 });
 NullableArray.type; // $ExpectType number[] | null
 
-// Type array - object or array
+// Type array - object or array (using additionalProperties: false)
 const ObjectOrArray = schema({
   type: ['object', 'array'],
   properties: {
     value: { type: 'string' },
   },
   items: { type: 'number' },
+  additionalProperties: false,
 });
 ObjectOrArray.type; // $ExpectType { value?: string } | number[]
 
-// Type array - string or object
+// Type array - string or object (using additionalProperties: false)
 const StringOrObject = schema({
   type: ['string', 'object'],
   properties: {
     data: { type: 'boolean' },
   },
+  additionalProperties: false,
 });
 StringOrObject.type; // $ExpectType string | { data?: boolean }

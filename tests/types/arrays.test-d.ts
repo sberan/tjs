@@ -18,7 +18,7 @@ const NumArr = schema({
 });
 NumArr.type; // $ExpectType number[]
 
-// Typed array - objects
+// Typed array - objects (using additionalProperties: false)
 const ObjArr = schema({
   type: 'array',
   items: {
@@ -28,6 +28,7 @@ const ObjArr = schema({
       value: { type: 'number' },
     },
     required: ['id'],
+    additionalProperties: false,
   },
 });
 ObjArr.type; // $ExpectType { id: string; value?: number }[]

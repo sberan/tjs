@@ -12,11 +12,16 @@ const IfThenElse = schema({
 });
 IfThenElse.type; // $ExpectType string | number
 
-// if/then/else with object branches (explicit types)
+// if/then/else with object branches (explicit types, using additionalProperties: false)
 const IfThenElseObjects = schema({
   if: { type: 'object' },
-  then: { type: 'object', properties: { discount: { type: 'number' } }, required: ['discount'] },
-  else: { type: 'object', properties: { trial: { type: 'boolean' } } },
+  then: {
+    type: 'object',
+    properties: { discount: { type: 'number' } },
+    required: ['discount'],
+    additionalProperties: false,
+  },
+  else: { type: 'object', properties: { trial: { type: 'boolean' } }, additionalProperties: false },
 });
 IfThenElseObjects.type; // $ExpectType { discount: number; } | { trial?: boolean }
 
