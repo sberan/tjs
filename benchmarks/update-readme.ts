@@ -5,7 +5,8 @@
  *   npx tsx benchmarks/update-readme.ts
  *
  * Reads from:
- *   benchmarks/results/*.json (all validator benchmark results)
+ *   benchmarks/results/tjs.json (tjs benchmark results)
+ *   benchmarks/results/ajv.json (ajv benchmark results)
  *   benchmarks/README.template.md
  *   tests/json-schema-test-suite/ (for compliance counts)
  */
@@ -17,34 +18,31 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SUITE_BASE = path.join(__dirname, '../tests/json-schema-test-suite');
 
-interface ValidatorStats {
+interface GroupResult {
+  groupDesc: string;
+  passed: boolean;
+  passCount: number;
+  failCount: number;
   nsPerTest: number;
-  pass: number;
-  fail: number;
+  testCount: number;
 }
 
 interface FileResult {
   draft: string;
   file: string;
-  testCount: number;
-  tjs: ValidatorStats;
-  other: ValidatorStats;
+  groups: GroupResult[];
+  totalPass: number;
+  totalFail: number;
 }
 
-interface DraftSummary {
-  files: number;
-  tests: number;
-  tjs: ValidatorStats;
-  other: ValidatorStats;
-}
-
-interface BenchmarkData {
-  compareValidator: string;
+interface ValidatorBenchmark {
+  validator: string;
+  timestamp: string;
   results: FileResult[];
-  summary: Record<string, DraftSummary>;
+  summary: Record<string, { totalPass: number; totalFail: number; files: number }>;
 }
 
-function loadBenchmarkData(validator: string): BenchmarkData | null {
+function loadBenchmarkData(validator: string): ValidatorBenchmark | null {
   const filePath = path.join(__dirname, 'results', `${validator}.json`);
   if (!fs.existsSync(filePath)) {
     console.error(`Warning: ${filePath} not found`);
@@ -111,24 +109,46 @@ function getComplianceByDraft(): Array<{ draft: Draft; displayName: string; test
   }));
 }
 
-function calculateComplianceRate(data: BenchmarkData): {
+function calculateComplianceRate(data: ValidatorBenchmark): {
   passed: number;
   total: number;
   rate: string;
 } {
-  const drafts = ['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'];
   let totalPassed = 0;
   let totalTests = 0;
 
-  for (const draft of drafts) {
-    for (const result of data.results.filter((r) => r.draft === draft)) {
-      totalPassed += result.other.pass;
-      totalTests += result.other.pass + result.other.fail;
-    }
+  for (const draftSummary of Object.values(data.summary)) {
+    totalPassed += draftSummary.totalPass;
+    totalTests += draftSummary.totalPass + draftSummary.totalFail;
   }
 
   const rate = totalTests > 0 ? Math.round((totalPassed / totalTests) * 100) : 0;
   return { passed: totalPassed, total: totalTests, rate: `${rate}%` };
+}
+
+// Calculate average ns/test for a validator's draft
+function calculateDraftNs(
+  data: ValidatorBenchmark,
+  draft: string
+): { avgNs: number; tests: number; files: number } {
+  const draftResults = data.results.filter((r) => r.draft === draft);
+  let totalNs = 0;
+  let totalTests = 0;
+
+  for (const result of draftResults) {
+    for (const group of result.groups) {
+      if (group.passed && group.nsPerTest > 0) {
+        totalNs += group.nsPerTest * group.testCount;
+        totalTests += group.testCount;
+      }
+    }
+  }
+
+  return {
+    avgNs: totalTests > 0 ? totalNs / totalTests : 0,
+    tests: totalTests,
+    files: draftResults.length,
+  };
 }
 
 function formatDiff(tjsNs: number, otherNs: number): string {
@@ -166,7 +186,10 @@ function generateComplianceTable(
   return lines.join('\n');
 }
 
-function generatePerfTable(ajvData: BenchmarkData): { table: string; improvement: number } {
+function generatePerfTable(
+  tjsData: ValidatorBenchmark,
+  ajvData: ValidatorBenchmark
+): { table: string; improvement: number } {
   const drafts = ['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'];
   const draftDisplayNames: Record<string, string> = {
     draft4: 'draft-04',
@@ -183,17 +206,19 @@ function generatePerfTable(ajvData: BenchmarkData): { table: string; improvement
 
   const perfRows: string[] = [];
   for (const draft of drafts) {
-    const s = ajvData.summary[draft];
-    if (!s) continue;
+    const tjsDraft = calculateDraftNs(tjsData, draft);
+    const ajvDraft = calculateDraftNs(ajvData, draft);
 
-    totalFiles += s.files;
-    totalTests += s.tests;
-    totalTjsNs += s.tjs.nsPerTest * s.tests;
-    totalAjvNs += s.other.nsPerTest * s.tests;
+    if (tjsDraft.tests === 0) continue;
 
-    const diff = formatDiff(s.tjs.nsPerTest, s.other.nsPerTest);
+    totalFiles += tjsDraft.files;
+    totalTests += tjsDraft.tests;
+    totalTjsNs += tjsDraft.avgNs * tjsDraft.tests;
+    totalAjvNs += ajvDraft.avgNs * ajvDraft.tests;
+
+    const diff = formatDiff(tjsDraft.avgNs, ajvDraft.avgNs);
     perfRows.push(
-      `${draftDisplayNames[draft].padEnd(14)}${String(s.files).padStart(5)}${String(s.tests).padStart(8)} |${String(Math.round(s.tjs.nsPerTest)).padStart(11)}${String(Math.round(s.other.nsPerTest)).padStart(13)}${diff.padStart(10)}`
+      `${draftDisplayNames[draft].padEnd(14)}${String(tjsDraft.files).padStart(5)}${String(tjsDraft.tests).padStart(8)} |${String(Math.round(tjsDraft.avgNs)).padStart(11)}${String(Math.round(ajvDraft.avgNs)).padStart(13)}${diff.padStart(10)}`
     );
   }
 
@@ -214,23 +239,59 @@ TOTAL          ${String(totalFiles).padStart(5)}${String(totalTests).padStart(8)
   return { table, improvement: perfImprovement };
 }
 
-function generateFormatSection(ajvData: BenchmarkData): string {
-  // Find format validation speedup data from per-file results
+function generateFormatSection(tjsData: ValidatorBenchmark, ajvData: ValidatorBenchmark): string {
+  // Find format validation speedup data by matching files between tjs and ajv
   const formatBestRatios: Map<string, { name: string; ratio: number }> = new Map();
   const formatFiles = ['idn-email', 'ecmascript-regex', 'date-time', 'ipv6'];
 
+  // Build lookup for ajv results by file
+  const ajvByFile = new Map<string, FileResult>();
   for (const result of ajvData.results) {
+    ajvByFile.set(`${result.draft}:${result.file}`, result);
+  }
+
+  for (const tjsResult of tjsData.results) {
+    const ajvResult = ajvByFile.get(`${tjsResult.draft}:${tjsResult.file}`);
+    if (!ajvResult) continue;
+
     for (const fmt of formatFiles) {
-      if (result.file.includes(fmt) && result.tjs.fail === 0 && result.other.fail === 0) {
-        const ratio = result.other.nsPerTest / result.tjs.nsPerTest;
-        // Only include meaningful speedups (at least 2x faster)
-        if (ratio >= 2) {
-          const name = fmt.replace('ecmascript-regex', 'regex syntax');
-          const existing = formatBestRatios.get(name);
-          // Use the highest ratio (best speedup) for each format
-          if (!existing || ratio > existing.ratio) {
-            formatBestRatios.set(name, { name, ratio });
-          }
+      if (!tjsResult.file.includes(fmt)) continue;
+
+      // Check if all groups passed in both validators
+      const tjsAllPassed = tjsResult.groups.every((g) => g.passed);
+      const ajvAllPassed = ajvResult.groups.every((g) => g.passed);
+      if (!tjsAllPassed || !ajvAllPassed) continue;
+
+      // Calculate average ns for this file
+      let tjsNs = 0,
+        tjsTests = 0;
+      for (const g of tjsResult.groups) {
+        if (g.passed && g.nsPerTest > 0) {
+          tjsNs += g.nsPerTest * g.testCount;
+          tjsTests += g.testCount;
+        }
+      }
+      let ajvNs = 0,
+        ajvTests = 0;
+      for (const g of ajvResult.groups) {
+        if (g.passed && g.nsPerTest > 0) {
+          ajvNs += g.nsPerTest * g.testCount;
+          ajvTests += g.testCount;
+        }
+      }
+
+      if (tjsTests === 0 || ajvTests === 0) continue;
+
+      const tjsAvg = tjsNs / tjsTests;
+      const ajvAvg = ajvNs / ajvTests;
+      const ratio = ajvAvg / tjsAvg;
+
+      // Only include meaningful speedups (at least 2x faster)
+      if (ratio >= 2) {
+        const name = fmt.replace('ecmascript-regex', 'regex syntax');
+        const existing = formatBestRatios.get(name);
+        if (!existing || ratio > existing.ratio) {
+          formatBestRatios.set(name, { name, ratio });
         }
       }
     }
@@ -259,7 +320,13 @@ ${formatLines.join('\n')}
 }
 
 function main() {
+  const tjsData = loadBenchmarkData('tjs');
   const ajvData = loadBenchmarkData('ajv');
+
+  if (!tjsData) {
+    console.error('Error: tjs.json is required for README updates');
+    process.exit(1);
+  }
 
   if (!ajvData) {
     console.error('Error: ajv.json is required for README updates');
@@ -284,11 +351,11 @@ function main() {
   console.error(`  ajv: ${ajvCompliance.rate} (${ajvCompliance.passed}/${ajvCompliance.total})`);
 
   // Generate sections
-  const { table: perfTable, improvement: perfImprovement } = generatePerfTable(ajvData);
+  const { table: perfTable, improvement: perfImprovement } = generatePerfTable(tjsData, ajvData);
   const tagline = generateTagline(perfImprovement);
   const atAGlanceTable = generateAtAGlanceTable(ajvCompliance);
   const complianceTable = generateComplianceTable(complianceByDraft, tjsTotalTests);
-  const formatSection = generateFormatSection(ajvData);
+  const formatSection = generateFormatSection(tjsData, ajvData);
 
   console.error(`Performance improvement: ${perfImprovement}% faster than ajv`);
 

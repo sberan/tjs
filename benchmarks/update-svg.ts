@@ -5,7 +5,7 @@
  *   npx tsx benchmarks/update-svg.ts
  *
  * Reads from:
- *   benchmarks/results/*.json (all validator benchmark results)
+ *   benchmarks/results/*.json (individual validator benchmark results)
  */
 
 import * as fs from 'fs';
@@ -15,6 +15,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const ALL_VALIDATORS = [
+  'tjs',
   'ajv',
   'zod',
   'joi',
@@ -28,6 +29,7 @@ const ALL_VALIDATORS = [
 
 // Display names for validators
 const validatorDisplayNames: Record<string, string> = {
+  tjs: 'tjs',
   ajv: 'ajv',
   zod: 'zod',
   joi: 'joi',
@@ -39,22 +41,28 @@ const validatorDisplayNames: Record<string, string> = {
   schemasafe: 'schemasafe',
 };
 
-interface ValidatorStats {
+interface GroupResult {
+  groupDesc: string;
+  passed: boolean;
+  passCount: number;
+  failCount: number;
   nsPerTest: number;
-  pass: number;
-  fail: number;
+  testCount: number;
 }
 
-interface DraftSummary {
-  files: number;
-  tests: number;
-  tjs: ValidatorStats;
-  other: ValidatorStats;
+interface FileResult {
+  draft: string;
+  file: string;
+  groups: GroupResult[];
+  totalPass: number;
+  totalFail: number;
 }
 
-interface BenchmarkData {
-  compareValidator: string;
-  summary: Record<string, DraftSummary>;
+interface ValidatorBenchmark {
+  validator: string;
+  timestamp: string;
+  results: FileResult[];
+  summary: Record<string, { totalPass: number; totalFail: number; files: number }>;
 }
 
 function formatOps(opsPerSec: number): string {
@@ -67,12 +75,34 @@ function formatOps(opsPerSec: number): string {
   return `${Math.round(opsPerSec)}`;
 }
 
-function loadBenchmarkData(validator: string): BenchmarkData | null {
+function loadBenchmarkData(validator: string): ValidatorBenchmark | null {
   const filePath = path.join(__dirname, 'results', `${validator}.json`);
   if (!fs.existsSync(filePath)) {
     return null;
   }
-  return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+// Calculate ops/sec for a validator
+function calculateOps(data: ValidatorBenchmark): number {
+  let totalNs = 0;
+  let totalTests = 0;
+
+  for (const result of data.results) {
+    for (const group of result.groups) {
+      if (group.passed && group.nsPerTest > 0) {
+        totalNs += group.nsPerTest * group.testCount;
+        totalTests += group.testCount;
+      }
+    }
+  }
+
+  if (totalTests === 0 || totalNs === 0) return 0;
+  return (1e9 * totalTests) / totalNs;
 }
 
 // Color palette for validators
@@ -90,49 +120,18 @@ const validatorColors: Record<string, { start: string; end: string; label: strin
 };
 
 function main() {
-  const drafts = ['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'];
-
   // Load all validator data and calculate ops/sec
   const validatorOps: Array<{ name: string; ops: number }> = [];
-
-  // First, get tjs stats from any available validator comparison
-  let tjsTotalTests = 0;
-  let tjsTotalNs = 0;
 
   for (const validator of ALL_VALIDATORS) {
     const data = loadBenchmarkData(validator);
     if (data) {
-      // Use the first validator's tjs data
-      if (tjsTotalTests === 0) {
-        for (const draft of drafts) {
-          const s = data.summary[draft];
-          if (!s) continue;
-          tjsTotalTests += s.tests;
-          tjsTotalNs += s.tjs.nsPerTest * s.tests;
-        }
-      }
-
-      // Calculate this validator's ops
-      let totalTests = 0;
-      let totalNs = 0;
-      for (const draft of drafts) {
-        const s = data.summary[draft];
-        if (!s) continue;
-        totalTests += s.tests;
-        totalNs += s.other.nsPerTest * s.tests;
-      }
-
-      if (totalTests > 0 && totalNs > 0) {
-        const ops = (1e9 * totalTests) / totalNs;
+      const ops = calculateOps(data);
+      if (ops > 0) {
         validatorOps.push({ name: validator, ops });
+        console.error(`Loaded ${validator}: ${formatOps(ops)} ops/sec`);
       }
     }
-  }
-
-  // Add tjs
-  if (tjsTotalTests > 0 && tjsTotalNs > 0) {
-    const tjsOps = (1e9 * tjsTotalTests) / tjsTotalNs;
-    validatorOps.unshift({ name: 'tjs', ops: tjsOps });
   }
 
   if (validatorOps.length < 2) {
@@ -143,17 +142,19 @@ function main() {
   // Sort by ops/sec (fastest first)
   validatorOps.sort((a, b) => b.ops - a.ops);
 
-  console.error('Performance (ops/sec):');
+  console.error('\nPerformance (ops/sec):');
   for (const v of validatorOps) {
     console.error(`  ${v.name}: ${formatOps(v.ops)} ops/sec`);
   }
 
   const tjsOps = validatorOps.find((v) => v.name === 'tjs')?.ops || 0;
-  console.error('\nMultipliers (tjs vs):');
-  for (const v of validatorOps) {
-    if (v.name !== 'tjs') {
-      const mult = tjsOps / v.ops;
-      console.error(`  ${v.name}: ${mult.toFixed(1)}x`);
+  if (tjsOps > 0) {
+    console.error('\nMultipliers (tjs vs):');
+    for (const v of validatorOps) {
+      if (v.name !== 'tjs') {
+        const mult = tjsOps / v.ops;
+        console.error(`  ${v.name}: ${mult.toFixed(1)}x`);
+      }
     }
   }
 
@@ -249,7 +250,7 @@ ${gradientDefs}
 ${barsSvg}
 
   <!-- Legend note -->
-  <text x="${chartWidth / 2}" y="460" text-anchor="middle" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="11">Using JSON Schema Test Suite · Only tests where both validators pass are compared</text>
+  <text x="${chartWidth / 2}" y="460" text-anchor="middle" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="11">Using JSON Schema Test Suite · Only passing test groups are benchmarked</text>
 </svg>
 `;
 
