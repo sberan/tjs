@@ -3,11 +3,32 @@
  */
 
 import type { JsonSchema, JsonSchemaBase } from '../types.js';
-import { Name } from './codegen.js';
-import type { CodeBuilder } from './codegen.js';
+import { Name, Code, CodeBuilder, _, stringify } from './codegen.js';
 import { PropsTracker } from './props-tracker.js';
 import { ItemsTracker } from './items-tracker.js';
 import { AnnotationTracker } from './annotation-tracker.js';
+
+/**
+ * Type for the validateSubschema callback.
+ * This is set by the compiler to break circular dependency.
+ */
+export type ValidateSubschemaFn = (
+  schema: JsonSchema,
+  dataVar: Name,
+  pathExprCode: Code,
+  ctx: CompileContext,
+  dynamicScopeVar?: Name
+) => void;
+
+/**
+ * A keyword handler generates validation code for a specific JSON Schema keyword.
+ * The handler is responsible for checking if the keyword is present and generating
+ * the appropriate validation code.
+ *
+ * Access ctx.schema for the current schema, ctx.data for the data variable,
+ * and ctx.path for the path expression.
+ */
+export type KeywordHandler = (ctx: CompileContext) => void;
 
 /**
  * Coercion options - can be boolean or object with per-type settings
@@ -219,6 +240,24 @@ export class CompileContext {
 
   /** Code builder reference (set when trackers are initialized) */
   #codeBuilder: CodeBuilder | null = null;
+
+  /** Unified annotation tracker (singleton, created on first access) */
+  #annotationTracker: AnnotationTracker | null = null;
+
+  /** Callback for recursive sub-schema validation (set by compiler to break circular dep) */
+  #validateSubschemaFn: ValidateSubschemaFn | null = null;
+
+  /** Current dynamic scope variable (set by compiler) */
+  #dynamicScopeVar: Name | undefined = undefined;
+
+  /** Current data variable being validated */
+  #dataVar: Name | null = null;
+
+  /** Current path expression code */
+  #pathExprCode: Code | null = null;
+
+  /** Current schema being validated */
+  #currentSchema: JsonSchemaBase | null = null;
 
   constructor(rootSchema: JsonSchema, options: CompileOptions = {}) {
     this.#rootSchema = rootSchema;
@@ -1116,5 +1155,203 @@ export class CompileContext {
       throw new Error('Not in subschema check context');
     }
     return this.#subschemaStack[this.#subschemaStack.length - 1].validVar;
+  }
+
+  // ==================== Unified Context API ====================
+
+  /**
+   * Get the CodeBuilder instance.
+   * Must be initialized first via initPropsTracker/initItemsTracker.
+   */
+  get code(): CodeBuilder {
+    if (!this.#codeBuilder) {
+      throw new Error('CodeBuilder not initialized. Call initPropsTracker/initItemsTracker first.');
+    }
+    return this.#codeBuilder;
+  }
+
+  /**
+   * Get the unified annotation tracker (singleton).
+   * Coordinates both props and items tracking.
+   */
+  get tracker(): AnnotationTracker {
+    if (!this.#annotationTracker) {
+      this.#annotationTracker = new AnnotationTracker(
+        this.getPropsTracker(),
+        this.getItemsTracker()
+      );
+    }
+    return this.#annotationTracker;
+  }
+
+  /**
+   * Set the validateSubschema callback.
+   * Called by the compiler to inject the recursive validation function.
+   */
+  setValidateSubschemaFn(fn: ValidateSubschemaFn): void {
+    this.#validateSubschemaFn = fn;
+  }
+
+  /**
+   * Set the current dynamic scope variable.
+   * Called by the compiler when entering a schema with dynamic scope.
+   */
+  setDynamicScopeVar(scopeVar: Name | undefined): void {
+    this.#dynamicScopeVar = scopeVar;
+  }
+
+  /**
+   * Get the current dynamic scope variable.
+   */
+  getDynamicScopeVar(): Name | undefined {
+    return this.#dynamicScopeVar;
+  }
+
+  /**
+   * Set the current schema, data variable, and path expression.
+   * Called by the compiler before invoking keyword handlers.
+   */
+  setSchemaContext(schema: JsonSchemaBase, dataVar: Name, pathExprCode: Code): void {
+    this.#currentSchema = schema;
+    this.#dataVar = dataVar;
+    this.#pathExprCode = pathExprCode;
+  }
+
+  /**
+   * Save the current schema context and return a restore function.
+   * Used when recursing into subschemas that modify the context.
+   */
+  saveSchemaContext(): () => void {
+    const savedSchema = this.#currentSchema;
+    const savedDataVar = this.#dataVar;
+    const savedPathExprCode = this.#pathExprCode;
+    return () => {
+      this.#currentSchema = savedSchema;
+      this.#dataVar = savedDataVar;
+      this.#pathExprCode = savedPathExprCode;
+    };
+  }
+
+  /**
+   * Get the current schema being validated.
+   */
+  get schema(): JsonSchemaBase {
+    if (!this.#currentSchema) {
+      throw new Error('Schema not set. Call setSchemaContext first.');
+    }
+    return this.#currentSchema;
+  }
+
+  /**
+   * Get the current data variable being validated.
+   */
+  get data(): Name {
+    if (!this.#dataVar) {
+      throw new Error('Data variable not set. Call setSchemaContext first.');
+    }
+    return this.#dataVar;
+  }
+
+  /**
+   * Get the current path expression code.
+   */
+  get path(): Code {
+    if (!this.#pathExprCode) {
+      throw new Error('Path expression not set. Call setSchemaContext first.');
+    }
+    return this.#pathExprCode;
+  }
+
+  /**
+   * Temporarily set a different path expression and execute a callback.
+   * Restores the original path after the callback completes.
+   */
+  withPath(pathExprCode: Code, fn: () => void): void {
+    const oldPath = this.#pathExprCode;
+    this.#pathExprCode = pathExprCode;
+    try {
+      fn();
+    } finally {
+      this.#pathExprCode = oldPath;
+    }
+  }
+
+  /**
+   * Validate a sub-schema recursively.
+   * Uses the injected callback to call generateSchemaValidator.
+   */
+  validateSubschema(
+    schema: JsonSchema,
+    dataVar: Name,
+    pathExprCode: Code,
+    dynamicScopeVar?: Name
+  ): void {
+    if (!this.#validateSubschemaFn) {
+      throw new Error(
+        'validateSubschema not initialized. Compiler must call setValidateSubschemaFn.'
+      );
+    }
+    // Use provided scopeVar or fall back to the current one
+    const scopeVar = dynamicScopeVar ?? this.#dynamicScopeVar;
+
+    // Save current schema context before recursive call
+    const savedSchema = this.#currentSchema;
+    const savedDataVar = this.#dataVar;
+    const savedPathExprCode = this.#pathExprCode;
+
+    this.#validateSubschemaFn(schema, dataVar, pathExprCode, this, scopeVar);
+
+    // Restore schema context after recursive call
+    this.#currentSchema = savedSchema;
+    this.#dataVar = savedDataVar;
+    this.#pathExprCode = savedPathExprCode;
+  }
+
+  /**
+   * Generate error code.
+   * Emits code to set errors and return false (or break in subschema mode).
+   * Uses the current path from setDataContext().
+   */
+  genError(keyword: string, message: string, params: object): void {
+    const code = this.code;
+    const pathExprCode = this.path;
+    const schemaPath = `#/${keyword}`;
+
+    // Check if we're in subschema check mode
+    if (this.isInSubschemaCheck()) {
+      // Subschema mode: set valid = false and break out of labeled block
+      const validVar = this.getSubschemaValidVar();
+      const label = this.getSubschemaLabel();
+      code.line(_`${validVar} = false;`);
+      code.line(_`break ${label};`);
+      return;
+    }
+
+    // Normal mode: set errors and return false
+    const pathStr = pathExprCode.toString();
+    const isStaticPath = pathStr === "''" || pathStr === '""';
+
+    if (isStaticPath) {
+      // Pre-allocate error array for static paths (root-level errors)
+      const errorKey = `err_${schemaPath.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      const errorName = new Name(errorKey);
+      const errorArray = [
+        {
+          instancePath: '',
+          schemaPath,
+          keyword,
+          params,
+          message,
+        },
+      ];
+      this.addRuntimeFunction(errorKey, errorArray);
+      code.line(_`${this.getMainFuncName()}.errors = ${errorName};`);
+    } else {
+      // Dynamic path: create error object with computed instancePath
+      const paramsCode = stringify(params);
+      const errObj = _`{ instancePath: ${pathExprCode}, schemaPath: ${schemaPath}, keyword: ${keyword}, params: ${paramsCode}, message: ${message} }`;
+      code.line(_`${this.getMainFuncName()}.errors = [${errObj}];`);
+    }
+    code.line(_`return false;`);
   }
 }

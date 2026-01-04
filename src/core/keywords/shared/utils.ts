@@ -2,7 +2,7 @@
  * Shared utilities for keyword code generators
  */
 
-import type { JsonSchemaBase } from '../../types.js';
+import type { JsonSchemaBase } from '../../../types.js';
 import {
   CodeBuilder,
   Code,
@@ -13,8 +13,8 @@ import {
   pathExpr,
   pathExprDynamic,
   stringify,
-} from '../codegen.js';
-import type { CompileContext } from '../context.js';
+} from '../../codegen.js';
+import type { CompileContext } from '../../context.js';
 
 /**
  * Property names that exist on Object.prototype or Array.prototype.
@@ -63,100 +63,67 @@ export function genPropertyCheck(
   }
 }
 
-/**
- * Generate code to check if a required property exists.
- * Uses fast path ('in' operator) for safe names, Object.hasOwn for prototype names.
- */
 export function genRequiredCheck(
   code: CodeBuilder,
   dataVar: Name,
   propName: string,
-  pathExprCode: Code,
   ctx: CompileContext
 ): void {
-  const propPathExpr = pathExpr(pathExprCode, propName);
+  const propPathExpr = pathExpr(ctx.path, propName);
 
-  // For prototype property names, use Object.hasOwn for accuracy.
-  // For other names, use the faster 'in' operator.
-  // Pass raw propName - the _ template tag handles escaping via safeInterpolate
   const checkExpr = isSafePropertyName(propName)
     ? _`!(${propName} in ${dataVar})`
     : _`!Object.hasOwn(${dataVar}, ${propName})`;
 
   code.if(checkExpr, () => {
-    genError(
-      code,
-      propPathExpr,
-      '#/required',
-      'required',
-      `must have required property '${propName}'`,
-      {
+    ctx.withPath(propPathExpr, () => {
+      ctx.genError('required', `must have required property '${propName}'`, {
         missingProperty: propName,
-      },
-      ctx
-    );
+      });
+    });
   });
 }
 
-/**
- * Generate batched required checks for better performance.
- * Combines all required checks into a single compound boolean expression
- * similar to AJV's approach, which is more efficient than separate if statements.
- */
 export function genBatchedRequiredChecks(
   code: CodeBuilder,
   dataVar: Name,
   requiredProps: readonly string[],
-  pathExprCode: Code,
   ctx: CompileContext
 ): void {
   if (requiredProps.length === 0) return;
 
-  // For single property, use simple check without missing variable overhead
   if (requiredProps.length === 1) {
-    genRequiredCheck(code, dataVar, requiredProps[0], pathExprCode, ctx);
+    genRequiredCheck(code, dataVar, requiredProps[0], ctx);
     return;
   }
 
-  // For multiple properties, batch them into a single check
-  // Generate a compound condition with missing variable tracking
   const missingVar = code.genVar('missing');
   code.line(_`let ${missingVar};`);
 
-  // Build the compound condition
   const conditions: Code[] = [];
   for (const propName of requiredProps) {
-    // Pass raw propName - the _ template tag handles escaping via safeInterpolate
     if (isSafePropertyName(propName)) {
-      // Fast path: use 'in' operator
       conditions.push(_`(!(${propName} in ${dataVar}) && (${missingVar} = ${propName}))`);
     } else {
-      // Slow path: use !Object.hasOwn for prototype properties
       conditions.push(
         _`(!Object.hasOwn(${dataVar}, ${propName}) && (${missingVar} = ${propName}))`
       );
     }
   }
 
-  // Combine all conditions with ||
   let combinedCondition = conditions[0];
   for (let i = 1; i < conditions.length; i++) {
     combinedCondition = _`${combinedCondition} || ${conditions[i]}`;
   }
 
-  // Generate the if statement with error
   code.if(combinedCondition, () => {
-    // Check if we're in subschema check mode
     if (ctx?.isInSubschemaCheck()) {
-      // Subschema mode: set valid = false and break out of labeled block
       const validVar = ctx.getSubschemaValidVar();
       const label = ctx.getSubschemaLabel();
       code.line(_`${validVar} = false;`);
       code.line(_`break ${label};`);
     } else {
-      // Normal mode: set errors and return false
-      // Use the missing variable to create dynamic path (already in JSON Pointer format)
-      const propPathExpr = pathExprDynamic(pathExprCode, missingVar);
+      const propPathExpr = pathExprDynamic(ctx.path, missingVar);
       code.line(
         _`${ctx.getMainFuncName()}.errors = [{ instancePath: ${propPathExpr}, schemaPath: '#/required', keyword: 'required', params: { missingProperty: ${missingVar} }, message: "must have required property '" + ${missingVar} + "'" }];`
       );
