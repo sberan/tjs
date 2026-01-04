@@ -529,10 +529,10 @@
         <div class="playground-grid">
           <div class="panel">
             <div class="panel-header">
-              <span>schema.json</span>
+              <span>schema.ts</span>
             </div>
             <div class="panel-body">
-              <textarea id="schema-editor" class="editor" spellcheck="false"></textarea>
+              <div id="schema-editor" class="editor" style="min-height: 280px;"></div>
             </div>
           </div>
 
@@ -795,6 +795,7 @@
   </footer>
 
   <script src="https://unpkg.com/typescript@5/lib/typescript.js"></script>
+  <script src="https://unpkg.com/monaco-editor@0.45.0/min/vs/loader.js"></script>
   <script type="module">
     // Load tjs type definitions
     const tjsDts = await fetch('./tjs.d.ts').then(r => r.text());
@@ -912,15 +913,15 @@ declare const result: Result;
 
     const examples = {
       user: {
-        schema: {
-          type: 'object',
-          properties: {
-            name: { type: 'string', minLength: 1 },
-            email: { type: 'string', format: 'email' },
-            age: { type: 'integer', minimum: 0 }
-          },
-          required: ['name', 'email']
-        },
+        schema: `schema({
+  type: 'object',
+  properties: {
+    name: { type: 'string', minLength: 1 },
+    email: { type: 'string', format: 'email' },
+    age: { type: 'integer', minimum: 0 }
+  },
+  required: ['name', 'email']
+})`,
         data: {
           name: 'Alice',
           email: 'alice@example.com',
@@ -928,42 +929,42 @@ declare const result: Result;
         }
       },
       union: {
-        schema: {
-          oneOf: [
-            {
-              type: 'object',
-              properties: {
-                kind: { const: 'circle' },
-                radius: { type: 'number' }
-              },
-              required: ['kind', 'radius']
-            },
-            {
-              type: 'object',
-              properties: {
-                kind: { const: 'rectangle' },
-                width: { type: 'number' },
-                height: { type: 'number' }
-              },
-              required: ['kind', 'width', 'height']
-            }
-          ]
-        },
+        schema: `schema({
+  oneOf: [
+    {
+      type: 'object',
+      properties: {
+        kind: { const: 'circle' },
+        radius: { type: 'number' }
+      },
+      required: ['kind', 'radius']
+    },
+    {
+      type: 'object',
+      properties: {
+        kind: { const: 'rectangle' },
+        width: { type: 'number' },
+        height: { type: 'number' }
+      },
+      required: ['kind', 'width', 'height']
+    }
+  ]
+})`,
         data: {
           kind: 'circle',
           radius: 5
         }
       },
       recursive: {
-        schema: {
-          type: 'object',
-          properties: {
-            value: { type: 'number' },
-            left: { $ref: '#' },
-            right: { $ref: '#' }
-          },
-          required: ['value']
-        },
+        schema: `schema({
+  type: 'object',
+  properties: {
+    value: { type: 'number' },
+    left: { $ref: '#' },
+    right: { $ref: '#' }
+  },
+  required: ['value']
+})`,
         data: {
           value: 10,
           left: { value: 5 },
@@ -971,17 +972,17 @@ declare const result: Result;
         }
       },
       formats: {
-        schema: {
-          type: 'object',
-          properties: {
-            email: { type: 'string', format: 'email' },
-            website: { type: 'string', format: 'uri' },
-            id: { type: 'string', format: 'uuid' },
-            created: { type: 'string', format: 'date-time' },
-            ip: { type: 'string', format: 'ipv4' }
-          },
-          required: ['email']
-        },
+        schema: `schema({
+  type: 'object',
+  properties: {
+    email: { type: 'string', format: 'email' },
+    website: { type: 'string', format: 'uri' },
+    id: { type: 'string', format: 'uuid' },
+    created: { type: 'string', format: 'date-time' },
+    ip: { type: 'string', format: 'ipv4' }
+  },
+  required: ['email']
+})`,
         data: {
           email: 'user@example.com',
           website: 'https://example.com',
@@ -991,17 +992,17 @@ declare const result: Result;
         }
       },
       conditional: {
-        schema: {
-          type: 'object',
-          properties: {
-            type: { enum: ['personal', 'business'] },
-            name: { type: 'string' },
-            taxId: { type: 'string' }
-          },
-          required: ['type', 'name'],
-          if: { properties: { type: { const: 'business' } } },
-          then: { required: ['taxId'] }
-        },
+        schema: `schema({
+  type: 'object',
+  properties: {
+    type: { enum: ['personal', 'business'] },
+    name: { type: 'string' },
+    taxId: { type: 'string' }
+  },
+  required: ['type', 'name'],
+  if: { properties: { type: { const: 'business' } } },
+  then: { required: ['taxId'] }
+})`,
         data: {
           type: 'business',
           name: 'Acme Corp',
@@ -1011,14 +1012,30 @@ declare const result: Result;
     };
 
     let tjs = null;
-    const schemaEditor = document.getElementById('schema-editor');
+    let monacoEditor = null;
+    const schemaEditorEl = document.getElementById('schema-editor');
     const dataEditor = document.getElementById('data-editor');
     const resultMessage = document.getElementById('result-message');
     const statusBadge = document.getElementById('status-badge');
     const inferredTypeEl = document.getElementById('inferred-type');
     const tabs = document.querySelectorAll('.panel-tab');
 
+    // Extract schema object from TypeScript code like "schema({...})"
+    function extractSchemaFromCode(code) {
+      const match = code.match(/schema\s*\(\s*(\{[\s\S]*\})\s*\)/);
+      if (!match) {
+        throw new Error('Could not find schema({...}) in code');
+      }
+      // Use Function constructor to safely evaluate the object literal
+      try {
+        return new Function('return ' + match[1])();
+      } catch (e) {
+        throw new Error('Invalid schema object: ' + e.message);
+      }
+    }
+
     async function init() {
+      // Load tjs
       try {
         tjs = await import('./tjs.bundle.js');
       } catch (e) {
@@ -1026,23 +1043,103 @@ declare const result: Result;
         resultMessage.textContent = 'Error loading tjs: ' + e.message;
         resultMessage.style.color = 'var(--red)';
       }
-      loadExample('user');
+
+      // Load Monaco
+      require.config({ paths: { vs: 'https://unpkg.com/monaco-editor@0.45.0/min/vs' } });
+      require(['vs/editor/editor.main'], function () {
+        // Define dark theme matching our site
+        monaco.editor.defineTheme('tjs-dark', {
+          base: 'vs-dark',
+          inherit: true,
+          rules: [],
+          colors: {
+            'editor.background': '#161b22',
+            'editor.foreground': '#c9d1d9',
+            'editorLineNumber.foreground': '#484f58',
+            'editor.selectionBackground': '#264f78',
+            'editor.lineHighlightBackground': '#21262d',
+          }
+        });
+
+        // Add tjs type definitions to TypeScript
+        monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
+          target: monaco.languages.typescript.ScriptTarget.ESNext,
+          module: monaco.languages.typescript.ModuleKind.ESNext,
+          strict: true,
+          noEmit: true,
+          allowNonTsExtensions: true,
+        });
+
+        // Enable eager model sync for better IntelliSense
+        monaco.languages.typescript.typescriptDefaults.setEagerModelSync(true);
+
+        // Use actual tjs types - strip the declare global block and make exports global
+        const monacoTypes = tjsDts
+          .replace(/declare global \{[\s\S]*?\}\ndeclare type Record[^\n]+\n/, '') // Remove lib.d.ts shims
+          .replace(/^export /gm, '') // Make exports global for Monaco
+          + '\ndeclare function schema<T extends JsonSchema>(definition: T): Validator<Infer<T>>;';
+
+        monaco.languages.typescript.typescriptDefaults.addExtraLib(monacoTypes, 'ts:tjs.d.ts');
+
+        monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+          noSemanticValidation: false,
+          noSyntaxValidation: false,
+        });
+
+        // Create a model with proper URI for TypeScript
+        const modelUri = monaco.Uri.parse('file:///schema.ts');
+        const model = monaco.editor.createModel(examples.user.schema, 'typescript', modelUri);
+
+        // Create editor
+        monacoEditor = monaco.editor.create(schemaEditorEl, {
+          model: model,
+          theme: 'tjs-dark',
+          minimap: { enabled: false },
+          fontSize: 13,
+          fontFamily: 'JetBrains Mono, monospace',
+          lineNumbers: 'off',
+          scrollBeyondLastLine: false,
+          automaticLayout: true,
+          tabSize: 2,
+          padding: { top: 12, bottom: 12 },
+          overviewRulerLanes: 0,
+          hideCursorInOverviewRuler: true,
+          scrollbar: {
+            vertical: 'auto',
+            horizontal: 'auto',
+            verticalScrollbarSize: 8,
+            horizontalScrollbarSize: 8,
+          },
+        });
+
+        // Validate on change
+        monacoEditor.onDidChangeModelContent(() => debounce(validate));
+
+        // Initial load
+        loadExample('user');
+      });
     }
 
     function loadExample(name) {
       const ex = examples[name];
-      schemaEditor.value = JSON.stringify(ex.schema, null, 2);
+      if (monacoEditor) {
+        monacoEditor.getModel().setValue(ex.schema);
+      }
       dataEditor.value = JSON.stringify(ex.data, null, 2);
       tabs.forEach(t => t.classList.toggle('active', t.dataset.example === name));
       validate();
     }
 
     function validate() {
+      if (!monacoEditor) return;
+
       let schema, data;
+      const code = monacoEditor.getValue();
+
       try {
-        schema = JSON.parse(schemaEditor.value);
+        schema = extractSchemaFromCode(code);
       } catch (e) {
-        showStatus('error', 'Invalid schema JSON: ' + e.message);
+        showStatus('error', e.message);
         inferredTypeEl.textContent = 'unknown';
         return;
       }
@@ -1098,7 +1195,6 @@ declare const result: Result;
 
     let timer;
     const debounce = fn => { clearTimeout(timer); timer = setTimeout(fn, 200); };
-    schemaEditor.addEventListener('input', () => debounce(validate));
     dataEditor.addEventListener('input', () => debounce(validate));
 
     init();
