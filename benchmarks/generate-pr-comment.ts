@@ -32,6 +32,7 @@ interface H2H {
   faster: string;
   ratio: number;
   totalTests: number;
+  totalGroups?: number;
 }
 
 interface BenchmarkData {
@@ -185,8 +186,9 @@ function main() {
         `- **tjs vs ${validator}**: ${emoji} ${h2h.faster} is **${h2h.ratio.toFixed(2)}×** faster${changeStr}`
       );
     } else {
+      const groupInfo = h2h.totalGroups ? `, ${h2h.totalGroups} groups` : '';
       lines.push(
-        `- **tjs vs ${validator}**: ${emoji} ${h2h.faster} is ${h2h.ratio.toFixed(2)}× faster (${h2h.totalTests} tests)`
+        `- **tjs vs ${validator}**: ${emoji} ${h2h.faster} is ${h2h.ratio.toFixed(2)}× faster (${h2h.totalTests} tests${groupInfo})`
       );
     }
   }
