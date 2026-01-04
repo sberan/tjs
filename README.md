@@ -16,14 +16,14 @@
 
 ![Benchmark](assets/benchmark.svg)
 
-100% spec compliance. 65% faster than ajv. Zero dependencies. Full TypeScript inference.
+100% spec compliance. 68% faster than ajv. Zero dependencies. Full TypeScript inference.
 
 
 ## At a Glance
 
 | | tjs | [ajv](https://github.com/ajv-validator/ajv) | [zod](https://github.com/colinhacks/zod) | [joi](https://github.com/hapijs/joi) |
 |---|:---:|:---:|:---:|:---:|
-| **JSON Schema compliance** | 100% | 95% | Basic | None |
+| **JSON Schema compliance** | 100% | 98% | Basic | None |
 | **TypeScript inference** | Built-in | Plugin | Built-in | None |
 | **Dependencies** | 0 | 4+ | 0 | 5+ |
 | **Performance** | Fastest | Fast | Slow | Slow |
@@ -81,24 +81,30 @@ See [COMPLIANCE.md](COMPLIANCE.md) for details.
 ### Blazing Fast
 
 See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance comparison.
-tjs uses JIT compilation to generate optimized validation code — **65% faster than ajv** overall:
+tjs uses JIT compilation to generate optimized validation code — **68% faster than ajv** overall:
 
 ```
 Performance vs ajv (JSON Schema Test Suite):
 --------------------------------------------------------------------------------
 Draft          Files   Tests | tjs ns/test  ajv ns/test      Diff
 --------------------------------------------------------------------------------
-draft-04         38     790 |         38           80      -53%
-draft-06         49    1120 |         39           77      -49%
-draft-07         54    1324 |         45           88      -49%
-draft-2019-09    69    1703 |         50          175      -71%
-draft-2020-12    68    1665 |         46          165      -72%
+draft-04         38     790 |         41           83      -51%
+draft-06         49    1120 |         37           78      -53%
+draft-07         54    1324 |         42           83      -50%
+draft-2019-09    69    1703 |         48          185      -74%
+draft-2020-12    68    1665 |         41          179      -77%
 --------------------------------------------------------------------------------
-TOTAL            278    6602 |         45          127      -65%
+TOTAL            278    6602 |         42          132      -68%
 --------------------------------------------------------------------------------
 ```
 
+Format validation is where tjs really shines — up to **229x faster** for complex formats:
 
+```
+idn-email                229x faster than ajv
+date-time                9x faster than ajv
+ipv6                     4x faster than ajv
+```
 
 #### Why is tjs faster?
 
