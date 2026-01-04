@@ -1,11 +1,12 @@
 /**
- * Update README.md with benchmark and compliance data
+ * Update README.md with benchmark and compliance data using a template
  *
  * Usage:
  *   npx tsx benchmarks/update-readme.ts
  *
  * Reads from:
  *   benchmarks/results/*.json (all validator benchmark results)
+ *   benchmarks/README.template.md
  *   tests/json-schema-test-suite/ (for compliance counts)
  */
 
@@ -15,18 +16,6 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SUITE_BASE = path.join(__dirname, '../tests/json-schema-test-suite');
-
-const ALL_VALIDATORS = [
-  'ajv',
-  'zod',
-  'joi',
-  'jsonschema',
-  'is-my-json-valid',
-  'z-schema',
-  'djv',
-  'jsen',
-  'schemasafe',
-];
 
 interface ValidatorStats {
   nsPerTest: number;
@@ -148,68 +137,36 @@ function formatDiff(tjsNs: number, otherNs: number): string {
   return `${diff > 0 ? '+' : ''}${Math.round(diff)}%`;
 }
 
-function main() {
-  const ajvData = loadBenchmarkData('ajv');
-  const zodData = loadBenchmarkData('zod');
-  const joiData = loadBenchmarkData('joi');
+function generateTagline(perfImprovement: number): string {
+  return `100% spec compliance. ${perfImprovement}% faster than ajv. Zero dependencies. Full TypeScript inference.`;
+}
 
-  if (!ajvData) {
-    console.error('Error: ajv.json is required for README updates');
-    process.exit(1);
-  }
-
-  const readmePath = path.join(__dirname, '../README.md');
-  let readme = fs.readFileSync(readmePath, 'utf-8');
-
-  // Calculate compliance rates from benchmark data (other validators)
-  const ajvCompliance = calculateComplianceRate(ajvData);
-  const zodCompliance = zodData
-    ? calculateComplianceRate(zodData)
-    : { rate: '⚠️ Basic', passed: 0, total: 0 };
-  const joiCompliance = joiData
-    ? calculateComplianceRate(joiData)
-    : { rate: '❌ None', passed: 0, total: 0 };
-
-  // Get tjs compliance from test suite (it's always 100%)
-  const complianceByDraft = getComplianceByDraft();
-  const tjsTotalTests = complianceByDraft.reduce((sum, d) => sum + d.tests, 0);
-
-  console.error('Compliance rates:');
-  console.error(`  tjs: 100% (${tjsTotalTests}/${tjsTotalTests})`);
-  console.error(`  ajv: ${ajvCompliance.rate} (${ajvCompliance.passed}/${ajvCompliance.total})`);
-  console.error(`  zod: ${zodCompliance.rate}`);
-  console.error(`  joi: ${joiCompliance.rate}`);
-
-  // Update "At a Glance" table
-  const atAGlanceTable = `| | tjs | [ajv](https://github.com/ajv-validator/ajv) | [zod](https://github.com/colinhacks/zod) | [joi](https://github.com/hapijs/joi) |
+function generateAtAGlanceTable(ajvCompliance: { rate: string }): string {
+  return `| | tjs | [ajv](https://github.com/ajv-validator/ajv) | [zod](https://github.com/colinhacks/zod) | [joi](https://github.com/hapijs/joi) |
 |---|:---:|:---:|:---:|:---:|
-| **JSON Schema compliance** | ✅ 100% | ⚠️ ${ajvCompliance.rate} | ⚠️ Basic | ❌ None |
-| **TypeScript inference** | ✅ Built-in | ⚠️ Plugin | ✅ Built-in | ❌ None |
-| **Dependencies** | ✅ 0 | ❌ 4+ | ✅ 0 | ❌ 5+ |
-| **Performance** | ✅ Fastest | ⚠️ Fast | ❌ Slow | ❌ Slow |`;
+| **JSON Schema compliance** | 100% | ${ajvCompliance.rate} | Basic | None |
+| **TypeScript inference** | Built-in | Plugin | Built-in | None |
+| **Dependencies** | 0 | 4+ | 0 | 5+ |
+| **Performance** | Fastest | Fast | Slow | Slow |`;
+}
 
-  readme = readme.replace(
-    /\| \| tjs \| \[ajv\].*?\| \*\*Performance\*\* \|[^\n]+/s,
-    atAGlanceTable
-  );
+function generateComplianceTable(
+  complianceByDraft: Array<{ displayName: string; tests: number }>,
+  totalTests: number
+): string {
+  const lines: string[] = [];
+  lines.push('| Draft | Compliance |');
+  lines.push('|-------|------------|');
 
-  // Update compliance table
-  const complianceTable = complianceByDraft
-    .map((d) => `| ${d.displayName} | 100% (${d.tests}/${d.tests}) |`)
-    .join('\n');
-  const totalRow = `| **Total** | **100% (${tjsTotalTests}/${tjsTotalTests})** |`;
+  for (const d of complianceByDraft) {
+    lines.push(`| ${d.displayName} | 100% (${d.tests}/${d.tests}) |`);
+  }
+  lines.push(`| **Total** | **100% (${totalTests}/${totalTests})** |`);
 
-  const complianceSection = `| Draft | Compliance |
-|-------|------------|
-${complianceTable}
-${totalRow}`;
+  return lines.join('\n');
+}
 
-  readme = readme.replace(
-    /\| Draft \| Compliance \|[\s\S]*?\| \*\*Total\*\* \| \*\*100%.*?\*\* \|/,
-    complianceSection
-  );
-
-  // Calculate benchmark performance table
+function generatePerfTable(ajvData: BenchmarkData): { table: string; improvement: number } {
   const drafts = ['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'];
   const draftDisplayNames: Record<string, string> = {
     draft4: 'draft-04',
@@ -236,48 +193,29 @@ ${totalRow}`;
 
     const diff = formatDiff(s.tjs.nsPerTest, s.other.nsPerTest);
     perfRows.push(
-      `${draftDisplayNames[draft].padEnd(14)}${String(s.files).padStart(5)}${String(s.tests).padStart(8)} │${String(Math.round(s.tjs.nsPerTest)).padStart(11)}${String(Math.round(s.other.nsPerTest)).padStart(13)}${diff.padStart(10)}`
+      `${draftDisplayNames[draft].padEnd(14)}${String(s.files).padStart(5)}${String(s.tests).padStart(8)} |${String(Math.round(s.tjs.nsPerTest)).padStart(11)}${String(Math.round(s.other.nsPerTest)).padStart(13)}${diff.padStart(10)}`
     );
   }
 
   const avgTjsNs = totalTjsNs / totalTests;
   const avgAjvNs = totalAjvNs / totalTests;
   const totalDiff = formatDiff(avgTjsNs, avgAjvNs);
-
-  const perfTable = `Performance vs ajv (JSON Schema Test Suite):
-────────────────────────────────────────────────────────────────────────────
-Draft          Files   Tests │ tjs ns/test  ajv ns/test      Diff
-────────────────────────────────────────────────────────────────────────────
-${perfRows.join('\n')}
-────────────────────────────────────────────────────────────────────────────
-TOTAL          ${String(totalFiles).padStart(5)}${String(totalTests).padStart(8)} │${String(Math.round(avgTjsNs)).padStart(11)}${String(Math.round(avgAjvNs)).padStart(13)}${totalDiff.padStart(10)}
-────────────────────────────────────────────────────────────────────────────`;
-
-  // Match the entire performance table block (from header to last separator line)
-  readme = readme.replace(
-    /Performance vs ajv \(JSON Schema Test Suite\):\n─+\n[\s\S]*?TOTAL[\s\S]*?─+/,
-    perfTable
-  );
-
-  // Calculate the overall performance improvement percentage
   const perfImprovement = Math.round(((avgAjvNs - avgTjsNs) / avgAjvNs) * 100);
 
-  // Update the tagline "X% faster than ajv"
-  readme = readme.replace(
-    /100% spec compliance\. \d+% faster than ajv\./,
-    `100% spec compliance. ${perfImprovement}% faster than ajv.`
-  );
+  const table = `Performance vs ajv (JSON Schema Test Suite):
+--------------------------------------------------------------------------------
+Draft          Files   Tests | tjs ns/test  ajv ns/test      Diff
+--------------------------------------------------------------------------------
+${perfRows.join('\n')}
+--------------------------------------------------------------------------------
+TOTAL          ${String(totalFiles).padStart(5)}${String(totalTests).padStart(8)} |${String(Math.round(avgTjsNs)).padStart(11)}${String(Math.round(avgAjvNs)).padStart(13)}${totalDiff.padStart(10)}
+--------------------------------------------------------------------------------`;
 
-  // Update the "X% faster than ajv overall" in the Blazing Fast section
-  readme = readme.replace(
-    /\*\*\d+% faster than ajv\*\* overall/,
-    `**${perfImprovement}% faster than ajv** overall`
-  );
+  return { table, improvement: perfImprovement };
+}
 
-  console.error(`Performance improvement: ${perfImprovement}% faster than ajv`);
-
+function generateFormatSection(ajvData: BenchmarkData): string {
   // Find format validation speedup data from per-file results
-  // Use a map to track best ratio per format type (since we have multiple drafts)
   const formatBestRatios: Map<string, { name: string; ratio: number }> = new Map();
   const formatFiles = ['idn-email', 'ecmascript-regex', 'date-time', 'ipv6'];
 
@@ -303,24 +241,68 @@ TOTAL          ${String(totalFiles).padStart(5)}${String(totalTests).padStart(8)
     .sort((a, b) => b.ratio - a.ratio)
     .slice(0, 4);
 
-  if (topFormats.length > 0) {
-    const formatLines = topFormats.map((f) => {
-      const ratioStr = f.ratio >= 100 ? `${Math.round(f.ratio)}x` : `${Math.round(f.ratio)}x`;
-      const name = f.name.padEnd(25);
-      return `${name}${ratioStr} faster than ajv`;
-    });
-
-    const formatSection = formatLines.join('\n');
-
-    // Replace the format validation section
-    readme = readme.replace(
-      /Format validation is where tjs really shines[^\n]*\n\n```\n[\s\S]*?\n```/,
-      `Format validation is where tjs really shines — up to **${Math.round(topFormats[0].ratio)}x faster** for complex formats:\n\n\`\`\`\n${formatSection}\n\`\`\``
-    );
+  if (topFormats.length === 0) {
+    return '';
   }
 
+  const formatLines = topFormats.map((f) => {
+    const ratioStr = `${Math.round(f.ratio)}x`;
+    const name = f.name.padEnd(25);
+    return `${name}${ratioStr} faster than ajv`;
+  });
+
+  return `Format validation is where tjs really shines — up to **${Math.round(topFormats[0].ratio)}x faster** for complex formats:
+
+\`\`\`
+${formatLines.join('\n')}
+\`\`\``;
+}
+
+function main() {
+  const ajvData = loadBenchmarkData('ajv');
+
+  if (!ajvData) {
+    console.error('Error: ajv.json is required for README updates');
+    process.exit(1);
+  }
+
+  // Load template
+  const templatePath = path.join(__dirname, 'README.template.md');
+  if (!fs.existsSync(templatePath)) {
+    console.error(`Template file not found: ${templatePath}`);
+    process.exit(1);
+  }
+  let template = fs.readFileSync(templatePath, 'utf-8');
+
+  // Calculate compliance rates
+  const ajvCompliance = calculateComplianceRate(ajvData);
+  const complianceByDraft = getComplianceByDraft();
+  const tjsTotalTests = complianceByDraft.reduce((sum, d) => sum + d.tests, 0);
+
+  console.error('Compliance rates:');
+  console.error(`  tjs: 100% (${tjsTotalTests}/${tjsTotalTests})`);
+  console.error(`  ajv: ${ajvCompliance.rate} (${ajvCompliance.passed}/${ajvCompliance.total})`);
+
+  // Generate sections
+  const { table: perfTable, improvement: perfImprovement } = generatePerfTable(ajvData);
+  const tagline = generateTagline(perfImprovement);
+  const atAGlanceTable = generateAtAGlanceTable(ajvCompliance);
+  const complianceTable = generateComplianceTable(complianceByDraft, tjsTotalTests);
+  const formatSection = generateFormatSection(ajvData);
+
+  console.error(`Performance improvement: ${perfImprovement}% faster than ajv`);
+
+  // Replace placeholders in template
+  template = template.replace('{{TAGLINE}}', tagline);
+  template = template.replace('{{AT_A_GLANCE_TABLE}}', atAGlanceTable);
+  template = template.replace('{{COMPLIANCE_TABLE}}', complianceTable);
+  template = template.replace('{{PERF_IMPROVEMENT}}', String(perfImprovement));
+  template = template.replace('{{PERF_TABLE}}', perfTable);
+  template = template.replace('{{FORMAT_SECTION}}', formatSection);
+
   // Write updated README
-  fs.writeFileSync(readmePath, readme);
+  const readmePath = path.join(__dirname, '../README.md');
+  fs.writeFileSync(readmePath, template);
   console.error(`\nUpdated ${readmePath}`);
 }
 

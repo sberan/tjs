@@ -6,9 +6,7 @@ Performance comparison of **tjs** against all major JSON Schema validators using
 
 Head-to-head performance comparison (tjs vs each validator). Only test groups where **both** validators pass all tests are included in performance metrics.
 
-| Validator | Compliance | tjs ops/s | Other ops/s | Winner | Speedup |
-|-----------|----------:|----------:|------------:|:------:|--------:|
-| [ajv](https://ajv.js.org/) | 95% | 22.4M | 7.9M | **tjs** | 2.84x |
+{{SUMMARY_TABLE}}
 
 ## Performance Chart
 
@@ -18,19 +16,13 @@ Head-to-head performance comparison (tjs vs each validator). Only test groups wh
 
 Click on a validator below to see the full benchmark report:
 
-- [**tjs vs ajv**](benchmarks/results/BENCHMARK_AJV.md) - The fastest JSON Schema validator (until now)
+{{DETAILED_REPORTS}}
 
 ## Performance by Draft
 
 Average nanoseconds per test for each JSON Schema draft version (lower is better):
 
-| Draft | tjs | ajv |
-|-------|----:|----:|
-| draft4 | 38 | 80 |
-| draft6 | 39 | 77 |
-| draft7 | 45 | 88 |
-| draft2019-09 | 50 | 175 |
-| draft2020-12 | 46 | 165 |
+{{DRAFT_TABLE}}
 
 ## Methodology
 

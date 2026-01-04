@@ -5,9 +5,7 @@
  *   npx tsx benchmarks/update-svg.ts
  *
  * Reads from:
- *   benchmarks/results/ajv.json
- *   benchmarks/results/zod.json
- *   benchmarks/results/joi.json
+ *   benchmarks/results/*.json (all validator benchmark results)
  */
 
 import * as fs from 'fs';
@@ -15,6 +13,31 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const ALL_VALIDATORS = [
+  'ajv',
+  'zod',
+  'joi',
+  'jsonschema',
+  'is-my-json-valid',
+  'z-schema',
+  'djv',
+  'jsen',
+  'schemasafe',
+];
+
+// Display names for validators
+const validatorDisplayNames: Record<string, string> = {
+  ajv: 'ajv',
+  zod: 'zod',
+  joi: 'joi',
+  jsonschema: 'jsonschema',
+  'is-my-json-valid': 'is-my-json-valid',
+  'z-schema': 'z-schema',
+  djv: 'djv',
+  jsen: 'jsen',
+  schemasafe: 'schemasafe',
+};
 
 interface ValidatorStats {
   nsPerTest: number;
@@ -47,219 +70,153 @@ function formatOps(opsPerSec: number): string {
 function loadBenchmarkData(validator: string): BenchmarkData | null {
   const filePath = path.join(__dirname, 'results', `${validator}.json`);
   if (!fs.existsSync(filePath)) {
-    console.error(`Warning: ${filePath} not found`);
     return null;
   }
   return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
 }
 
-function main() {
-  // Load benchmark data from each validator's JSON file
-  const ajvData = loadBenchmarkData('ajv');
-  const zodData = loadBenchmarkData('zod');
-  const joiData = loadBenchmarkData('joi');
+// Color palette for validators
+const validatorColors: Record<string, { start: string; end: string; label: string }> = {
+  tjs: { start: '#34d399', end: '#10b981', label: '#34d399' },
+  ajv: { start: '#818cf8', end: '#6366f1', label: '#818cf8' },
+  zod: { start: '#fbbf24', end: '#f59e0b', label: '#fbbf24' },
+  joi: { start: '#f87171', end: '#ef4444', label: '#f87171' },
+  jsonschema: { start: '#a78bfa', end: '#8b5cf6', label: '#a78bfa' },
+  'is-my-json-valid': { start: '#67e8f9', end: '#22d3ee', label: '#67e8f9' },
+  'z-schema': { start: '#fb923c', end: '#f97316', label: '#fb923c' },
+  djv: { start: '#4ade80', end: '#22c55e', label: '#4ade80' },
+  jsen: { start: '#f472b6', end: '#ec4899', label: '#f472b6' },
+  schemasafe: { start: '#60a5fa', end: '#3b82f6', label: '#60a5fa' },
+};
 
-  if (!ajvData && !zodData && !joiData) {
-    console.error('No benchmark data found. Run benchmarks first:');
-    console.error('  npm run bench:ajv');
-    console.error('  npm run bench:zod');
-    console.error('  npm run bench:joi');
+function main() {
+  const drafts = ['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'];
+
+  // Load all validator data and calculate ops/sec
+  const validatorOps: Array<{ name: string; ops: number }> = [];
+
+  // First, get tjs stats from any available validator comparison
+  let tjsTotalTests = 0;
+  let tjsTotalNs = 0;
+
+  for (const validator of ALL_VALIDATORS) {
+    const data = loadBenchmarkData(validator);
+    if (data) {
+      // Use the first validator's tjs data
+      if (tjsTotalTests === 0) {
+        for (const draft of drafts) {
+          const s = data.summary[draft];
+          if (!s) continue;
+          tjsTotalTests += s.tests;
+          tjsTotalNs += s.tjs.nsPerTest * s.tests;
+        }
+      }
+
+      // Calculate this validator's ops
+      let totalTests = 0;
+      let totalNs = 0;
+      for (const draft of drafts) {
+        const s = data.summary[draft];
+        if (!s) continue;
+        totalTests += s.tests;
+        totalNs += s.other.nsPerTest * s.tests;
+      }
+
+      if (totalTests > 0 && totalNs > 0) {
+        const ops = (1e9 * totalTests) / totalNs;
+        validatorOps.push({ name: validator, ops });
+      }
+    }
+  }
+
+  // Add tjs
+  if (tjsTotalTests > 0 && tjsTotalNs > 0) {
+    const tjsOps = (1e9 * tjsTotalTests) / tjsTotalNs;
+    validatorOps.unshift({ name: 'tjs', ops: tjsOps });
+  }
+
+  if (validatorOps.length < 2) {
+    console.error('Not enough benchmark data found. Run benchmarks first.');
     process.exit(1);
   }
 
-  // Calculate weighted average ops/sec across all drafts
-  // Each validator comparison has its own test set (only tests where both pass)
-  const drafts = ['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'];
+  // Sort by ops/sec (fastest first)
+  validatorOps.sort((a, b) => b.ops - a.ops);
 
-  // Use ajvData for tjs stats (tjs is consistent, we just need one source)
-  let tjsTotalTests = 0;
-  let tjsTotalNs = 0;
-  const primaryData = ajvData || zodData || joiData;
-  if (primaryData) {
-    for (const draft of drafts) {
-      const s = primaryData.summary[draft];
-      if (!s) continue;
-      tjsTotalTests += s.tests;
-      tjsTotalNs += s.tjs.nsPerTest * s.tests;
+  console.error('Performance (ops/sec):');
+  for (const v of validatorOps) {
+    console.error(`  ${v.name}: ${formatOps(v.ops)} ops/sec`);
+  }
+
+  const tjsOps = validatorOps.find((v) => v.name === 'tjs')?.ops || 0;
+  console.error('\nMultipliers (tjs vs):');
+  for (const v of validatorOps) {
+    if (v.name !== 'tjs') {
+      const mult = tjsOps / v.ops;
+      console.error(`  ${v.name}: ${mult.toFixed(1)}x`);
     }
   }
 
-  // Each validator uses its own test count (only benchmarkable tests where both pass)
-  let ajvTotalTests = 0;
-  let ajvTotalNs = 0;
-  if (ajvData) {
-    for (const draft of drafts) {
-      const s = ajvData.summary[draft];
-      if (!s) continue;
-      ajvTotalTests += s.tests;
-      ajvTotalNs += s.other.nsPerTest * s.tests;
-    }
-  }
+  // Calculate chart dimensions based on number of validators
+  const maxOps = Math.max(...validatorOps.map((v) => v.ops));
+  const numValidators = validatorOps.length;
 
-  let zodTotalTests = 0;
-  let zodTotalNs = 0;
-  if (zodData) {
-    for (const draft of drafts) {
-      const s = zodData.summary[draft];
-      if (!s) continue;
-      zodTotalTests += s.tests;
-      zodTotalNs += s.other.nsPerTest * s.tests;
-    }
-  }
-
-  let joiTotalTests = 0;
-  let joiTotalNs = 0;
-  if (joiData) {
-    for (const draft of drafts) {
-      const s = joiData.summary[draft];
-      if (!s) continue;
-      joiTotalTests += s.tests;
-      joiTotalNs += s.other.nsPerTest * s.tests;
-    }
-  }
-
-  // Convert to ops/sec - each validator uses its own test count
-  const tjsOps = tjsTotalTests > 0 && tjsTotalNs > 0 ? (1e9 * tjsTotalTests) / tjsTotalNs : 0;
-  const ajvOps = ajvTotalTests > 0 && ajvTotalNs > 0 ? (1e9 * ajvTotalTests) / ajvTotalNs : 0;
-  const zodOps = zodTotalTests > 0 && zodTotalNs > 0 ? (1e9 * zodTotalTests) / zodTotalNs : 0;
-  const joiOps = joiTotalTests > 0 && joiTotalNs > 0 ? (1e9 * joiTotalTests) / joiTotalNs : 0;
-
-  console.error(`Performance (ops/sec):`);
-  console.error(`  tjs: ${formatOps(tjsOps)} ops/sec`);
-  console.error(`  ajv: ${formatOps(ajvOps)} ops/sec`);
-  console.error(`  zod: ${formatOps(zodOps)} ops/sec`);
-  console.error(`  joi: ${formatOps(joiOps)} ops/sec`);
-
-  // Calculate max ops for scaling
-  const maxOps = Math.max(tjsOps, ajvOps, zodOps, joiOps);
-
-  // Calculate multipliers (tjs vs others)
-  const ajvMultiplier = ajvOps > 0 ? tjsOps / ajvOps : 0;
-  const zodMultiplier = zodOps > 0 ? tjsOps / zodOps : 0;
-  const joiMultiplier = joiOps > 0 ? tjsOps / joiOps : 0;
-
-  console.error(`\nMultipliers (tjs vs):`);
-  console.error(`  ajv: ${ajvMultiplier > 0 ? ajvMultiplier.toFixed(1) + '×' : 'N/A'}`);
-  console.error(`  zod: ${zodMultiplier > 0 ? zodMultiplier.toFixed(0) + '×' : 'N/A'}`);
-  console.error(`  joi: ${joiMultiplier > 0 ? joiMultiplier.toFixed(0) + '×' : 'N/A'}`);
-
-  // Calculate Y-axis scale
-  const maxOpsRounded = Math.ceil(maxOps / 1e6) * 1e6; // Round up to nearest million
-  const yAxisStep = maxOpsRounded / 3;
-
-  // Define validator styles
-  const validatorStyles: Record<
-    string,
-    {
-      gradient: string;
-      gradientStart: string;
-      gradientEnd: string;
-      labelColor: string;
-      glow?: boolean;
-    }
-  > = {
-    tjs: {
-      gradient: 'grad-tjs',
-      gradientStart: '#34d399',
-      gradientEnd: '#10b981',
-      labelColor: '#34d399',
-      glow: true,
-    },
-    ajv: {
-      gradient: 'grad-ajv',
-      gradientStart: '#818cf8',
-      gradientEnd: '#6366f1',
-      labelColor: '#818cf8',
-    },
-    zod: {
-      gradient: 'grad-zod',
-      gradientStart: '#fbbf24',
-      gradientEnd: '#f59e0b',
-      labelColor: '#fbbf24',
-    },
-    joi: {
-      gradient: 'grad-joi',
-      gradientStart: '#f87171',
-      gradientEnd: '#ef4444',
-      labelColor: '#f87171',
-    },
-  };
-
-  // Create sorted array of validators by ops/sec (fastest first)
-  const validators = [
-    { name: 'tjs', ops: tjsOps },
-    { name: 'ajv', ops: ajvOps },
-    { name: 'zod', ops: zodOps },
-    { name: 'joi', ops: joiOps },
-  ]
-    .filter((v) => v.ops > 0)
-    .sort((a, b) => b.ops - a.ops);
-
-  console.error(`\nSorted order (fastest to slowest): ${validators.map((v) => v.name).join(', ')}`);
-
-  // Calculate bar positions and heights
-  const barWidth = 120;
-  const barSpacing = 160;
-  const startX = 140;
+  // Dynamic chart sizing
+  const chartWidth = Math.max(800, 100 + numValidators * 80);
+  const barWidth = Math.min(60, (chartWidth - 200) / numValidators - 20);
+  const barSpacing = barWidth + 20;
+  const startX = 100;
   const baseY = 400;
   const maxHeight = 300;
 
-  const barsData = validators.map((v, i) => {
-    const height = Math.max(8, Math.round((v.ops / maxOps) * maxHeight));
-    const x = startX + i * barSpacing;
-    const y = baseY - height;
-    const style = validatorStyles[v.name];
-    const multiplier = v.name === 'tjs' ? null : tjsOps / v.ops;
-    return { ...v, height, x, y, style, multiplier };
-  });
+  // Calculate Y-axis scale
+  const maxOpsRounded = Math.ceil(maxOps / 1e6) * 1e6;
+  const yAxisStep = maxOpsRounded / 3;
 
   // Generate gradient definitions
-  const gradientDefs = validators
+  const gradientDefs = validatorOps
     .map((v) => {
-      const style = validatorStyles[v.name];
-      return `    <linearGradient id="${style.gradient}" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:${style.gradientStart};stop-opacity:1" />
-      <stop offset="100%" style="stop-color:${style.gradientEnd};stop-opacity:1" />
+      const colors = validatorColors[v.name] || { start: '#94a3b8', end: '#64748b' };
+      return `    <linearGradient id="grad-${v.name.replace(/[^a-z0-9]/gi, '-')}" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:${colors.start};stop-opacity:1" />
+      <stop offset="100%" style="stop-color:${colors.end};stop-opacity:1" />
     </linearGradient>`;
     })
     .join('\n');
 
-  // Generate bars SVG
-  const barsSvg = barsData
-    .map((bar) => {
-      const filter = bar.style.glow ? ' filter="url(#glow-tjs)"' : '';
-      const rx = Math.min(8, bar.height / 2);
-      return `  <!-- ${bar.name}: ${formatOps(bar.ops)} = ${bar.height}px height -->
-  <rect x="${bar.x}" y="${bar.y}" width="${barWidth}" height="${bar.height}" rx="${rx}" fill="url(#${bar.style.gradient})"${filter}/>
-  <text x="${bar.x + barWidth / 2}" y="440" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="600">${bar.name}</text>
-  <text x="${bar.x + barWidth / 2}" y="${bar.y - 15}" text-anchor="middle" fill="${bar.style.labelColor}" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">${formatOps(bar.ops)}</text>`;
+  // Generate bars
+  const barsSvg = validatorOps
+    .map((v, i) => {
+      const height = Math.max(8, Math.round((v.ops / maxOps) * maxHeight));
+      const x = startX + i * barSpacing;
+      const y = baseY - height;
+      const rx = Math.min(6, height / 2);
+      const colors = validatorColors[v.name] || { label: '#94a3b8' };
+      const filter = v.name === 'tjs' ? ' filter="url(#glow-tjs)"' : '';
+      const gradientId = `grad-${v.name.replace(/[^a-z0-9]/gi, '-')}`;
+      const displayName = validatorDisplayNames[v.name] || v.name;
+
+      // Truncate long names
+      const labelName = displayName.length > 12 ? displayName.substring(0, 10) + '..' : displayName;
+
+      return `  <!-- ${v.name}: ${formatOps(v.ops)} = ${height}px height -->
+  <rect x="${x}" y="${y}" width="${barWidth}" height="${height}" rx="${rx}" fill="url(#${gradientId})"${filter}/>
+  <text x="${x + barWidth / 2}" y="425" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">${labelName}</text>
+  <text x="${x + barWidth / 2}" y="${y - 8}" text-anchor="middle" fill="${colors.label}" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">${formatOps(v.ops)}</text>`;
     })
     .join('\n\n');
 
-  // Generate multiplier badges (show between adjacent bars, comparing to tjs)
-  const multiplierBadges = barsData
-    .slice(1)
-    .map((bar, i) => {
-      if (!bar.multiplier) return '';
-      const prevBar = barsData[i];
-      const badgeX = (prevBar.x + barWidth + bar.x) / 2 - 30;
-      const badgeY = Math.max(Math.max(prevBar.y, bar.y) - 30, 100);
-      const multiplierText =
-        bar.multiplier >= 10 ? `${bar.multiplier.toFixed(0)}×` : `${bar.multiplier.toFixed(1)}×`;
-      return `  <rect x="${badgeX}" y="${badgeY}" width="60" height="28" rx="14" fill="#1e293b" stroke="#334155" stroke-width="1"/>
-  <text x="${badgeX + 30}" y="${badgeY + 19}" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600">${multiplierText}</text>`;
-    })
-    .filter((s) => s)
-    .join('\n\n');
+  // Generate grid lines based on chart width
+  const gridEndX = startX + (numValidators - 1) * barSpacing + barWidth + 20;
 
   // Generate SVG
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500">
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${chartWidth} 480">
   <defs>
     <!-- Gradients for bars -->
 ${gradientDefs}
     <!-- Glow effects -->
     <filter id="glow-tjs" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
+      <feGaussianBlur stdDeviation="6" result="coloredBlur"/>
       <feMerge>
         <feMergeNode in="coloredBlur"/>
         <feMergeNode in="SourceGraphic"/>
@@ -268,31 +225,31 @@ ${gradientDefs}
   </defs>
 
   <!-- Background -->
-  <rect width="800" height="500" fill="#0f172a"/>
+  <rect width="${chartWidth}" height="480" fill="#0f172a"/>
 
   <!-- Subtle grid pattern -->
   <g opacity="0.1">
-    <line x1="100" y1="400" x2="750" y2="400" stroke="#94a3b8" stroke-width="1"/>
-    <line x1="100" y1="300" x2="750" y2="300" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
-    <line x1="100" y1="200" x2="750" y2="200" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
-    <line x1="100" y1="100" x2="750" y2="100" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
+    <line x1="80" y1="400" x2="${gridEndX}" y2="400" stroke="#94a3b8" stroke-width="1"/>
+    <line x1="80" y1="300" x2="${gridEndX}" y2="300" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
+    <line x1="80" y1="200" x2="${gridEndX}" y2="200" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
+    <line x1="80" y1="100" x2="${gridEndX}" y2="100" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
   </g>
 
   <!-- Y-axis labels -->
-  <text x="90" y="405" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="14">0</text>
-  <text x="90" y="305" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="14">${formatOps(yAxisStep)}</text>
-  <text x="90" y="205" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="14">${formatOps(yAxisStep * 2)}</text>
-  <text x="90" y="105" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="14">${formatOps(yAxisStep * 3)}</text>
+  <text x="70" y="405" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">0</text>
+  <text x="70" y="305" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">${formatOps(yAxisStep)}</text>
+  <text x="70" y="205" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">${formatOps(yAxisStep * 2)}</text>
+  <text x="70" y="105" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">${formatOps(yAxisStep * 3)}</text>
 
   <!-- Title -->
-  <text x="400" y="45" text-anchor="middle" fill="#f1f5f9" font-family="system-ui, -apple-system, sans-serif" font-size="24" font-weight="bold">Validation Performance</text>
-  <text x="400" y="75" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="16">Operations per second (higher is better)</text>
+  <text x="${chartWidth / 2}" y="35" text-anchor="middle" fill="#f1f5f9" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">JSON Schema Validator Performance</text>
+  <text x="${chartWidth / 2}" y="60" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="14">Operations per second (higher is better)</text>
 
   <!-- Bars -->
 ${barsSvg}
 
-  <!-- Multiplier badges -->
-${multiplierBadges}
+  <!-- Legend note -->
+  <text x="${chartWidth / 2}" y="460" text-anchor="middle" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="11">Using JSON Schema Test Suite · Only tests where both validators pass are compared</text>
 </svg>
 `;
 

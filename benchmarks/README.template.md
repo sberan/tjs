@@ -16,17 +16,12 @@
 
 ![Benchmark](assets/benchmark.svg)
 
-100% spec compliance. 65% faster than ajv. Zero dependencies. Full TypeScript inference.
+{{TAGLINE}}
 
 
 ## At a Glance
 
-| | tjs | [ajv](https://github.com/ajv-validator/ajv) | [zod](https://github.com/colinhacks/zod) | [joi](https://github.com/hapijs/joi) |
-|---|:---:|:---:|:---:|:---:|
-| **JSON Schema compliance** | 100% | 95% | Basic | None |
-| **TypeScript inference** | Built-in | Plugin | Built-in | None |
-| **Dependencies** | 0 | 4+ | 0 | 5+ |
-| **Performance** | Fastest | Fast | Slow | Slow |
+{{AT_A_GLANCE_TABLE}}
 
 ## Installation
 
@@ -67,38 +62,20 @@ const user = User.assert(data);
 
 tjs passes the entire [JSON Schema Test Suite](https://github.com/json-schema-org/JSON-Schema-Test-Suite) — the official compliance benchmark:
 
-| Draft | Compliance |
-|-------|------------|
-| draft-04 | 100% (882/882) |
-| draft-06 | 100% (1170/1170) |
-| draft-07 | 100% (1534/1534) |
-| draft-2019-09 | 100% (1941/1941) |
-| draft-2020-12 | 100% (1990/1990) |
-| **Total** | **100% (7517/7517)** |
+{{COMPLIANCE_TABLE}}
 
 See [COMPLIANCE.md](COMPLIANCE.md) for details.
 
 ### Blazing Fast
 
 See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance comparison.
-tjs uses JIT compilation to generate optimized validation code — **65% faster than ajv** overall:
+tjs uses JIT compilation to generate optimized validation code — **{{PERF_IMPROVEMENT}}% faster than ajv** overall:
 
 ```
-Performance vs ajv (JSON Schema Test Suite):
---------------------------------------------------------------------------------
-Draft          Files   Tests | tjs ns/test  ajv ns/test      Diff
---------------------------------------------------------------------------------
-draft-04         38     790 |         38           80      -53%
-draft-06         49    1120 |         39           77      -49%
-draft-07         54    1324 |         45           88      -49%
-draft-2019-09    69    1703 |         50          175      -71%
-draft-2020-12    68    1665 |         46          165      -72%
---------------------------------------------------------------------------------
-TOTAL            278    6602 |         45          127      -65%
---------------------------------------------------------------------------------
+{{PERF_TABLE}}
 ```
 
-
+{{FORMAT_SECTION}}
 
 #### Why is tjs faster?
 
