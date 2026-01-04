@@ -4,6 +4,11 @@
  * Benchmarks at the FILE level (e.g., ref.json, allOf.json) for meaningful
  * keyword-level insights with minimal overhead.
  *
+ * METHODOLOGY:
+ *   All validators are configured to report the first validation error (not all errors).
+ *   This ensures a fair comparison since tjs always provides detailed error objects.
+ *   For schemasafe, this means enabling { includeErrors: true }.
+ *
  * Usage:
  *   npm run bench [drafts...] [--filter <regex>] [--per-test] [--validator <name>] [--json <file>]
  *
@@ -16,7 +21,7 @@
  *   z-schema      - JSON Schema validator with async support
  *   djv           - Dynamic JSON Schema Validator
  *   jsen          - JSON Sentinel, built for speed
- *   schemasafe    - Safe JSON Schema validator with code generation
+ *   schemasafe    - Safe JSON Schema validator with code generation (with error reporting)
  *
  * Examples:
  *   npm run bench                            # tjs vs ajv (default)
@@ -381,7 +386,8 @@ function compileFileTestsWithDesc(
       } catch {}
     } else if (compareValidator === 'schemasafe') {
       try {
-        const validate = schemasafe(group.schema as object, { mode: 'lax' });
+        // Enable includeErrors for fair comparison - both validators report first error
+        const validate = schemasafe(group.schema as object, { mode: 'lax', includeErrors: true });
         otherValidator = (data: unknown) => validate(data) as boolean;
       } catch {}
     }
@@ -527,7 +533,8 @@ function compileFileTests(
       } catch {}
     } else if (compareValidator === 'schemasafe') {
       try {
-        const validate = schemasafe(group.schema as object, { mode: 'lax' });
+        // Enable includeErrors for fair comparison - both validators report first error
+        const validate = schemasafe(group.schema as object, { mode: 'lax', includeErrors: true });
         otherValidator = (data: unknown) => validate(data) as boolean;
       } catch {}
     }

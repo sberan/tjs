@@ -340,7 +340,8 @@ async function createValidatorFactory(
     const { validator: schemasafe } = await import('@exodus/schemasafe');
     return (schema: unknown) => {
       try {
-        const validate = schemasafe(schema as object, { mode: 'lax' });
+        // Enable includeErrors for fair comparison - both validators report first error
+        const validate = schemasafe(schema as object, { mode: 'lax', includeErrors: true });
         return (data: unknown) => validate(data) as boolean;
       } catch {
         return null;

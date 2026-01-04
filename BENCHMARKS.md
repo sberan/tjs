@@ -2,6 +2,12 @@
 
 Performance comparison of **tjs** vs **[ajv](https://ajv.js.org/)** using the official [JSON Schema Test Suite](https://github.com/json-schema-org/JSON-Schema-Test-Suite).
 
+## Methodology
+
+All validators are configured to report the **first validation error** (not all errors). This ensures a fair comparison since tjs always provides detailed error objects with instance path, schema path, keyword, parameters, and human-readable message.
+
+For validators that support optional error reporting (like schemasafe), error reporting is enabled to match tjs's behavior.
+
 ## Summary
 
 | Draft | Files | Tests | tjs pass | tjs fail | tjs ops/s | ajv pass | ajv fail | ajv ops/s | Diff |
