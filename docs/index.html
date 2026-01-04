@@ -776,6 +776,126 @@
   </footer>
 
   <script type="module">
+    // Generate TypeScript type from JSON Schema
+    function schemaToType(schema, indent = 0, defs = null, visited = new Set()) {
+      if (schema === true) return 'unknown';
+      if (schema === false) return 'never';
+      if (typeof schema !== 'object' || schema === null) return 'unknown';
+
+      const pad = '  '.repeat(indent);
+      const pad1 = '  '.repeat(indent + 1);
+
+      // Store $defs for reference resolution
+      if (schema.$defs) defs = schema.$defs;
+      if (schema.definitions) defs = schema.definitions;
+
+      // Handle $ref
+      if (schema.$ref) {
+        const ref = schema.$ref;
+        if (ref === '#') return 'T /* recursive */';
+        if (ref.startsWith('#/$defs/') || ref.startsWith('#/definitions/')) {
+          const name = ref.split('/').pop();
+          if (defs && defs[name]) {
+            if (visited.has(name)) return name;
+            visited.add(name);
+            return schemaToType(defs[name], indent, defs, visited);
+          }
+        }
+        return 'unknown /* $ref */';
+      }
+
+      // Handle const
+      if ('const' in schema) {
+        return JSON.stringify(schema.const);
+      }
+
+      // Handle enum
+      if (schema.enum) {
+        return schema.enum.map(v => JSON.stringify(v)).join(' | ');
+      }
+
+      // Handle oneOf
+      if (schema.oneOf) {
+        const types = schema.oneOf.map(s => schemaToType(s, indent, defs, visited));
+        if (types.length <= 3 && types.every(t => t.length < 40)) {
+          return types.join(' | ');
+        }
+        return '\n' + types.map(t => pad + '  | ' + t).join('\n');
+      }
+
+      // Handle anyOf
+      if (schema.anyOf) {
+        return schema.anyOf.map(s => schemaToType(s, indent, defs, visited)).join(' | ');
+      }
+
+      // Handle allOf
+      if (schema.allOf) {
+        return schema.allOf.map(s => schemaToType(s, indent, defs, visited)).join(' & ');
+      }
+
+      // Handle type
+      const type = schema.type;
+      if (Array.isArray(type)) {
+        return type.map(t => schemaToType({ ...schema, type: t }, indent, defs, visited)).join(' | ');
+      }
+
+      switch (type) {
+        case 'string': return 'string';
+        case 'number': return 'number';
+        case 'integer': return 'number';
+        case 'boolean': return 'boolean';
+        case 'null': return 'null';
+        case 'array': {
+          if (schema.prefixItems) {
+            const items = schema.prefixItems.map(s => schemaToType(s, indent, defs, visited));
+            const rest = schema.items ? schemaToType(schema.items, indent, defs, visited) : null;
+            if (rest && rest !== 'unknown') {
+              return `[${items.join(', ')}, ...${rest}[]]`;
+            }
+            return `[${items.join(', ')}]`;
+          }
+          if (schema.items) {
+            return `${schemaToType(schema.items, indent, defs, visited)}[]`;
+          }
+          return 'unknown[]';
+        }
+        case 'object': {
+          const props = schema.properties || {};
+          const required = new Set(schema.required || []);
+          const keys = Object.keys(props);
+
+          if (keys.length === 0) {
+            if (schema.additionalProperties === false) return '{}';
+            if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
+              return `Record<string, ${schemaToType(schema.additionalProperties, indent, defs, visited)}>`;
+            }
+            return 'Record<string, unknown>';
+          }
+
+          const lines = keys.map(key => {
+            const opt = required.has(key) ? '' : '?';
+            const propType = schemaToType(props[key], indent + 1, defs, visited);
+            return `${pad1}${key}${opt}: ${propType};`;
+          });
+
+          if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
+            lines.push(`${pad1}[key: string]: ${schemaToType(schema.additionalProperties, indent + 1, defs, visited)};`);
+          }
+
+          return `{\n${lines.join('\n')}\n${pad}}`;
+        }
+        default:
+          // No type specified, try to infer
+          if (schema.properties) {
+            return schemaToType({ ...schema, type: 'object' }, indent, defs, visited);
+          }
+          if (schema.items || schema.prefixItems) {
+            return schemaToType({ ...schema, type: 'array' }, indent, defs, visited);
+          }
+          return 'unknown';
+      }
+    }
+
     const examples = {
       user: {
         schema: {
@@ -791,12 +911,7 @@
           name: 'Alice',
           email: 'alice@example.com',
           age: 28
-        },
-        type: `type User = {
-  name: string;
-  email: string;
-  age?: number;
-}`
+        }
       },
       union: {
         schema: {
@@ -823,10 +938,7 @@
         data: {
           kind: 'circle',
           radius: 5
-        },
-        type: `type Shape =
-  | { kind: "circle"; radius: number }
-  | { kind: "rectangle"; width: number; height: number }`
+        }
       },
       recursive: {
         schema: {
@@ -842,12 +954,7 @@
           value: 10,
           left: { value: 5 },
           right: { value: 15, left: { value: 12 } }
-        },
-        type: `type TreeNode = {
-  value: number;
-  left?: TreeNode;
-  right?: TreeNode;
-}`
+        }
       },
       formats: {
         schema: {
@@ -867,14 +974,7 @@
           id: '550e8400-e29b-41d4-a716-446655440000',
           created: '2024-01-15T10:30:00Z',
           ip: '192.168.1.1'
-        },
-        type: `type Contact = {
-  email: string;
-  website?: string;
-  id?: string;
-  created?: string;
-  ip?: string;
-}`
+        }
       },
       conditional: {
         schema: {
@@ -892,12 +992,7 @@
           type: 'business',
           name: 'Acme Corp',
           taxId: '12-3456789'
-        },
-        type: `type Account = {
-  type: "personal" | "business";
-  name: string;
-  taxId?: string;  // required if type="business"
-}`
+        }
       }
     };
 
@@ -924,7 +1019,6 @@
       const ex = examples[name];
       schemaEditor.value = JSON.stringify(ex.schema, null, 2);
       dataEditor.value = JSON.stringify(ex.data, null, 2);
-      inferredType.textContent = ex.type;
       tabs.forEach(t => t.classList.toggle('active', t.dataset.example === name));
       validate();
     }
@@ -935,6 +1029,7 @@
         schema = JSON.parse(schemaEditor.value);
       } catch (e) {
         showStatus('error', 'Invalid schema JSON: ' + e.message);
+        inferredType.textContent = '// invalid JSON';
         return;
       }
       try {
@@ -942,6 +1037,14 @@
       } catch (e) {
         showStatus('error', 'Invalid data JSON: ' + e.message);
         return;
+      }
+
+      // Update inferred type display
+      try {
+        const typeStr = schemaToType(schema);
+        inferredType.textContent = `type T = ${typeStr}`;
+      } catch (e) {
+        inferredType.textContent = '// could not infer type';
       }
 
       if (!tjs) {
