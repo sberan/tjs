@@ -7,10 +7,23 @@
  * Usage:
  *   npm run bench [drafts...] [--filter <regex>] [--per-test] [--validator <name>] [--json <file>]
  *
+ * Supported validators:
+ *   ajv           - The fastest JSON Schema validator (default)
+ *   zod           - TypeScript-first schema validation
+ *   joi           - Object schema validation (via enjoi)
+ *   jsonschema    - Simple and lightweight validator
+ *   is-my-json-valid - Code-generation based fast validator
+ *   z-schema      - JSON Schema validator with async support
+ *   djv           - Dynamic JSON Schema Validator
+ *   jsen          - JSON Sentinel, built for speed
+ *   schemasafe    - Safe JSON Schema validator with code generation
+ *
  * Examples:
  *   npm run bench                            # tjs vs ajv (default)
  *   npm run bench -v zod                     # tjs vs zod
  *   npm run bench -v joi                     # tjs vs joi
+ *   npm run bench -v schemasafe              # tjs vs schemasafe
+ *   npm run bench -v jsonschema              # tjs vs jsonschema
  *   npm run bench draft7 --filter ref        # Only ref-related files
  *   npm run bench --filter "format|pattern"  # format or pattern files
  *   npm run bench draft2019-09               # Single draft
@@ -32,6 +45,18 @@ import addFormats2019 from 'ajv-formats-draft2019';
 import { z } from 'zod';
 // @ts-ignore - no types available
 import enjoi from 'enjoi';
+// @ts-ignore - no types available
+import { Validator as JsonSchemaValidator } from 'jsonschema';
+// @ts-ignore - no types available
+import isMyJsonValid from 'is-my-json-valid';
+// @ts-ignore - no types available
+import ZSchema from 'z-schema';
+// @ts-ignore - no types available
+import djv from 'djv';
+// @ts-ignore - no types available
+import jsen from 'jsen';
+// @ts-ignore - no types available
+import { validator as schemasafe } from '@exodus/schemasafe';
 import { createValidator } from '../src/core/index.js';
 import type { JsonSchema } from '../src/types.js';
 
@@ -52,7 +77,16 @@ interface TestGroup {
   isFormatTest?: boolean;
 }
 
-type CompareValidator = 'ajv' | 'zod' | 'joi';
+type CompareValidator =
+  | 'ajv'
+  | 'zod'
+  | 'joi'
+  | 'jsonschema'
+  | 'is-my-json-valid'
+  | 'z-schema'
+  | 'djv'
+  | 'jsen'
+  | 'schemasafe';
 
 interface CompiledTest {
   tjsValidator: (data: unknown) => boolean;
@@ -318,6 +352,38 @@ function compileFileTestsWithDesc(
         const joiSchema = enjoi.schema(group.schema as object);
         otherValidator = (data: unknown) => !joiSchema.validate(data).error;
       } catch {}
+    } else if (compareValidator === 'jsonschema') {
+      try {
+        const jsv = new JsonSchemaValidator();
+        otherValidator = (data: unknown) =>
+          jsv.validate(data, group.schema as object).errors.length === 0;
+      } catch {}
+    } else if (compareValidator === 'is-my-json-valid') {
+      try {
+        const validate = isMyJsonValid(group.schema as object);
+        otherValidator = (data: unknown) => validate(data) as boolean;
+      } catch {}
+    } else if (compareValidator === 'z-schema') {
+      try {
+        const zschema = new ZSchema({});
+        otherValidator = (data: unknown) => zschema.validate(data, group.schema as object);
+      } catch {}
+    } else if (compareValidator === 'djv') {
+      try {
+        const env = djv();
+        env.addSchema('test', group.schema as object);
+        otherValidator = (data: unknown) => env.validate('test', data) === undefined;
+      } catch {}
+    } else if (compareValidator === 'jsen') {
+      try {
+        const validate = jsen(group.schema as object);
+        otherValidator = (data: unknown) => validate(data) as boolean;
+      } catch {}
+    } else if (compareValidator === 'schemasafe') {
+      try {
+        const validate = schemasafe(group.schema as object, { mode: 'lax' });
+        otherValidator = (data: unknown) => validate(data) as boolean;
+      } catch {}
     }
 
     // First pass: check compliance for all tests in this group
@@ -431,6 +497,38 @@ function compileFileTests(
       try {
         const joiSchema = enjoi.schema(group.schema as object);
         otherValidator = (data: unknown) => !joiSchema.validate(data).error;
+      } catch {}
+    } else if (compareValidator === 'jsonschema') {
+      try {
+        const jsv = new JsonSchemaValidator();
+        otherValidator = (data: unknown) =>
+          jsv.validate(data, group.schema as object).errors.length === 0;
+      } catch {}
+    } else if (compareValidator === 'is-my-json-valid') {
+      try {
+        const validate = isMyJsonValid(group.schema as object);
+        otherValidator = (data: unknown) => validate(data) as boolean;
+      } catch {}
+    } else if (compareValidator === 'z-schema') {
+      try {
+        const zschema = new ZSchema({});
+        otherValidator = (data: unknown) => zschema.validate(data, group.schema as object);
+      } catch {}
+    } else if (compareValidator === 'djv') {
+      try {
+        const env = djv();
+        env.addSchema('test', group.schema as object);
+        otherValidator = (data: unknown) => env.validate('test', data) === undefined;
+      } catch {}
+    } else if (compareValidator === 'jsen') {
+      try {
+        const validate = jsen(group.schema as object);
+        otherValidator = (data: unknown) => validate(data) as boolean;
+      } catch {}
+    } else if (compareValidator === 'schemasafe') {
+      try {
+        const validate = schemasafe(group.schema as object, { mode: 'lax' });
+        otherValidator = (data: unknown) => validate(data) as boolean;
       } catch {}
     }
 
@@ -707,7 +805,18 @@ async function main() {
       jsonFile = args[++i] || 'benchmark.json';
     } else if (arg === '--validator' || arg === '-v') {
       const v = args[++i]?.toLowerCase();
-      if (v && ['ajv', 'zod', 'joi'].includes(v)) {
+      const validValidators = [
+        'ajv',
+        'zod',
+        'joi',
+        'jsonschema',
+        'is-my-json-valid',
+        'z-schema',
+        'djv',
+        'jsen',
+        'schemasafe',
+      ];
+      if (v && validValidators.includes(v)) {
         compareValidator = v as CompareValidator;
       }
     } else if (['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'].includes(arg)) {

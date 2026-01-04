@@ -52,6 +52,12 @@ const validatorLinks: Record<string, string> = {
   ajv: '[ajv](https://ajv.js.org/)',
   zod: '[zod](https://zod.dev/)',
   joi: '[joi](https://joi.dev/)',
+  jsonschema: '[jsonschema](https://www.npmjs.com/package/jsonschema)',
+  'is-my-json-valid': '[is-my-json-valid](https://www.npmjs.com/package/is-my-json-valid)',
+  'z-schema': '[z-schema](https://github.com/zaggino/z-schema)',
+  djv: '[djv](https://github.com/korzio/djv)',
+  jsen: '[jsen](https://github.com/bugventure/jsen)',
+  schemasafe: '[@exodus/schemasafe](https://github.com/ExodusMovement/schemasafe)',
 };
 
 function formatOpsPerSec(nsPerTest: number): string {

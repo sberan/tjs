@@ -144,8 +144,20 @@ function compareValidator(validator: string): ValidatorComparison | null {
   };
 }
 
+const ALL_VALIDATORS = [
+  'ajv',
+  'zod',
+  'joi',
+  'jsonschema',
+  'is-my-json-valid',
+  'z-schema',
+  'djv',
+  'jsen',
+  'schemasafe',
+];
+
 function generatePrComment(): string {
-  const validators = ['ajv', 'zod', 'joi'];
+  const validators = ALL_VALIDATORS;
   const comparisons = validators.map(compareValidator).filter((c) => c !== null);
 
   if (comparisons.length === 0) {
@@ -226,7 +238,7 @@ function generatePrComment(): string {
 }
 
 function generatePrBody(): string {
-  const validators = ['ajv', 'zod', 'joi'];
+  const validators = ALL_VALIDATORS;
   const comparisons = validators.map(compareValidator).filter((c) => c !== null);
 
   const lines: string[] = [];

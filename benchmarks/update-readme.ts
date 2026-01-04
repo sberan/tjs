@@ -5,9 +5,7 @@
  *   npx tsx benchmarks/update-readme.ts
  *
  * Reads from:
- *   benchmarks/results/ajv.json
- *   benchmarks/results/zod.json
- *   benchmarks/results/joi.json
+ *   benchmarks/results/*.json (all validator benchmark results)
  *   tests/json-schema-test-suite/ (for compliance counts)
  */
 
@@ -17,6 +15,18 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SUITE_BASE = path.join(__dirname, '../tests/json-schema-test-suite');
+
+const ALL_VALIDATORS = [
+  'ajv',
+  'zod',
+  'joi',
+  'jsonschema',
+  'is-my-json-valid',
+  'z-schema',
+  'djv',
+  'jsen',
+  'schemasafe',
+];
 
 interface ValidatorStats {
   nsPerTest: number;
