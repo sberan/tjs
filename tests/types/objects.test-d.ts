@@ -1,5 +1,6 @@
 import { schema, struct } from 'tjs';
 import { expectTypeOf } from 'expect-type';
+import type { JsonValue } from 'tjs';
 
 // =============================================================================
 // Struct Helper
@@ -69,7 +70,7 @@ expectTypeOf(LinkedNode.type.next?.value).toBeString();
 const Empty = schema({ type: 'object' });
 Empty.type; // $ExpectType Record<string, unknown>
 
-// All optional properties
+// All optional properties (no additionalProperties = allows any additional properties)
 const AllOptional = schema({
   type: 'object',
   properties: {
@@ -77,9 +78,12 @@ const AllOptional = schema({
     b: { type: 'number' },
   },
 });
-AllOptional.type; // $ExpectType { a?: string; b?: number }
+AllOptional.type; // $ExpectType { a?: string; b?: number } & { [x: string]: JsonValue }
+expectTypeOf(AllOptional.type).toEqualTypeOf<
+  { a?: string; b?: number } & { [x: string]: JsonValue }
+>();
 
-// Some required properties
+// Some required properties (no additionalProperties = allows any additional properties)
 const SomeRequired = schema({
   type: 'object',
   properties: {
@@ -88,9 +92,12 @@ const SomeRequired = schema({
   },
   required: ['a'],
 });
-SomeRequired.type; // $ExpectType { a: string; b?: number }
+SomeRequired.type; // $ExpectType { a: string; b?: number } & { [x: string]: JsonValue }
+expectTypeOf(SomeRequired.type).toEqualTypeOf<
+  { a: string; b?: number } & { [x: string]: JsonValue }
+>();
 
-// All required properties
+// All required properties (no additionalProperties = allows any additional properties)
 const AllRequired = schema({
   type: 'object',
   properties: {
@@ -99,13 +106,16 @@ const AllRequired = schema({
   },
   required: ['a', 'b'],
 });
-AllRequired.type; // $ExpectType { a: string; b: number }
+AllRequired.type; // $ExpectType { a: string; b: number } & { [x: string]: JsonValue }
+expectTypeOf(AllRequired.type).toEqualTypeOf<
+  { a: string; b: number } & { [x: string]: JsonValue }
+>();
 
 // =============================================================================
 // Nested Objects
 // =============================================================================
 
-// Nested objects
+// Nested objects (using additionalProperties: false to test exact structure)
 const Nested = schema({
   type: 'object',
   properties: {
@@ -115,13 +125,15 @@ const Nested = schema({
         value: { type: 'string' },
       },
       required: ['value'],
+      additionalProperties: false,
     },
   },
   required: ['inner'],
+  additionalProperties: false,
 });
 Nested.type; // $ExpectType { inner: { value: string } }
 
-// Deeply nested
+// Deeply nested (using additionalProperties: false to test exact structure)
 const DeepNested = schema({
   type: 'object',
   properties: {
@@ -134,16 +146,19 @@ const DeepNested = schema({
             value: { type: 'number' },
           },
           required: ['value'],
+          additionalProperties: false,
         },
       },
       required: ['level2'],
+      additionalProperties: false,
     },
   },
   required: ['level1'],
+  additionalProperties: false,
 });
 DeepNested.type; // $ExpectType { level1: { level2: { value: number } } }
 
-// Complex nested with mixed required/optional
+// Complex nested with mixed required/optional (using additionalProperties: false)
 const ComplexNested = schema({
   type: 'object',
   properties: {
@@ -154,10 +169,12 @@ const ComplexNested = schema({
         nested: { type: 'number' },
       },
       required: ['nested'],
+      additionalProperties: false,
     },
     optional1: { type: 'boolean' },
   },
   required: ['required1', 'required2'],
+  additionalProperties: false,
 });
 ComplexNested.type; // $ExpectType { required1: string; required2: { nested: number }; optional1?: boolean }
 
@@ -165,7 +182,7 @@ ComplexNested.type; // $ExpectType { required1: string; required2: { nested: num
 // Additional Properties
 // =============================================================================
 
-// additionalProperties: false (exact object)
+// additionalProperties: false (exact object - no index signature)
 const Strict = schema({
   type: 'object',
   properties: {
@@ -175,7 +192,36 @@ const Strict = schema({
 });
 Strict.type; // $ExpectType { id?: string }
 
-// additionalProperties: schema (index signature)
+// additionalProperties: true (explicit - allows any JsonValue)
+const WithAdditionalTrue = schema({
+  type: 'object',
+  properties: {
+    a: { type: 'string' },
+    b: { type: 'boolean' },
+  },
+  required: ['a'],
+  additionalProperties: true,
+});
+WithAdditionalTrue.type; // $ExpectType { a: string; b?: boolean } & { [x: string]: unknown }
+expectTypeOf(WithAdditionalTrue.type).toEqualTypeOf<
+  { a: string; b?: boolean } & { [x: string]: unknown }
+>();
+
+// additionalProperties not specified (defaults to true - allows any JsonValue)
+const WithoutAdditional = schema({
+  type: 'object',
+  properties: {
+    a: { type: 'string' },
+    b: { type: 'boolean' },
+  },
+  required: ['a'],
+});
+WithoutAdditional.type; // $ExpectType { a: string; b?: boolean } & { [x: string]: JsonValue }
+expectTypeOf(WithoutAdditional.type).toEqualTypeOf<
+  { a: string; b?: boolean } & { [x: string]: JsonValue }
+>();
+
+// additionalProperties: schema (index signature with specific type)
 const Dict = schema({
   type: 'object',
   properties: {
@@ -190,34 +236,37 @@ Dict.type; // $ExpectType { id: string; } & { [x: string]: number; }
 // Required Properties Not in Properties
 // =============================================================================
 
-// Required property not defined in properties - gets type unknown
+// Required property not defined in properties - gets type unknown (with additionalProperties: false)
 const MissingRequired = schema({
   type: 'object',
   properties: {
     name: { type: 'string' },
   },
   required: ['name', 'ghost'],
+  additionalProperties: false,
 });
 MissingRequired.type; // $ExpectType { name: string; ghost: unknown }
 
-// Multiple missing required properties
+// Multiple missing required properties (with additionalProperties: false)
 const MultipleMissing = schema({
   type: 'object',
   properties: {
     id: { type: 'number' },
   },
   required: ['id', 'foo', 'bar', 'baz'],
+  additionalProperties: false,
 });
 MultipleMissing.type; // $ExpectType { id: number; foo: unknown; bar: unknown; baz: unknown }
 
-// All required properties missing from properties
+// All required properties missing from properties (with additionalProperties: false)
 const AllMissing = schema({
   type: 'object',
   required: ['a', 'b'],
+  additionalProperties: false,
 });
 AllMissing.type; // $ExpectType { a: unknown; b: unknown; }
 
-// Mix of defined required, missing required, and optional
+// Mix of defined required, missing required, and optional (with additionalProperties: false)
 const MixedRequired = schema({
   type: 'object',
   properties: {
@@ -225,6 +274,7 @@ const MixedRequired = schema({
     optional: { type: 'boolean' },
   },
   required: ['defined', 'undefined_prop'],
+  additionalProperties: false,
 });
 MixedRequired.type; // $ExpectType { defined: string; optional?: boolean; undefined_prop: unknown }
 
@@ -232,11 +282,12 @@ MixedRequired.type; // $ExpectType { defined: string; optional?: boolean; undefi
 // Nullable Objects
 // =============================================================================
 
-// Optional with nullable property
+// Optional with nullable property (with additionalProperties: false)
 const OptionalNullable = schema({
   type: 'object',
   properties: {
     value: { type: ['string', 'null'] },
   },
+  additionalProperties: false,
 });
 OptionalNullable.type; // $ExpectType { value?: string | null }

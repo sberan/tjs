@@ -4,13 +4,14 @@ import { schema } from 'tjs';
 // $ref and $defs - Schema References
 // =============================================================================
 
-// Simple $ref
+// Simple $ref (using additionalProperties: false)
 const SimpleRef = schema({
   $defs: {
     Item: {
       type: 'object',
       properties: { id: { type: 'string' } },
       required: ['id'],
+      additionalProperties: false,
     },
   },
   type: 'array',
@@ -18,7 +19,7 @@ const SimpleRef = schema({
 });
 SimpleRef.type; // $ExpectType { id: string }[]
 
-// Multiple refs to same definition
+// Multiple refs to same definition (using additionalProperties: false)
 const MultiRef = schema({
   $defs: {
     Address: {
@@ -28,6 +29,7 @@ const MultiRef = schema({
         city: { type: 'string' },
       },
       required: ['street', 'city'],
+      additionalProperties: false,
     },
   },
   type: 'object',
@@ -35,10 +37,11 @@ const MultiRef = schema({
     home: { $ref: '#/$defs/Address' },
     work: { $ref: '#/$defs/Address' },
   },
+  additionalProperties: false,
 });
 MultiRef.type; // $ExpectType { home?: { street: string; city: string }; work?: { street: string; city: string } }
 
-// Multiple definitions
+// Multiple definitions (using additionalProperties: false)
 const MultipleDefs = schema({
   $defs: {
     Name: {
@@ -48,6 +51,7 @@ const MultipleDefs = schema({
         last: { type: 'string' },
       },
       required: ['first', 'last'],
+      additionalProperties: false,
     },
     Age: {
       type: 'integer',
@@ -59,6 +63,7 @@ const MultipleDefs = schema({
     age: { $ref: '#/$defs/Age' },
   },
   required: ['name', 'age'],
+  additionalProperties: false,
 });
 MultipleDefs.type; // $ExpectType { name: { first: string; last: string }; age: number }
 
@@ -72,7 +77,7 @@ const RefInAnyOf = schema({
 });
 RefInAnyOf.type; // $ExpectType string | number
 
-// Nested object with refs
+// Nested object with refs (using additionalProperties: false)
 const NestedWithRefs = schema({
   $defs: {
     Coordinate: {
@@ -82,6 +87,7 @@ const NestedWithRefs = schema({
         y: { type: 'number' },
       },
       required: ['x', 'y'],
+      additionalProperties: false,
     },
   },
   type: 'object',
@@ -90,21 +96,24 @@ const NestedWithRefs = schema({
     end: { $ref: '#/$defs/Coordinate' },
   },
   required: ['start', 'end'],
+  additionalProperties: false,
 });
 NestedWithRefs.type; // $ExpectType { start: { x: number; y: number }; end: { x: number; y: number } }
 
-// Deeply nested refs (ref to ref)
+// Deeply nested refs (ref to ref) (using additionalProperties: false)
 const DeepRefs = schema({
   $defs: {
     Inner: {
       type: 'object',
       properties: { value: { type: 'string' } },
       required: ['value'],
+      additionalProperties: false,
     },
     Outer: {
       type: 'object',
       properties: { inner: { $ref: '#/$defs/Inner' } },
       required: ['inner'],
+      additionalProperties: false,
     },
   },
   type: 'object',
@@ -112,6 +121,7 @@ const DeepRefs = schema({
     outer: { $ref: '#/$defs/Outer' },
   },
   required: ['outer'],
+  additionalProperties: false,
 });
 DeepRefs.type; // $ExpectType { outer: { inner: { value: string } } }
 
@@ -182,13 +192,14 @@ TreeNode.type.children?.[0]?.children?.[0]?.value; // $ExpectType number | undef
 // Draft-07 Style: definitions instead of $defs
 // =============================================================================
 
-// Draft-07 uses "definitions" instead of "$defs"
+// Draft-07 uses "definitions" instead of "$defs" (using additionalProperties: false)
 const Draft07Ref = schema({
   definitions: {
     Item: {
       type: 'object',
       properties: { id: { type: 'string' } },
       required: ['id'],
+      additionalProperties: false,
     },
   },
   type: 'array',
@@ -196,7 +207,7 @@ const Draft07Ref = schema({
 });
 Draft07Ref.type; // $ExpectType { id: string }[]
 
-// Mixed $defs and definitions (both should work)
+// Mixed $defs and definitions (both should work) (using additionalProperties: false)
 const MixedDefs = schema({
   $defs: {
     Name: { type: 'string' },
@@ -210,5 +221,6 @@ const MixedDefs = schema({
     age: { $ref: '#/definitions/Age' },
   },
   required: ['name', 'age'],
+  additionalProperties: false,
 });
 MixedDefs.type; // $ExpectType { name: string; age: number }

@@ -1,5 +1,6 @@
 import type { JsonArray, JsonObject, JsonValue } from 'type-fest';
 import { schema } from 'tjs';
+import { expectTypeOf } from 'expect-type';
 
 // =============================================================================
 // JSON Schema Test Suite - Type Level Tests
@@ -63,13 +64,14 @@ ArrayObjectNull.type; // $ExpectType unknown[] | Record<string, unknown> | null
 // Type inference requires type: 'object' to be specified
 // =============================================================================
 
-// object properties validation
+// object properties validation (using additionalProperties: false)
 const ObjectProperties = schema({
   type: 'object',
   properties: {
     foo: { type: 'integer' },
     bar: { type: 'string' },
   },
+  additionalProperties: false,
 });
 ObjectProperties.type; // $ExpectType { foo?: number; bar?: string }
 
@@ -85,22 +87,24 @@ const PropertiesInteraction = schema({
 });
 PropertiesInteraction.type; // $ExpectType { foo?: unknown[]; bar?: unknown[] } & { [x: string]: number }
 
-// properties with boolean schema
+// properties with boolean schema (using additionalProperties: false)
 const PropertiesBoolean = schema({
   type: 'object',
   properties: {
     foo: true,
     bar: false,
   },
+  additionalProperties: false,
 });
 PropertiesBoolean.type; // $ExpectType { foo?: unknown; bar?: never }
 
-// properties with null valued instance properties
+// properties with null valued instance properties (using additionalProperties: false)
 const PropertiesNull = schema({
   type: 'object',
   properties: {
     foo: { type: 'null' },
   },
+  additionalProperties: false,
 });
 PropertiesNull.type; // $ExpectType { foo?: null }
 
@@ -132,12 +136,15 @@ const AdditionalPropertiesOnly = schema({
 });
 AdditionalPropertiesOnly.type; // $ExpectType Record<string, unknown>
 
-// additionalProperties are allowed by default
+// additionalProperties are allowed by default (includes JsonValue index signature)
 const AdditionalPropertiesDefault = schema({
   type: 'object',
   properties: { foo: {}, bar: {} },
 });
-AdditionalPropertiesDefault.type; // $ExpectType { foo?: unknown; bar?: unknown }
+AdditionalPropertiesDefault.type; // $ExpectType { foo?: unknown; bar?: unknown } & { [x: string]: JsonValue }
+expectTypeOf(AdditionalPropertiesDefault.type).toEqualTypeOf<
+  { foo?: unknown; bar?: unknown } & { [x: string]: JsonValue }
+>();
 
 // additionalProperties with null valued instance properties
 const AdditionalPropertiesNull = schema({
@@ -248,23 +255,44 @@ PrefixItemsWithRest.type; // $ExpectType [string, ...number[]]
 // allOf keyword (allOf.json)
 // =============================================================================
 
-// allOf with object schemas
+// allOf with object schemas (using additionalProperties: false)
 const AllOfSchema = schema({
   allOf: [
-    { type: 'object', properties: { bar: { type: 'integer' } }, required: ['bar'] },
-    { type: 'object', properties: { foo: { type: 'string' } }, required: ['foo'] },
+    {
+      type: 'object',
+      properties: { bar: { type: 'integer' } },
+      required: ['bar'],
+      additionalProperties: false,
+    },
+    {
+      type: 'object',
+      properties: { foo: { type: 'string' } },
+      required: ['foo'],
+      additionalProperties: false,
+    },
   ],
 });
 AllOfSchema.type; // $ExpectType { bar: number } & { foo: string }
 
-// allOf with base schema - base properties are included in the intersection
+// allOf with base schema - base properties are included in the intersection (using additionalProperties: false)
 const AllOfWithBase = schema({
   type: 'object',
   properties: { bar: { type: 'integer' } },
   required: ['bar'],
+  additionalProperties: false,
   allOf: [
-    { type: 'object', properties: { foo: { type: 'string' } }, required: ['foo'] },
-    { type: 'object', properties: { baz: { type: 'null' } }, required: ['baz'] },
+    {
+      type: 'object',
+      properties: { foo: { type: 'string' } },
+      required: ['foo'],
+      additionalProperties: false,
+    },
+    {
+      type: 'object',
+      properties: { baz: { type: 'null' } },
+      required: ['baz'],
+      additionalProperties: false,
+    },
   ],
 });
 AllOfWithBase.type; // $ExpectType { bar: number } & { foo: string } & { baz: null }
@@ -340,11 +368,21 @@ const AnyOfAllFalse = schema({
 });
 AnyOfAllFalse.type; // $ExpectType never
 
-// anyOf complex types
+// anyOf complex types (using additionalProperties: false)
 const AnyOfComplex = schema({
   anyOf: [
-    { type: 'object', properties: { bar: { type: 'integer' } }, required: ['bar'] },
-    { type: 'object', properties: { foo: { type: 'string' } }, required: ['foo'] },
+    {
+      type: 'object',
+      properties: { bar: { type: 'integer' } },
+      required: ['bar'],
+      additionalProperties: false,
+    },
+    {
+      type: 'object',
+      properties: { foo: { type: 'string' } },
+      required: ['foo'],
+      additionalProperties: false,
+    },
   ],
 });
 AnyOfComplex.type; // $ExpectType { bar: number } | { foo: string }
@@ -390,11 +428,21 @@ const OneOfAllFalse = schema({
 });
 OneOfAllFalse.type; // $ExpectType never
 
-// oneOf complex types
+// oneOf complex types (using additionalProperties: false)
 const OneOfComplex = schema({
   oneOf: [
-    { type: 'object', properties: { bar: { type: 'integer' } }, required: ['bar'] },
-    { type: 'object', properties: { foo: { type: 'string' } }, required: ['foo'] },
+    {
+      type: 'object',
+      properties: { bar: { type: 'integer' } },
+      required: ['bar'],
+      additionalProperties: false,
+    },
+    {
+      type: 'object',
+      properties: { foo: { type: 'string' } },
+      required: ['foo'],
+      additionalProperties: false,
+    },
   ],
 });
 OneOfComplex.type; // $ExpectType { bar: number } | { foo: string }
@@ -532,7 +580,7 @@ const EnumWithNull = schema({
 });
 EnumWithNull.type; // $ExpectType 6 | null
 
-// enums in properties
+// enums in properties (using additionalProperties: false)
 const EnumInProperties = schema({
   type: 'object',
   properties: {
@@ -540,6 +588,7 @@ const EnumInProperties = schema({
     bar: { enum: ['bar'] },
   },
   required: ['bar'],
+  additionalProperties: false,
 });
 EnumInProperties.type; // $ExpectType { bar: "bar"; foo?: "foo" }
 
@@ -614,13 +663,14 @@ IfBoolFalse.type; // $ExpectType "then" | "else"
 // $ref and $defs keywords (ref.json)
 // =============================================================================
 
-// relative pointer ref to object
+// relative pointer ref to object (using additionalProperties: false)
 const RefToObject = schema({
   type: 'object',
   properties: {
     foo: { type: 'integer' },
     bar: { $ref: '#/properties/foo' },
   },
+  additionalProperties: false,
 });
 // Note: $ref to properties path isn't resolved - needs #/$defs/ format
 RefToObject.type; // $ExpectType { foo?: number; bar?: unknown }
@@ -654,7 +704,7 @@ const RefToBoolFalse = schema({
 });
 RefToBoolFalse.type; // $ExpectType never
 
-// simple ref with $defs
+// simple ref with $defs (using additionalProperties: false)
 const RefWithDefs = schema({
   type: 'object',
   properties: {
@@ -663,6 +713,7 @@ const RefWithDefs = schema({
   $defs: {
     bar: { type: 'string' },
   },
+  additionalProperties: false,
 });
 RefWithDefs.type; // $ExpectType { foo?: string }
 
@@ -723,13 +774,14 @@ UnevaluatedItemsTuple.type; // $ExpectType [string]
 // unevaluatedProperties keyword (unevaluatedProperties.json)
 // =============================================================================
 
-// unevaluatedProperties with adjacent properties
+// unevaluatedProperties with adjacent properties (using additionalProperties: false for type inference)
 const UnevaluatedPropsWithProps = schema({
   type: 'object',
   properties: {
     foo: { type: 'string' },
   },
   unevaluatedProperties: false,
+  additionalProperties: false,
 });
 UnevaluatedPropsWithProps.type; // $ExpectType { foo?: string }
 
@@ -763,7 +815,7 @@ PropertyNamesSchema.type; // $ExpectType unknown
 // required keyword (required.json)
 // =============================================================================
 
-// required validation
+// required validation (using additionalProperties: false)
 const RequiredSchema = schema({
   type: 'object',
   properties: {
@@ -771,39 +823,43 @@ const RequiredSchema = schema({
     bar: {},
   },
   required: ['foo'],
+  additionalProperties: false,
 });
 RequiredSchema.type; // $ExpectType { foo: unknown; bar?: unknown }
 
-// required with empty array
+// required with empty array (using additionalProperties: false)
 const RequiredEmpty = schema({
   type: 'object',
   properties: {
     foo: { type: 'string' },
   },
   required: [],
+  additionalProperties: false,
 });
 RequiredEmpty.type; // $ExpectType { foo?: string }
 
-// required default behavior - all optional
+// required default behavior - all optional (using additionalProperties: false)
 const RequiredDefault = schema({
   type: 'object',
   properties: {
     foo: { type: 'string' },
     bar: { type: 'number' },
   },
+  additionalProperties: false,
 });
 RequiredDefault.type; // $ExpectType { foo?: string; bar?: number }
 
-// all required
-const AllRequired = schema({
+// all required (using additionalProperties: false)
+const AllRequiredSpec = schema({
   type: 'object',
   properties: {
     foo: { type: 'string' },
     bar: { type: 'number' },
   },
   required: ['foo', 'bar'],
+  additionalProperties: false,
 });
-AllRequired.type; // $ExpectType { foo: string; bar: number }
+AllRequiredSpec.type; // $ExpectType { foo: string; bar: number }
 
 // =============================================================================
 // Empty schema
@@ -825,7 +881,7 @@ const CombinedApplicators = schema({
 });
 CombinedApplicators.type; // $ExpectType unknown
 
-// nested objects with refs
+// nested objects with refs (using additionalProperties: false)
 const NestedObjectsWithRefs = schema({
   $defs: {
     Coordinate: {
@@ -835,6 +891,7 @@ const NestedObjectsWithRefs = schema({
         y: { type: 'number' },
       },
       required: ['x', 'y'],
+      additionalProperties: false,
     },
   },
   type: 'object',
@@ -843,10 +900,11 @@ const NestedObjectsWithRefs = schema({
     end: { $ref: '#/$defs/Coordinate' },
   },
   required: ['start', 'end'],
+  additionalProperties: false,
 });
 NestedObjectsWithRefs.type; // $ExpectType { start: { x: number; y: number }; end: { x: number; y: number } }
 
-// items and subitems with refs (complex nested tuple)
+// items and subitems with refs (complex nested tuple) (using additionalProperties: false)
 const ItemsWithRefs = schema({
   $defs: {
     item: {
@@ -857,6 +915,7 @@ const ItemsWithRefs = schema({
     'sub-item': {
       type: 'object',
       required: ['foo'],
+      additionalProperties: false,
     },
   },
   type: 'array',
@@ -865,18 +924,20 @@ const ItemsWithRefs = schema({
 });
 ItemsWithRefs.type; // $ExpectType [[{ foo: unknown }, { foo: unknown }], [{ foo: unknown }, { foo: unknown }], [{ foo: unknown }, { foo: unknown }]]
 
-// oneOf with missing optional property (discriminated union pattern)
+// oneOf with missing optional property (discriminated union pattern) (using additionalProperties: false)
 const DiscriminatedUnion = schema({
   oneOf: [
     {
       type: 'object',
       properties: { bar: true, baz: true },
       required: ['bar'],
+      additionalProperties: false,
     },
     {
       type: 'object',
       properties: { foo: true },
       required: ['foo'],
+      additionalProperties: false,
     },
   ],
 });

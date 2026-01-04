@@ -11,16 +11,26 @@ const AnyOfPrimitives = schema({
 });
 AnyOfPrimitives.type; // $ExpectType string | number
 
-// anyOf - objects
+// anyOf - objects (using additionalProperties: false)
 const AnyOfObjects = schema({
   anyOf: [
-    { type: 'object', properties: { a: { type: 'string' } }, required: ['a'] },
-    { type: 'object', properties: { b: { type: 'number' } }, required: ['b'] },
+    {
+      type: 'object',
+      properties: { a: { type: 'string' } },
+      required: ['a'],
+      additionalProperties: false,
+    },
+    {
+      type: 'object',
+      properties: { b: { type: 'number' } },
+      required: ['b'],
+      additionalProperties: false,
+    },
   ],
 });
 AnyOfObjects.type; // $ExpectType { a: string } | { b: number }
 
-// anyOf - nested inside object
+// anyOf - nested inside object (using additionalProperties: false)
 const NestedAnyOf = schema({
   type: 'object',
   properties: {
@@ -29,6 +39,7 @@ const NestedAnyOf = schema({
     },
   },
   required: ['value'],
+  additionalProperties: false,
 });
 NestedAnyOf.type; // $ExpectType { value: string | number }
 
@@ -54,18 +65,20 @@ ArrayOfUnions.type; // $ExpectType (string | number | null)[]
 // oneOf - Exclusive Union (same as anyOf at type level)
 // =============================================================================
 
-// oneOf - discriminated union
+// oneOf - discriminated union (using additionalProperties: false)
 const OneOf = schema({
   oneOf: [
     {
       type: 'object',
       properties: { kind: { const: 'a' }, a: { type: 'string' } },
       required: ['kind'],
+      additionalProperties: false,
     },
     {
       type: 'object',
       properties: { kind: { const: 'b' }, b: { type: 'number' } },
       required: ['kind'],
+      additionalProperties: false,
     },
   ],
 });
@@ -75,21 +88,46 @@ OneOf.type; // $ExpectType { kind: "a"; a?: string } | { kind: "b"; b?: number }
 // allOf - Intersection Types
 // =============================================================================
 
-// allOf - intersection of objects
+// allOf - intersection of objects (using additionalProperties: false)
 const AllOf = schema({
   allOf: [
-    { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
-    { type: 'object', properties: { age: { type: 'number' } }, required: ['age'] },
+    {
+      type: 'object',
+      properties: { name: { type: 'string' } },
+      required: ['name'],
+      additionalProperties: false,
+    },
+    {
+      type: 'object',
+      properties: { age: { type: 'number' } },
+      required: ['age'],
+      additionalProperties: false,
+    },
   ],
 });
 AllOf.type; // $ExpectType { name: string; } & { age: number; }
 
-// allOf - three schemas
+// allOf - three schemas (using additionalProperties: false)
 const AllOf3 = schema({
   allOf: [
-    { type: 'object', properties: { a: { type: 'string' } }, required: ['a'] },
-    { type: 'object', properties: { b: { type: 'number' } }, required: ['b'] },
-    { type: 'object', properties: { c: { type: 'boolean' } }, required: ['c'] },
+    {
+      type: 'object',
+      properties: { a: { type: 'string' } },
+      required: ['a'],
+      additionalProperties: false,
+    },
+    {
+      type: 'object',
+      properties: { b: { type: 'number' } },
+      required: ['b'],
+      additionalProperties: false,
+    },
+    {
+      type: 'object',
+      properties: { c: { type: 'boolean' } },
+      required: ['c'],
+      additionalProperties: false,
+    },
   ],
 });
 AllOf3.type; // $ExpectType { a: string; } & { b: number; } & { c: boolean; }

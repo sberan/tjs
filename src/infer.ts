@@ -166,6 +166,7 @@ type MapType<T extends JsonSchemaType> = T extends 'string'
               : never;
 
 // Infer object type
+// When additionalProperties is not specified or is true, add index signature for JsonValue
 type InferObject<S extends JsonSchemaBase, Defs, Depth extends unknown[], Root> = S extends {
   properties: infer P extends Record<string, JsonSchema>;
 }
@@ -178,7 +179,10 @@ type InferObject<S extends JsonSchemaBase, Defs, Depth extends unknown[], Root> 
               [K in string as K extends keyof P ? never : K]: Infer<AP, Defs, Depth, Root>;
             }
           : BuildObject<P, S['required'], Defs, Depth, Root>
-      : BuildObject<P, S['required'], Defs, Depth, Root>
+      : // No additionalProperties specified - defaults to allowing any additional properties
+        BuildObject<P, S['required'], Defs, Depth, Root> & {
+          [K in string as K extends keyof P ? never : K]: JsonValue;
+        }
     : S extends { additionalProperties: infer AP }
       ? AP extends false
         ? BuildObject<P, [], Defs, Depth, Root>
@@ -187,10 +191,15 @@ type InferObject<S extends JsonSchemaBase, Defs, Depth extends unknown[], Root> 
               [K in string as K extends keyof P ? never : K]: Infer<AP, Defs, Depth, Root>;
             }
           : BuildObject<P, [], Defs, Depth, Root>
-      : BuildObject<P, [], Defs, Depth, Root>
+      : // No additionalProperties specified - defaults to allowing any additional properties
+        BuildObject<P, [], Defs, Depth, Root> & {
+          [K in string as K extends keyof P ? never : K]: JsonValue;
+        }
   : // No properties - check for required without properties
     S extends { required: readonly string[] }
-    ? BuildObject<{}, S['required'], Defs, Depth, Root>
+    ? S extends { additionalProperties: false }
+      ? BuildObject<{}, S['required'], Defs, Depth, Root>
+      : BuildObject<{}, S['required'], Defs, Depth, Root> & Record<string, JsonValue>
     : Record<string, unknown>;
 
 // Build object with required/optional handling
