@@ -35,6 +35,8 @@
     "format:check": "prettier --check .",
     "prepare": "husky",
     "bench": "tsx benchmarks/bench.ts",
+    "bench:all": "npm run bench:ajv && npm run bench:zod && npm run bench:joi && npm run bench:jsonschema && npm run bench:is-my-json-valid && npm run bench:z-schema && npm run bench:djv && npm run bench:jsen && npm run bench:schemasafe && npm run bench:summary",
+    "bench:summary": "tsx benchmarks/generate-summary.ts && tsx benchmarks/update-readme.ts",
     "bench:ajv": "tsx benchmarks/bench.ts -v ajv --json benchmarks/results/ajv.json && tsx benchmarks/json-to-markdown.ts benchmarks/results/ajv.json > benchmarks/results/BENCHMARK_AJV.md",
     "bench:zod": "tsx benchmarks/bench.ts -v zod --json benchmarks/results/zod.json && tsx benchmarks/json-to-markdown.ts benchmarks/results/zod.json > benchmarks/results/BENCHMARK_ZOD.md",
     "bench:joi": "tsx benchmarks/bench.ts -v joi --json benchmarks/results/joi.json && tsx benchmarks/json-to-markdown.ts benchmarks/results/joi.json > benchmarks/results/BENCHMARK_JOI.md",
