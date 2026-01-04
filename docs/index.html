@@ -797,8 +797,46 @@
   <script src="https://unpkg.com/typescript@5/lib/typescript.js"></script>
   <script src="https://unpkg.com/monaco-editor@0.45.0/min/vs/loader.js"></script>
   <script type="module">
-    // Load tjs type definitions
-    const tjsDts = await fetch('./tjs.d.ts').then(r => r.text());
+    // Load tjs type definitions from dist
+    const [typesDts, inferDts] = await Promise.all([
+      fetch('./dist/types.d.ts').then(r => r.text()),
+      fetch('./dist/infer.d.ts').then(r => r.text()),
+    ]);
+
+    // Minimal lib.d.ts shims needed for type inference
+    const libShims = `
+declare global {
+  interface Boolean {}
+  interface CallableFunction {}
+  interface NewableFunction {}
+  interface String {}
+  interface Number {}
+  interface Function {}
+  interface Object {}
+  interface IArguments {}
+  interface RegExp {}
+  interface Array<T> { length: number; [n: number]: T; }
+  interface ReadonlyArray<T> { readonly length: number; readonly [n: number]: T; }
+}
+`;
+
+    // Validator interface and schema function
+    const validatorDts = `
+interface Validator<T> {
+  (data: unknown): boolean;
+  validate(data: unknown): { valid: true; value: T; error: undefined } | { valid: false; value: undefined; error: unknown[] };
+  assert(data: unknown): T;
+  readonly type: T;
+  errors: unknown[] | null;
+}
+declare function schema<const T extends JsonSchema>(definition: T): Validator<Infer<T>>;
+`;
+
+    // Combine types, stripping imports and adding shims
+    const tjsDts = libShims
+      + typesDts.replace(/export /g, '')
+      + inferDts.replace(/import[^;]+;/g, '').replace(/export \{\};/, '').replace(/export /g, '')
+      + validatorDts;
 
     // Format TypeScript type string for better readability
     function formatType(typeStr) {

@@ -9,3 +9,7 @@ coverage/
 
 # Benchmark intermediate files
 benchmarks/results/*.json
+
+# Generated docs files (run npm run docs:build)
+docs/tjs.bundle.js
+docs/dist/

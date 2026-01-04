@@ -37,6 +37,7 @@
     "bench": "tsx benchmarks/bench.ts",
     "bench:ajv": "tsx benchmarks/bench.ts -v ajv --json benchmarks/results/ajv.json && tsx benchmarks/json-to-markdown.ts benchmarks/results/ajv.json > benchmarks/results/BENCHMARK_AJV.md",
     "docs": "npx serve docs -p 3000",
+    "docs:build": "esbuild dist/index.js --bundle --format=esm --outfile=docs/tjs.bundle.js && mkdir -p docs/dist && cp dist/types.d.ts dist/infer.d.ts docs/dist/",
     "bench:zod": "tsx benchmarks/bench.ts -v zod --json benchmarks/results/zod.json && tsx benchmarks/json-to-markdown.ts benchmarks/results/zod.json > benchmarks/results/BENCHMARK_ZOD.md",
     "bench:joi": "tsx benchmarks/bench.ts -v joi --json benchmarks/results/joi.json && tsx benchmarks/json-to-markdown.ts benchmarks/results/joi.json > benchmarks/results/BENCHMARK_JOI.md"
   },
