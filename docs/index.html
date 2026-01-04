@@ -1,0 +1,1256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>tjs - JSON Schema Validator</title>
+  <link rel="icon" type="image/png" href="assets/tjs_shield_alpha.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #0d1117;
+      --bg-alt: #161b22;
+      --bg-card: #21262d;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-dim: #8b949e;
+      --text-bright: #f0f6fc;
+      --green: #3fb950;
+      --red: #f85149;
+      --blue: #58a6ff;
+      --purple: #a371f7;
+      --yellow: #d29922;
+      --orange: #db6d28;
+      --cyan: #39c5cf;
+    }
+
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      font-size: 14px;
+    }
+
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+
+    /* Header */
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 8px 0;
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      z-index: 100;
+    }
+
+    .header-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-bright);
+      text-decoration: none;
+    }
+
+    .logo:hover { text-decoration: none; }
+    .logo img { display: block; }
+    .logo em { color: #4ade80; font-style: normal; }
+
+    nav { display: flex; gap: 24px; align-items: center; }
+    nav a { color: var(--text-dim); font-size: 13px; }
+    nav a:hover { color: var(--text); text-decoration: none; }
+
+    .gh-link {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+
+    /* Hero */
+    .hero {
+      padding: 80px 0 60px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .hero h1 {
+      font-size: 32px;
+      color: var(--text-bright);
+      margin-bottom: 16px;
+    }
+
+    .hero h1 .highlight { color: var(--green); }
+
+    .hero-sub {
+      color: var(--text-dim);
+      font-size: 15px;
+      margin-bottom: 32px;
+      max-width: 600px;
+    }
+
+    .install-cmd {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-bottom: 48px;
+    }
+
+    .install-cmd .prompt { color: var(--green); }
+    .install-cmd code { color: var(--text-bright); }
+    .install-cmd button {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      cursor: pointer;
+      padding: 4px;
+    }
+    .install-cmd button:hover { color: var(--text); }
+
+    /* Stats row */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+
+    @media (max-width: 768px) {
+      .stats-row { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    .stat-box {
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 20px;
+    }
+
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--green);
+    }
+
+    .stat-value.faster { color: var(--cyan); }
+
+    .stat-label {
+      color: var(--text-dim);
+      font-size: 12px;
+      margin-top: 4px;
+    }
+
+    /* Section */
+    section {
+      padding: 60px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    section h2 {
+      font-size: 18px;
+      color: var(--text-bright);
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    section h2::before {
+      content: '#';
+      color: var(--text-dim);
+    }
+
+    /* Playground */
+    .playground-section {
+      background: var(--bg-alt);
+      padding: 40px 0;
+    }
+
+    .playground-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 16px;
+    }
+
+    @media (max-width: 1100px) {
+      .playground-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (max-width: 700px) {
+      .playground-grid { grid-template-columns: 1fr; }
+    }
+
+    .panel {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      background: var(--bg-card);
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .panel-tabs {
+      display: flex;
+      gap: 4px;
+    }
+
+    .panel-tab {
+      padding: 4px 10px;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      color: var(--text-dim);
+      font-size: 11px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    .panel-tab:hover { color: var(--text); }
+    .panel-tab.active {
+      background: var(--bg);
+      border-color: var(--border);
+      color: var(--text);
+    }
+
+    .panel-body { padding: 0; }
+
+    textarea.editor {
+      width: 100%;
+      min-height: 280px;
+      background: transparent;
+      border: none;
+      padding: 16px;
+      font-family: inherit;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--text);
+      resize: none;
+      outline: none;
+    }
+
+    .result-panel .panel-body {
+      padding: 16px;
+      min-height: 280px;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .status-valid { background: rgba(63, 185, 80, 0.15); color: var(--green); }
+    .status-invalid { background: rgba(248, 81, 73, 0.15); color: var(--red); }
+    .status-error { background: rgba(210, 153, 34, 0.15); color: var(--yellow); }
+
+    .result-message { margin-bottom: 16px; }
+
+    .type-section {
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 12px;
+      margin-top: 16px;
+    }
+
+    .type-label {
+      font-size: 10px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    .type-code {
+      color: var(--purple);
+      font-size: 12px;
+      white-space: pre-wrap;
+    }
+
+    .error-list { list-style: none; }
+
+    .error-item {
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .error-item:last-child { border-bottom: none; }
+
+    .error-path { color: var(--yellow); font-size: 12px; }
+    .error-msg { color: var(--text-dim); font-size: 12px; margin-top: 2px; }
+
+    /* Benchmarks */
+    .bench-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+    }
+
+    @media (max-width: 768px) {
+      .bench-grid { grid-template-columns: 1fr; }
+    }
+
+    .bench-card {
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 20px;
+    }
+
+    .bench-title {
+      font-size: 13px;
+      color: var(--text);
+      margin-bottom: 16px;
+    }
+
+    .bench-bar-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .bench-label {
+      width: 40px;
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    .bench-bar-container {
+      flex: 1;
+      height: 24px;
+      background: var(--bg);
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .bench-bar {
+      height: 100%;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding-right: 8px;
+      font-size: 10px;
+      color: var(--bg);
+      font-weight: 600;
+    }
+
+    .bench-bar.tjs { background: var(--green); }
+    .bench-bar.ajv { background: var(--orange); }
+
+    .bench-diff {
+      font-size: 11px;
+      width: 60px;
+      text-align: right;
+    }
+
+    .bench-diff.faster { color: var(--green); }
+    .bench-diff.slower { color: var(--red); }
+
+    /* Compliance */
+    .compliance-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+    }
+
+    @media (max-width: 768px) {
+      .compliance-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+
+    .compliance-card {
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 16px;
+      text-align: center;
+    }
+
+    .compliance-draft {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+    }
+
+    .compliance-pct {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--green);
+    }
+
+    .compliance-tests {
+      font-size: 10px;
+      color: var(--text-dim);
+      margin-top: 4px;
+    }
+
+    /* Keyword grid */
+    .keyword-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    .keyword-item {
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px 12px;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .keyword-item::before {
+      content: '✓';
+      color: var(--green);
+      font-size: 10px;
+    }
+
+    /* Footer */
+    footer {
+      padding: 40px 0;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 12px;
+    }
+
+    footer a { color: var(--text-dim); }
+    footer a:hover { color: var(--text); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container header-inner">
+      <a href="#" class="logo">
+        <img src="assets/tjs_logo_alpha.png" alt="tjs" height="52">
+      </a>
+      <nav>
+        <a href="#playground">playground</a>
+        <a href="#benchmarks">benchmarks</a>
+        <a href="#compliance">compliance</a>
+        <a href="https://github.com/sberan/tjs" class="gh-link">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          GitHub
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container">
+        <h1>JSON Schema validator with <span class="highlight">TypeScript inference</span></h1>
+        <p class="hero-sub">
+          JIT-compiled validation. 100% spec compliance across all drafts.
+          Zero dependencies. Types inferred from your schema at compile time.
+        </p>
+
+        <div class="install-cmd">
+          <span class="prompt">$</span>
+          <code>npm install tjs</code>
+          <button onclick="navigator.clipboard.writeText('npm install tjs')" title="Copy">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="stats-row">
+          <div class="stat-box">
+            <div class="stat-value faster">-48%</div>
+            <div class="stat-label">faster than ajv (overall)</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value">100%</div>
+            <div class="stat-label">JSON Schema compliance</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value">7,517</div>
+            <div class="stat-label">test suite tests passing</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value">0</div>
+            <div class="stat-label">runtime dependencies</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="playground" class="playground-section">
+      <div class="container">
+        <h2>playground</h2>
+
+        <div class="panel-tabs" style="margin-bottom: 16px;">
+          <button class="panel-tab active" data-example="user">user object</button>
+          <button class="panel-tab" data-example="union">discriminated union</button>
+          <button class="panel-tab" data-example="recursive">recursive</button>
+          <button class="panel-tab" data-example="formats">formats</button>
+          <button class="panel-tab" data-example="conditional">if/then/else</button>
+        </div>
+
+        <div class="playground-grid">
+          <div class="panel">
+            <div class="panel-header">
+              <span>schema.ts</span>
+            </div>
+            <div class="panel-body">
+              <div id="schema-editor" class="editor" style="min-height: 280px;"></div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <span>data.json</span>
+            </div>
+            <div class="panel-body">
+              <div id="data-editor" class="editor" style="min-height: 280px;"></div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <span>inferred type</span>
+              <span style="color: var(--text-dim); font-size: 10px;">typeof validator.type</span>
+            </div>
+            <div class="panel-body">
+              <div id="inferred-type" class="editor" style="height: 280px;"></div>
+            </div>
+          </div>
+
+          <div class="panel result-panel" style="grid-column: 1 / -1;">
+            <div class="panel-header">
+              <span>validation result</span>
+              <span id="status-badge" class="status-badge status-valid">valid</span>
+            </div>
+            <div class="panel-body">
+              <div id="result-message" class="result-message"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="benchmarks">
+      <div class="container">
+        <h2>benchmarks vs ajv</h2>
+        <p style="color: var(--text-dim); margin-bottom: 24px; font-size: 12px;">
+          Using the official <a href="https://github.com/json-schema-org/JSON-Schema-Test-Suite">JSON Schema Test Suite</a>.
+          Lower bars = faster. Negative % = tjs is faster.
+        </p>
+
+        <div class="bench-grid">
+          <div class="bench-card">
+            <div class="bench-title">Draft 2020-12 (ops/sec)</div>
+            <div class="bench-bar-row">
+              <span class="bench-label">tjs</span>
+              <div class="bench-bar-container">
+                <div class="bench-bar tjs" style="width: 100%;">11.0M</div>
+              </div>
+              <span class="bench-diff faster">-55%</span>
+            </div>
+            <div class="bench-bar-row">
+              <span class="bench-label">ajv</span>
+              <div class="bench-bar-container">
+                <div class="bench-bar ajv" style="width: 44%;">4.9M</div>
+              </div>
+              <span class="bench-diff"></span>
+            </div>
+          </div>
+
+          <div class="bench-card">
+            <div class="bench-title">Draft 2019-09 (ops/sec)</div>
+            <div class="bench-bar-row">
+              <span class="bench-label">tjs</span>
+              <div class="bench-bar-container">
+                <div class="bench-bar tjs" style="width: 100%;">10.8M</div>
+              </div>
+              <span class="bench-diff faster">-55%</span>
+            </div>
+            <div class="bench-bar-row">
+              <span class="bench-label">ajv</span>
+              <div class="bench-bar-container">
+                <div class="bench-bar ajv" style="width: 44%;">4.8M</div>
+              </div>
+              <span class="bench-diff"></span>
+            </div>
+          </div>
+
+          <div class="bench-card">
+            <div class="bench-title">date-time format (ops/sec)</div>
+            <div class="bench-bar-row">
+              <span class="bench-label">tjs</span>
+              <div class="bench-bar-container">
+                <div class="bench-bar tjs" style="width: 100%;">19.0M</div>
+              </div>
+              <span class="bench-diff faster">-85%</span>
+            </div>
+            <div class="bench-bar-row">
+              <span class="bench-label">ajv</span>
+              <div class="bench-bar-container">
+                <div class="bench-bar ajv" style="width: 15%;">2.8M</div>
+              </div>
+              <span class="bench-diff"></span>
+            </div>
+          </div>
+
+          <div class="bench-card">
+            <div class="bench-title">ipv6 format (ops/sec)</div>
+            <div class="bench-bar-row">
+              <span class="bench-label">tjs</span>
+              <div class="bench-bar-container">
+                <div class="bench-bar tjs" style="width: 100%;">10.6M</div>
+              </div>
+              <span class="bench-diff faster">-72%</span>
+            </div>
+            <div class="bench-bar-row">
+              <span class="bench-label">ajv</span>
+              <div class="bench-bar-container">
+                <div class="bench-bar ajv" style="width: 27%;">2.9M</div>
+              </div>
+              <span class="bench-diff"></span>
+            </div>
+          </div>
+
+          <div class="bench-card">
+            <div class="bench-title">oneOf composition (ops/sec)</div>
+            <div class="bench-bar-row">
+              <span class="bench-label">tjs</span>
+              <div class="bench-bar-container">
+                <div class="bench-bar tjs" style="width: 100%;">26.8M</div>
+              </div>
+              <span class="bench-diff faster">-67%</span>
+            </div>
+            <div class="bench-bar-row">
+              <span class="bench-label">ajv</span>
+              <div class="bench-bar-container">
+                <div class="bench-bar ajv" style="width: 33%;">8.9M</div>
+              </div>
+              <span class="bench-diff"></span>
+            </div>
+          </div>
+
+          <div class="bench-card">
+            <div class="bench-title">regex format (ops/sec)</div>
+            <div class="bench-bar-row">
+              <span class="bench-label">tjs</span>
+              <div class="bench-bar-container">
+                <div class="bench-bar tjs" style="width: 100%;">44.6M</div>
+              </div>
+              <span class="bench-diff faster">-98%</span>
+            </div>
+            <div class="bench-bar-row">
+              <span class="bench-label">ajv</span>
+              <div class="bench-bar-container">
+                <div class="bench-bar ajv" style="width: 2%;">819K</div>
+              </div>
+              <span class="bench-diff"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="compliance">
+      <div class="container">
+        <h2>JSON Schema test suite compliance</h2>
+        <p style="color: var(--text-dim); margin-bottom: 24px; font-size: 12px;">
+          100% compliance across all JSON Schema drafts. Every test passes.
+        </p>
+
+        <div class="compliance-grid">
+          <div class="compliance-card">
+            <div class="compliance-draft">Draft 04</div>
+            <div class="compliance-pct">100%</div>
+            <div class="compliance-tests">882 tests</div>
+          </div>
+          <div class="compliance-card">
+            <div class="compliance-draft">Draft 06</div>
+            <div class="compliance-pct">100%</div>
+            <div class="compliance-tests">1,170 tests</div>
+          </div>
+          <div class="compliance-card">
+            <div class="compliance-draft">Draft 07</div>
+            <div class="compliance-pct">100%</div>
+            <div class="compliance-tests">1,534 tests</div>
+          </div>
+          <div class="compliance-card">
+            <div class="compliance-draft">2019-09</div>
+            <div class="compliance-pct">100%</div>
+            <div class="compliance-tests">1,941 tests</div>
+          </div>
+          <div class="compliance-card">
+            <div class="compliance-draft">2020-12</div>
+            <div class="compliance-pct">100%</div>
+            <div class="compliance-tests">1,990 tests</div>
+          </div>
+        </div>
+
+        <h3 style="font-size: 14px; color: var(--text); margin-top: 32px; margin-bottom: 12px;">Supported keywords</h3>
+        <div class="keyword-grid">
+          <div class="keyword-item">type</div>
+          <div class="keyword-item">const</div>
+          <div class="keyword-item">enum</div>
+          <div class="keyword-item">properties</div>
+          <div class="keyword-item">required</div>
+          <div class="keyword-item">additionalProperties</div>
+          <div class="keyword-item">patternProperties</div>
+          <div class="keyword-item">propertyNames</div>
+          <div class="keyword-item">minProperties</div>
+          <div class="keyword-item">maxProperties</div>
+          <div class="keyword-item">items</div>
+          <div class="keyword-item">prefixItems</div>
+          <div class="keyword-item">contains</div>
+          <div class="keyword-item">minItems</div>
+          <div class="keyword-item">maxItems</div>
+          <div class="keyword-item">uniqueItems</div>
+          <div class="keyword-item">minLength</div>
+          <div class="keyword-item">maxLength</div>
+          <div class="keyword-item">pattern</div>
+          <div class="keyword-item">format</div>
+          <div class="keyword-item">minimum</div>
+          <div class="keyword-item">maximum</div>
+          <div class="keyword-item">multipleOf</div>
+          <div class="keyword-item">allOf</div>
+          <div class="keyword-item">anyOf</div>
+          <div class="keyword-item">oneOf</div>
+          <div class="keyword-item">not</div>
+          <div class="keyword-item">if/then/else</div>
+          <div class="keyword-item">$ref</div>
+          <div class="keyword-item">$defs</div>
+          <div class="keyword-item">$dynamicRef</div>
+          <div class="keyword-item">unevaluatedProperties</div>
+          <div class="keyword-item">unevaluatedItems</div>
+          <div class="keyword-item">dependentRequired</div>
+          <div class="keyword-item">dependentSchemas</div>
+        </div>
+
+        <h3 style="font-size: 14px; color: var(--text); margin-top: 32px; margin-bottom: 12px;">Supported formats (40+)</h3>
+        <div class="keyword-grid">
+          <div class="keyword-item">email</div>
+          <div class="keyword-item">idn-email</div>
+          <div class="keyword-item">uri</div>
+          <div class="keyword-item">uri-reference</div>
+          <div class="keyword-item">iri</div>
+          <div class="keyword-item">iri-reference</div>
+          <div class="keyword-item">uuid</div>
+          <div class="keyword-item">date</div>
+          <div class="keyword-item">time</div>
+          <div class="keyword-item">date-time</div>
+          <div class="keyword-item">duration</div>
+          <div class="keyword-item">ipv4</div>
+          <div class="keyword-item">ipv6</div>
+          <div class="keyword-item">hostname</div>
+          <div class="keyword-item">idn-hostname</div>
+          <div class="keyword-item">json-pointer</div>
+          <div class="keyword-item">relative-json-pointer</div>
+          <div class="keyword-item">regex</div>
+          <div class="keyword-item">uri-template</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      MIT License &middot; <a href="https://github.com/sberan/tjs">Source on GitHub</a>
+    </div>
+  </footer>
+
+  <script src="https://unpkg.com/typescript@5/lib/typescript.js"></script>
+  <script src="https://unpkg.com/monaco-editor@0.45.0/min/vs/loader.js"></script>
+  <script type="module">
+    // Load tjs type definitions from dist
+    const [typesDts, inferDts] = await Promise.all([
+      fetch('./dist/types.d.ts').then(r => r.text()),
+      fetch('./dist/infer.d.ts').then(r => r.text()),
+    ]);
+
+    // Minimal lib.d.ts shims needed for type inference (noLib: true)
+    const libShims = `
+interface Boolean {}
+interface CallableFunction {}
+interface NewableFunction {}
+interface String {}
+interface Number {}
+interface Function {}
+interface Object {}
+interface IArguments {}
+interface RegExp {}
+interface Array<T> { length: number; [n: number]: T; }
+interface ReadonlyArray<T> { readonly length: number; readonly [n: number]: T; }
+type Record<K extends keyof any, T> = { [P in K]: T };
+`;
+
+    // Validator interface and schema function
+    const validatorDts = `
+interface Validator<T> {
+  (data: unknown): boolean;
+  validate(data: unknown): { valid: true; value: T; error: undefined } | { valid: false; value: undefined; error: unknown[] };
+  assert(data: unknown): T;
+  readonly type: T;
+  errors: unknown[] | null;
+}
+declare function schema<const T extends JsonSchema>(definition: T): Validator<Infer<T>>;
+`;
+
+    // Combine types, stripping imports and adding shims
+    const tjsDts = libShims
+      + typesDts.replace(/export /g, '')
+      + inferDts.replace(/import[^;]+;/g, '').replace(/export \{\};/, '').replace(/export /g, '')
+      + validatorDts;
+
+    // Format TypeScript type string for better readability
+    function formatType(typeStr) {
+      // Clean up the type string
+      let result = typeStr
+        .replace(/\s+/g, ' ')  // normalize whitespace
+        .replace(/\{ /g, '{\n  ')  // opening brace
+        .replace(/ \}/g, '\n}')  // closing brace
+        .replace(/; /g, ';\n  ')  // semicolons
+        .replace(/\n  \n/g, '\n')  // remove empty lines
+        .trim();
+
+      // Handle nested objects with proper indentation
+      let depth = 0;
+      let formatted = '';
+      for (let i = 0; i < result.length; i++) {
+        const char = result[i];
+        if (char === '{') {
+          depth++;
+          formatted += '{\n' + '  '.repeat(depth);
+        } else if (char === '}') {
+          depth--;
+          formatted += '\n' + '  '.repeat(depth) + '}';
+        } else if (char === ';' && result[i + 1] !== '\n') {
+          formatted += ';\n' + '  '.repeat(depth);
+        } else if (char === '\n') {
+          // skip, we handle newlines ourselves
+        } else {
+          formatted += char;
+        }
+      }
+
+      return formatted.replace(/\n\s*\n/g, '\n').trim();
+    }
+
+    // Get inferred type using TypeScript compiler
+    function getInferredType(schemaJson) {
+      // Use type alias syntax for evaluation, but only display the resolved type
+      const code = `
+const s = ${schemaJson} as const;
+type Result = Infer<typeof s>;
+declare const result: Result;
+`;
+      const files = {
+        '/lib.d.ts': tjsDts,
+        '/main.ts': code,
+      };
+
+      const options = {
+        target: ts.ScriptTarget.ESNext,
+        module: ts.ModuleKind.ESNext,
+        strict: true,
+        noEmit: true,
+        noLib: true,
+        skipLibCheck: true,
+      };
+
+      const host = {
+        getSourceFile: (name) => {
+          const content = files[name];
+          return content ? ts.createSourceFile(name, content, ts.ScriptTarget.ESNext, true) : undefined;
+        },
+        getDefaultLibFileName: () => '/lib.d.ts',
+        writeFile: () => {},
+        getCurrentDirectory: () => '/',
+        getCanonicalFileName: (f) => f,
+        useCaseSensitiveFileNames: () => true,
+        getNewLine: () => '\n',
+        fileExists: (name) => name in files,
+        readFile: (name) => files[name] || '',
+      };
+
+      try {
+        const program = ts.createProgram(['/lib.d.ts', '/main.ts'], options, host);
+        const checker = program.getTypeChecker();
+        const sourceFile = program.getSourceFile('/main.ts');
+
+        // Log any diagnostics for debugging
+        const diagnostics = ts.getPreEmitDiagnostics(program);
+        if (diagnostics.length > 0) {
+          console.log('TypeScript diagnostics:', diagnostics.map(d => d.messageText));
+        }
+
+        // Find the Result type alias
+        let resultType = null;
+        ts.forEachChild(sourceFile, node => {
+          if (ts.isVariableStatement(node)) {
+            const decl = node.declarationList.declarations[0];
+            if (decl && decl.name.getText() === 'result') {
+              const type = checker.getTypeAtLocation(decl);
+              resultType = checker.typeToString(type, undefined,
+                ts.TypeFormatFlags.NoTruncation |
+                ts.TypeFormatFlags.MultilineObjectLiterals |
+                ts.TypeFormatFlags.WriteClassExpressionAsTypeLiteral
+              );
+            }
+          }
+        });
+
+        // Format the type for better readability
+        if (resultType) {
+          resultType = formatType(resultType);
+        }
+
+        return resultType || 'unknown';
+      } catch (e) {
+        console.error('Type inference error:', e);
+        return 'unknown';
+      }
+    }
+
+    const examples = {
+      user: {
+        schema: `schema({
+  type: 'object',
+  properties: {
+    name: { type: 'string', minLength: 1 },
+    email: { type: 'string', format: 'email' },
+    age: { type: 'integer', minimum: 0 }
+  },
+  required: ['name', 'email']
+})`,
+        data: {
+          name: 'Alice',
+          email: 'alice@example.com',
+          age: 28
+        }
+      },
+      union: {
+        schema: `schema({
+  oneOf: [
+    {
+      type: 'object',
+      properties: {
+        kind: { const: 'circle' },
+        radius: { type: 'number' }
+      },
+      required: ['kind', 'radius']
+    },
+    {
+      type: 'object',
+      properties: {
+        kind: { const: 'rectangle' },
+        width: { type: 'number' },
+        height: { type: 'number' }
+      },
+      required: ['kind', 'width', 'height']
+    }
+  ]
+})`,
+        data: {
+          kind: 'circle',
+          radius: 5
+        }
+      },
+      recursive: {
+        schema: `schema({
+  type: 'object',
+  properties: {
+    value: { type: 'number' },
+    left: { $ref: '#' },
+    right: { $ref: '#' }
+  },
+  required: ['value']
+})`,
+        data: {
+          value: 10,
+          left: { value: 5 },
+          right: { value: 15, left: { value: 12 } }
+        }
+      },
+      formats: {
+        schema: `schema({
+  type: 'object',
+  properties: {
+    email: { type: 'string', format: 'email' },
+    website: { type: 'string', format: 'uri' },
+    id: { type: 'string', format: 'uuid' },
+    created: { type: 'string', format: 'date-time' },
+    ip: { type: 'string', format: 'ipv4' }
+  },
+  required: ['email']
+})`,
+        data: {
+          email: 'user@example.com',
+          website: 'https://example.com',
+          id: '550e8400-e29b-41d4-a716-446655440000',
+          created: '2024-01-15T10:30:00Z',
+          ip: '192.168.1.1'
+        }
+      },
+      conditional: {
+        schema: `schema({
+  type: 'object',
+  properties: {
+    type: { enum: ['personal', 'business'] },
+    name: { type: 'string' },
+    taxId: { type: 'string' }
+  },
+  required: ['type', 'name'],
+  if: { properties: { type: { const: 'business' } } },
+  then: { required: ['taxId'] }
+})`,
+        data: {
+          type: 'business',
+          name: 'Acme Corp',
+          taxId: '12-3456789'
+        }
+      }
+    };
+
+    let tjs = null;
+    let schemaEditor = null;
+    let dataEditor = null;
+    let typeEditor = null;
+    const schemaEditorEl = document.getElementById('schema-editor');
+    const dataEditorEl = document.getElementById('data-editor');
+    const typeEditorEl = document.getElementById('inferred-type');
+    const resultMessage = document.getElementById('result-message');
+    const statusBadge = document.getElementById('status-badge');
+    const tabs = document.querySelectorAll('.panel-tab');
+
+    // Extract schema object from TypeScript code like "schema({...})"
+    function extractSchemaFromCode(code) {
+      const match = code.match(/schema\s*\(\s*(\{[\s\S]*\})\s*\)/);
+      if (!match) {
+        throw new Error('Could not find schema({...}) in code');
+      }
+      // Use Function constructor to safely evaluate the object literal
+      try {
+        return new Function('return ' + match[1])();
+      } catch (e) {
+        throw new Error('Invalid schema object: ' + e.message);
+      }
+    }
+
+    async function init() {
+      // Load tjs
+      try {
+        tjs = await import('./tjs.bundle.js');
+      } catch (e) {
+        console.error('Failed to load tjs:', e);
+        resultMessage.textContent = 'Error loading tjs: ' + e.message;
+        resultMessage.style.color = 'var(--red)';
+      }
+
+      // Load Monaco
+      require.config({ paths: { vs: 'https://unpkg.com/monaco-editor@0.45.0/min/vs' } });
+      require(['vs/editor/editor.main'], function () {
+        // Define dark theme matching our site
+        monaco.editor.defineTheme('tjs-dark', {
+          base: 'vs-dark',
+          inherit: true,
+          rules: [],
+          colors: {
+            'editor.background': '#161b22',
+            'editor.foreground': '#c9d1d9',
+            'editorLineNumber.foreground': '#484f58',
+            'editor.selectionBackground': '#264f78',
+            'editor.lineHighlightBackground': '#21262d',
+          }
+        });
+
+        // Add tjs type definitions to TypeScript
+        monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
+          target: monaco.languages.typescript.ScriptTarget.ESNext,
+          module: monaco.languages.typescript.ModuleKind.ESNext,
+          strict: true,
+          noEmit: true,
+          allowNonTsExtensions: true,
+        });
+
+        // Enable eager model sync for better IntelliSense
+        monaco.languages.typescript.typescriptDefaults.setEagerModelSync(true);
+
+        // Use actual tjs types - strip the declare global block and make exports global
+        const monacoTypes = tjsDts
+          .replace(/declare global \{[\s\S]*?\}\ndeclare type Record[^\n]+\n/, '') // Remove lib.d.ts shims
+          .replace(/^export /gm, ''); // Make exports global for Monaco
+
+        monaco.languages.typescript.typescriptDefaults.addExtraLib(monacoTypes, 'ts:tjs.d.ts');
+
+        monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+          noSemanticValidation: false,
+          noSyntaxValidation: false,
+        });
+
+        // Shared editor options
+        const editorOptions = {
+          theme: 'tjs-dark',
+          minimap: { enabled: false },
+          fontSize: 13,
+          fontFamily: 'JetBrains Mono, monospace',
+          lineNumbers: 'off',
+          scrollBeyondLastLine: false,
+          automaticLayout: true,
+          tabSize: 2,
+          padding: { top: 12, bottom: 12 },
+          overviewRulerLanes: 0,
+          hideCursorInOverviewRuler: true,
+          scrollbar: {
+            vertical: 'auto',
+            horizontal: 'auto',
+            verticalScrollbarSize: 8,
+            horizontalScrollbarSize: 8,
+          },
+        };
+
+        // Create schema editor (TypeScript)
+        const schemaModel = monaco.editor.createModel(examples.user.schema, 'typescript', monaco.Uri.parse('file:///schema.ts'));
+        schemaEditor = monaco.editor.create(schemaEditorEl, { ...editorOptions, model: schemaModel });
+
+        // Create data editor (JSON)
+        const dataModel = monaco.editor.createModel(JSON.stringify(examples.user.data, null, 2), 'json');
+        dataEditor = monaco.editor.create(dataEditorEl, { ...editorOptions, model: dataModel });
+
+        // Create type editor (TypeScript, read-only)
+        const typeModel = monaco.editor.createModel('// loading...', 'typescript');
+        typeEditor = monaco.editor.create(typeEditorEl, {
+          ...editorOptions,
+          model: typeModel,
+          readOnly: true,
+          domReadOnly: true,
+        });
+
+        // Validate on change
+        schemaEditor.onDidChangeModelContent(() => debounce(validate));
+        dataEditor.onDidChangeModelContent(() => debounce(validate));
+
+        // Initial load
+        loadExample('user');
+      });
+    }
+
+    function loadExample(name) {
+      const ex = examples[name];
+      if (schemaEditor) {
+        schemaEditor.getModel().setValue(ex.schema);
+      }
+      if (dataEditor) {
+        dataEditor.getModel().setValue(JSON.stringify(ex.data, null, 2));
+      }
+      tabs.forEach(t => t.classList.toggle('active', t.dataset.example === name));
+      validate();
+    }
+
+    function validate() {
+      if (!schemaEditor || !dataEditor) return;
+
+      let schema, data;
+      const code = schemaEditor.getValue();
+
+      try {
+        schema = extractSchemaFromCode(code);
+      } catch (e) {
+        showStatus('error', e.message);
+        if (typeEditor) typeEditor.setValue('unknown');
+        return;
+      }
+      try {
+        data = JSON.parse(dataEditor.getValue());
+      } catch (e) {
+        showStatus('error', 'Invalid data JSON: ' + e.message);
+        return;
+      }
+
+      // Get actual inferred type from TypeScript
+      const schemaStr = JSON.stringify(schema, null, 2);
+      const inferredType = getInferredType(schemaStr);
+
+      // Show the inferred type
+      if (typeEditor) {
+        typeEditor.setValue(inferredType);
+      }
+
+      if (!tjs) {
+        showStatus('error', 'tjs not loaded');
+        return;
+      }
+
+      try {
+        const validator = tjs.schema(schema, { formatAssertion: true });
+        const result = validator.validate(data);
+        if (result.error === undefined) {
+          showStatus('valid', 'Validation passed');
+        } else {
+          showStatus('invalid', '', result.error);
+        }
+      } catch (e) {
+        showStatus('error', 'Validation error: ' + e.message);
+      }
+    }
+
+    function showStatus(status, message, errors) {
+      statusBadge.className = 'status-badge status-' + status;
+      statusBadge.textContent = status;
+
+      if (errors && errors.length) {
+        resultMessage.innerHTML = errors.map(e =>
+          `<div class="error-item">
+            <div class="error-path">${e.instancePath || '/'} [${e.keyword}]</div>
+            <div class="error-msg">${e.message}</div>
+          </div>`
+        ).join('');
+      } else {
+        resultMessage.innerHTML = `<span style="color: var(--${status === 'valid' ? 'green' : status === 'error' ? 'yellow' : 'red'})">${message}</span>`;
+      }
+    }
+
+    tabs.forEach(t => t.addEventListener('click', () => loadExample(t.dataset.example)));
+
+    let timer;
+    const debounce = fn => { clearTimeout(timer); timer = setTimeout(fn, 200); };
+
+    init();
+  </script>
+</body>
+</html>

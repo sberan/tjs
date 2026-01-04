@@ -1,9 +1,18 @@
-# tjs
+<p align="center">
+  <a href="https://sberan.github.io/tjs/">
+    <img src="docs/assets/tjs_logo_alpha.png" alt="tjs" height="80">
+  </a>
+</p>
 
-[![npm version](https://img.shields.io/npm/v/tjs.svg)](https://www.npmjs.com/package/tjs)
-[![test](https://github.com/sberan/tjs/actions/workflows/test.yml/badge.svg)](https://github.com/sberan/tjs/actions/workflows/test.yml)
+<p align="center">
+  <strong>The world's fastest and most accurate json-schema validator, with magical typescript inference.</strong>
+</p>
 
-**The world's fastest and most accurate json-schema validator, with magical typescript inference.**
+<p align="center">
+  <a href="https://www.npmjs.com/package/tjs"><img src="https://img.shields.io/npm/v/tjs.svg" alt="npm version"></a>
+  <a href="https://github.com/sberan/tjs/actions/workflows/test.yml"><img src="https://github.com/sberan/tjs/actions/workflows/test.yml/badge.svg" alt="test"></a>
+  <a href="https://sberan.github.io/tjs/"><img src="https://img.shields.io/badge/try-playground-blue" alt="playground"></a>
+</p>
 
 ![Benchmark](assets/benchmark.svg)
 
@@ -322,7 +331,7 @@ Supported coercions:
 
 ```typescript
 interface ValidatorOptions {
-  // Enable format validation (default: true)
+  // Enable format validation (default: false for 2019-09+, true for draft-07 and earlier)
   formatAssertion?: boolean;
 
   // Enable content validation for contentMediaType/contentEncoding (default: false)
