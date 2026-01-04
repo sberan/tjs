@@ -181,11 +181,15 @@
 
     .playground-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1fr 1fr 1fr;
       gap: 16px;
     }
 
-    @media (max-width: 900px) {
+    @media (max-width: 1100px) {
+      .playground-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (max-width: 700px) {
       .playground-grid { grid-template-columns: 1fr; }
     }
 
@@ -532,17 +536,23 @@
             </div>
           </div>
 
-          <div class="panel result-panel" style="grid-column: span 2;">
+          <div class="panel result-panel">
             <div class="panel-header">
-              <span>result</span>
+              <span>validation result</span>
               <span id="status-badge" class="status-badge status-valid">valid</span>
             </div>
             <div class="panel-body">
               <div id="result-message" class="result-message"></div>
-              <div class="type-section">
-                <div class="type-label">Inferred TypeScript Type</div>
-                <pre id="inferred-type" class="type-code"></pre>
-              </div>
+            </div>
+          </div>
+
+          <div class="panel" style="grid-column: 1 / -1;">
+            <div class="panel-header">
+              <span>usage.ts</span>
+              <span style="color: var(--blue); font-size: 10px;">TypeScript infers the type at compile time from the schema</span>
+            </div>
+            <div class="panel-body">
+              <pre id="usage-code" class="editor" style="min-height: 200px; padding: 16px; white-space: pre; overflow-x: auto;"></pre>
             </div>
           </div>
         </div>
@@ -776,126 +786,6 @@
   </footer>
 
   <script type="module">
-    // Generate TypeScript type from JSON Schema
-    function schemaToType(schema, indent = 0, defs = null, visited = new Set()) {
-      if (schema === true) return 'unknown';
-      if (schema === false) return 'never';
-      if (typeof schema !== 'object' || schema === null) return 'unknown';
-
-      const pad = '  '.repeat(indent);
-      const pad1 = '  '.repeat(indent + 1);
-
-      // Store $defs for reference resolution
-      if (schema.$defs) defs = schema.$defs;
-      if (schema.definitions) defs = schema.definitions;
-
-      // Handle $ref
-      if (schema.$ref) {
-        const ref = schema.$ref;
-        if (ref === '#') return 'T /* recursive */';
-        if (ref.startsWith('#/$defs/') || ref.startsWith('#/definitions/')) {
-          const name = ref.split('/').pop();
-          if (defs && defs[name]) {
-            if (visited.has(name)) return name;
-            visited.add(name);
-            return schemaToType(defs[name], indent, defs, visited);
-          }
-        }
-        return 'unknown /* $ref */';
-      }
-
-      // Handle const
-      if ('const' in schema) {
-        return JSON.stringify(schema.const);
-      }
-
-      // Handle enum
-      if (schema.enum) {
-        return schema.enum.map(v => JSON.stringify(v)).join(' | ');
-      }
-
-      // Handle oneOf
-      if (schema.oneOf) {
-        const types = schema.oneOf.map(s => schemaToType(s, indent, defs, visited));
-        if (types.length <= 3 && types.every(t => t.length < 40)) {
-          return types.join(' | ');
-        }
-        return '\n' + types.map(t => pad + '  | ' + t).join('\n');
-      }
-
-      // Handle anyOf
-      if (schema.anyOf) {
-        return schema.anyOf.map(s => schemaToType(s, indent, defs, visited)).join(' | ');
-      }
-
-      // Handle allOf
-      if (schema.allOf) {
-        return schema.allOf.map(s => schemaToType(s, indent, defs, visited)).join(' & ');
-      }
-
-      // Handle type
-      const type = schema.type;
-      if (Array.isArray(type)) {
-        return type.map(t => schemaToType({ ...schema, type: t }, indent, defs, visited)).join(' | ');
-      }
-
-      switch (type) {
-        case 'string': return 'string';
-        case 'number': return 'number';
-        case 'integer': return 'number';
-        case 'boolean': return 'boolean';
-        case 'null': return 'null';
-        case 'array': {
-          if (schema.prefixItems) {
-            const items = schema.prefixItems.map(s => schemaToType(s, indent, defs, visited));
-            const rest = schema.items ? schemaToType(schema.items, indent, defs, visited) : null;
-            if (rest && rest !== 'unknown') {
-              return `[${items.join(', ')}, ...${rest}[]]`;
-            }
-            return `[${items.join(', ')}]`;
-          }
-          if (schema.items) {
-            return `${schemaToType(schema.items, indent, defs, visited)}[]`;
-          }
-          return 'unknown[]';
-        }
-        case 'object': {
-          const props = schema.properties || {};
-          const required = new Set(schema.required || []);
-          const keys = Object.keys(props);
-
-          if (keys.length === 0) {
-            if (schema.additionalProperties === false) return '{}';
-            if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
-              return `Record<string, ${schemaToType(schema.additionalProperties, indent, defs, visited)}>`;
-            }
-            return 'Record<string, unknown>';
-          }
-
-          const lines = keys.map(key => {
-            const opt = required.has(key) ? '' : '?';
-            const propType = schemaToType(props[key], indent + 1, defs, visited);
-            return `${pad1}${key}${opt}: ${propType};`;
-          });
-
-          if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
-            lines.push(`${pad1}[key: string]: ${schemaToType(schema.additionalProperties, indent + 1, defs, visited)};`);
-          }
-
-          return `{\n${lines.join('\n')}\n${pad}}`;
-        }
-        default:
-          // No type specified, try to infer
-          if (schema.properties) {
-            return schemaToType({ ...schema, type: 'object' }, indent, defs, visited);
-          }
-          if (schema.items || schema.prefixItems) {
-            return schemaToType({ ...schema, type: 'array' }, indent, defs, visited);
-          }
-          return 'unknown';
-      }
-    }
-
     const examples = {
       user: {
         schema: {
@@ -1001,7 +891,7 @@
     const dataEditor = document.getElementById('data-editor');
     const resultMessage = document.getElementById('result-message');
     const statusBadge = document.getElementById('status-badge');
-    const inferredType = document.getElementById('inferred-type');
+    const usageCode = document.getElementById('usage-code');
     const tabs = document.querySelectorAll('.panel-tab');
 
     async function init() {
@@ -1029,7 +919,7 @@
         schema = JSON.parse(schemaEditor.value);
       } catch (e) {
         showStatus('error', 'Invalid schema JSON: ' + e.message);
-        inferredType.textContent = '// invalid JSON';
+        usageCode.textContent = '// invalid schema JSON';
         return;
       }
       try {
@@ -1039,13 +929,20 @@
         return;
       }
 
-      // Update inferred type display
-      try {
-        const typeStr = schemaToType(schema);
-        inferredType.textContent = `type T = ${typeStr}`;
-      } catch (e) {
-        inferredType.textContent = '// could not infer type';
-      }
+      // Show actual usage code
+      const schemaStr = JSON.stringify(schema, null, 2).split('\n').map((l, i) => i === 0 ? l : '  ' + l).join('\n');
+      usageCode.textContent = `import { schema } from 'tjs';
+
+const validator = schema(${schemaStr} as const);
+
+// TypeScript automatically infers the type from the schema
+type T = typeof validator.type;
+
+// Validate data
+const result = validator.validate(data);
+if (result.error === undefined) {
+  console.log(result.value); // fully typed as T
+}`;
 
       if (!tjs) {
         showStatus('error', 'tjs not loaded');
