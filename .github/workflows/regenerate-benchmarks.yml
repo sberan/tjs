@@ -24,7 +24,7 @@ jobs:
     strategy:
       matrix:
         draft: [draft4, draft6, draft7, draft2019-09, draft2020-12]
-        validator: [ajv, zod, joi]
+        validator: [ajv, zod, joi, jsonschema, is-my-json-valid, z-schema, djv, jsen, schemasafe]
 
     steps:
       - uses: actions/checkout@v4
@@ -90,7 +90,7 @@ jobs:
 
       - name: Merge benchmark results per validator
         run: |
-          for v in ajv zod joi; do
+          for v in ajv zod joi jsonschema is-my-json-valid z-schema djv jsen schemasafe; do
             echo "Merging results for $v..."
             npx tsx benchmarks/merge-benchmarks.ts "benchmarks/results/${v}.json" \
               "benchmarks/results/${v}-draft4.json" \
@@ -99,8 +99,9 @@ jobs:
               "benchmarks/results/${v}-draft2019-09.json" \
               "benchmarks/results/${v}-draft2020-12.json"
 
-            # Generate markdown report
-            npx tsx benchmarks/json-to-markdown.ts "benchmarks/results/${v}.json" > "benchmarks/results/BENCHMARK_${v^^}.md"
+            # Generate markdown report (convert validator name to uppercase, replacing - with _)
+            UPPER_NAME=$(echo "$v" | tr '[:lower:]-' '[:upper:]_')
+            npx tsx benchmarks/json-to-markdown.ts "benchmarks/results/${v}.json" > "benchmarks/results/BENCHMARK_${UPPER_NAME}.md"
           done
 
           # Clean up per-draft files
