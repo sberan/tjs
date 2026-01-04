@@ -11,11 +11,34 @@ import type {
 // Helper to simplify intersection types and remove readonly modifiers
 type Simplify<T> = { -readonly [K in keyof T]: T[K] } & {};
 
+/**
+ * Helper type to detect validators.
+ * A validator is a callable function with `type` and `schema` properties.
+ */
+export type ValidatorLike<T = unknown> = ((data: unknown) => boolean) & {
+  readonly type: T;
+  readonly schema: JsonSchema;
+};
+
+/**
+ * Check if a type is a validator (has both type and schema properties and is callable).
+ * We use this to distinguish validators from regular schema objects.
+ */
+type IsValidator<S> = S extends ((data: unknown) => boolean) & { readonly type: unknown }
+  ? true
+  : false;
+
+/**
+ * Extract the inferred type from a validator.
+ */
+type InferValidator<V> = V extends { readonly type: infer T } ? T : unknown;
+
 // Infer TypeScript type from a JSON Schema
 // Root is the root schema for resolving '#' refs
 // Defs are the combined $defs and definitions
 // Depth parameter prevents infinite recursion on circular $refs
 // Supports shorthand: 'string' is equivalent to { type: 'string' }
+// Also supports validators directly - extracts their type
 export type Infer<
   S,
   Defs = GetDefs<S>,
@@ -23,15 +46,17 @@ export type Infer<
   Root = S,
 > = Depth['length'] extends 15
   ? unknown // Recursion limit reached - prevent TypeScript "excessively deep" error
-  : S extends boolean
-    ? S extends true
-      ? unknown
-      : never
-    : S extends JsonSchemaType
-      ? InferShorthand<S>
-      : S extends JsonSchemaBase
-        ? InferSchema<S, Defs, Depth, Root>
-        : unknown;
+  : IsValidator<S> extends true
+    ? InferValidator<S>
+    : S extends boolean
+      ? S extends true
+        ? unknown
+        : never
+      : S extends JsonSchemaType
+        ? InferShorthand<S>
+        : S extends JsonSchemaBase
+          ? InferSchema<S, Defs, Depth, Root>
+          : unknown;
 
 // Infer from shorthand type string (e.g., 'string', 'number', 'object', 'array')
 type InferShorthand<T extends JsonSchemaType> = T extends 'object'

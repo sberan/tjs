@@ -6,6 +6,7 @@
  */
 
 import type { JsonSchema } from '../types.js';
+import type { Validator } from './index.js';
 import { CodeBuilder, Code, Name, _, stringify } from './codegen.js';
 import { CompileContext, type CompileOptions } from './context.js';
 import { createDeepEqual, createUcs2Length, createFormatValidators } from './runtime/index.js';
@@ -67,6 +68,25 @@ export interface CompileError {
 export interface ValidateFn {
   (data: unknown): boolean;
   errors: CompileError[] | null;
+}
+
+/**
+ * Check if a value is a Validator (callable with schema property).
+ * Used to support schema composition where validators can be used in place of schemas.
+ */
+function isValidator(value: unknown): value is Validator<unknown> {
+  return (
+    typeof value === 'function' &&
+    'schema' in value &&
+    typeof (value as Validator<unknown>).schema === 'object'
+  );
+}
+
+/**
+ * Unwrap a schema or validator to get the underlying JsonSchema.
+ */
+function unwrapSchema(schema: JsonSchema | Validator<unknown>): JsonSchema {
+  return isValidator(schema) ? schema.schema : schema;
 }
 
 /**
@@ -195,12 +215,15 @@ return true;
  */
 function generateSchemaValidator(
   code: CodeBuilder,
-  schema: JsonSchema,
+  schemaOrValidator: JsonSchema | Validator<unknown>,
   dataVar: Name,
   pathExprCode: Code,
   ctx: CompileContext,
   dynamicScopeVar?: Name
 ): void {
+  // Unwrap validators to their underlying schema (supports schema composition)
+  const schema = unwrapSchema(schemaOrValidator);
+
   // In legacy mode, never use dynamic scope
   const scopeVar = ctx.options.legacyRef ? undefined : dynamicScopeVar;
   // Boolean schemas
