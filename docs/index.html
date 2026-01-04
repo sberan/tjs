@@ -57,12 +57,17 @@
     }
 
     .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
       font-size: 20px;
       font-weight: 700;
       color: var(--text-bright);
+      text-decoration: none;
     }
 
-    .logo span { color: var(--green); }
+    .logo:hover { text-decoration: none; }
+    .logo img { display: block; }
 
     nav { display: flex; gap: 24px; align-items: center; }
     nav a { color: var(--text-dim); font-size: 13px; }
@@ -452,7 +457,10 @@
 <body>
   <header>
     <div class="container header-inner">
-      <div class="logo"><span>$</span> tjs</div>
+      <a href="#" class="logo">
+        <img src="logo.svg" alt="tjs" width="28" height="34">
+        <span>tjs</span>
+      </a>
       <nav>
         <a href="#playground">playground</a>
         <a href="#benchmarks">benchmarks</a>

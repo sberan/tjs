@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 120" fill="none">
+  <!-- Shield outline -->
+  <path d="M50 5 L95 20 L95 55 C95 85 50 115 50 115 C50 115 5 85 5 55 L5 20 Z"
+        stroke="#2d6a4f" stroke-width="5" fill="none"/>
+  <!-- Lightning bolt -->
+  <path d="M55 20 L35 55 L48 55 L42 100 L68 50 L52 50 L58 20 Z"
+        fill="#40c988"/>
+</svg>
