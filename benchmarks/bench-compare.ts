@@ -46,6 +46,21 @@ interface ComparisonResult {
   nsB: number;
 }
 
+interface GroupComparisonResult {
+  draft: string;
+  file: string;
+  groupDesc: string;
+  testCount: number;
+  tjs: {
+    nsPerTest: number;
+    passed: boolean;
+  };
+  other: {
+    nsPerTest: number;
+    passed: boolean;
+  };
+}
+
 // ANSI colors
 const RED = '\x1b[31m';
 const GREEN = '\x1b[32m';
@@ -94,19 +109,36 @@ function main() {
     }
   }
 
-  // Find matching groups where both passed
+  // Build all group comparisons (including failed ones for reporting)
+  const allGroups: GroupComparisonResult[] = [];
+  // Find matching groups where both passed (for head-to-head)
   const comparisons: ComparisonResult[] = [];
 
   for (const fileResult of dataA.results) {
     for (const groupA of fileResult.groups) {
-      if (!groupA.passed) continue;
-
       const key = `${fileResult.draft}:${fileResult.file}:${groupA.groupDesc}`;
       const groupB = bLookup.get(key);
 
+      // Add to allGroups for full reporting
+      allGroups.push({
+        draft: fileResult.draft,
+        file: fileResult.file,
+        groupDesc: groupA.groupDesc,
+        testCount: groupA.testCount,
+        tjs: {
+          nsPerTest: groupA.nsPerTest,
+          passed: groupA.passed,
+        },
+        other: {
+          nsPerTest: groupB?.nsPerTest ?? 0,
+          passed: groupB?.passed ?? false,
+        },
+      });
+
+      // Only add to comparisons if both passed
+      if (!groupA.passed) continue;
       if (!groupB || !groupB.passed) continue;
 
-      // Both passed - we can compare
       comparisons.push({
         draft: fileResult.draft,
         file: fileResult.file,
@@ -299,9 +331,12 @@ function main() {
 
   // JSON output
   if (jsonFile) {
-    // Convert to format compatible with existing json-to-markdown.ts
+    // Include group-level results for detailed reporting
     const jsonData = {
       compareValidator: validatorB,
+      // Group-level results (new format)
+      groups: allGroups,
+      // File-level aggregated results (for backwards compatibility)
       results: fileResults.map((f) => ({
         draft: f.draft,
         file: f.file,
@@ -319,6 +354,7 @@ function main() {
       })),
       summary: Object.fromEntries(
         drafts.map((draft) => {
+          const draftGroups = allGroups.filter((g) => g.draft === draft);
           const draftFiles = fileResults.filter((f) => f.draft === draft);
           const totalTests = draftFiles.reduce((sum, f) => sum + f.testCount, 0);
           const totalNsA = draftFiles.reduce((sum, f) => sum + f.nsA * f.testCount, 0);
@@ -331,6 +367,7 @@ function main() {
             draft,
             {
               files: draftFiles.length,
+              groups: draftGroups.length,
               tests: totalTests,
               tjs: {
                 nsPerTest: totalTests > 0 ? totalNsA / totalTests : 0,
@@ -354,6 +391,7 @@ function main() {
         faster,
         ratio,
         totalTests: grandTotalTests,
+        totalGroups: comparisons.length,
       },
     };
 
