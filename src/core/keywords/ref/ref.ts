@@ -245,11 +245,12 @@ export default function generateRefCheck(ctx: CompileContext): void {
   const isRecursiveRef = schema.$ref === '#' && hasRecursiveAnchor;
 
   if (isRecursiveRef && dynamicScopeVar) {
-    const pathArg = path.toString() === "''" ? _`''` : _`errors ? ${path} : ''`;
+    // Always compute path for error reporting
+    const pathArg = path;
 
     const allRecursiveAnchors = ctx.getAllRecursiveAnchorSchemas();
     if (allRecursiveAnchors.length === 1) {
-      code.if(_`!${funcName}(${data}, errors, ${pathArg}, ${dynamicScopeVar})`, () => {
+      code.if(_`!${funcName}(${data}, true, ${pathArg}, ${dynamicScopeVar})`, () => {
         genSubschemaExit(code, ctx);
       });
     } else {
@@ -257,7 +258,7 @@ export default function generateRefCheck(ctx: CompileContext): void {
       code.line(
         _`const ${validatorVar} = ${dynamicScopeVar}.get('__recursive_current__') || ${funcName};`
       );
-      code.if(_`!${validatorVar}(${data}, errors, ${pathArg}, ${dynamicScopeVar})`, () => {
+      code.if(_`!${validatorVar}(${data}, true, ${pathArg}, ${dynamicScopeVar})`, () => {
         genSubschemaExit(code, ctx);
       });
     }
@@ -265,8 +266,9 @@ export default function generateRefCheck(ctx: CompileContext): void {
   }
 
   if (!dynamicScopeVar) {
-    const pathArg = path.toString() === "''" ? _`''` : _`errors ? ${path} : ''`;
-    code.if(_`!${funcName}(${data}, errors, ${pathArg})`, () => {
+    // Always compute path for error reporting
+    const pathArg = path;
+    code.if(_`!${funcName}(${data}, true, ${pathArg})`, () => {
       genSubschemaExit(code, ctx);
     });
     if (refStaticProps.size > 0) {
@@ -289,7 +291,8 @@ export default function generateRefCheck(ctx: CompileContext): void {
   if (refResourceId) {
     const resourceAnchors = ctx.getResourceDynamicAnchors(refResourceId);
     if (resourceAnchors.length > 0) {
-      const pathArg = path.toString() === "''" ? _`''` : _`errors ? ${path} : ''`;
+      // Always compute path for error reporting
+      const pathArg = path;
       code.block(_``, () => {
         const savedVars = new Map<string, Name>();
         for (const { anchor, schema: anchorSchema } of resourceAnchors) {
@@ -302,7 +305,7 @@ export default function generateRefCheck(ctx: CompileContext): void {
             _`if (${savedVar} === undefined) ${dynamicScopeVar}.set(${stringify(anchor)}, ${anchorFuncName});`
           );
         }
-        code.if(_`!${funcName}(${data}, errors, ${pathArg}, ${dynamicScopeVar})`, () => {
+        code.if(_`!${funcName}(${data}, true, ${pathArg}, ${dynamicScopeVar})`, () => {
           for (const { anchor } of resourceAnchors) {
             const savedVar = savedVars.get(anchor);
             if (savedVar) {
@@ -329,8 +332,9 @@ export default function generateRefCheck(ctx: CompileContext): void {
     }
   }
 
-  const pathArg = path.toString() === "''" ? _`''` : _`errors ? ${path} : ''`;
-  code.if(_`!${funcName}(${data}, errors, ${pathArg}, ${dynamicScopeVar})`, () => {
+  // Always compute path for error reporting
+  const pathArg = path;
+  code.if(_`!${funcName}(${data}, true, ${pathArg}, ${dynamicScopeVar})`, () => {
     genSubschemaExit(code, ctx);
   });
   if (refStaticProps.size > 0) {

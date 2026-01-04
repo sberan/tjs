@@ -38,11 +38,11 @@ export default function generateDynamicRefCheck(ctx: CompileContext): void {
     }
 
     if (!dynamicScopeVar) {
-      code.if(_`!${staticFuncName}(${data}, errors, ${path}, [])`, () => {
+      code.if(_`!${staticFuncName}(${data}, true, ${path}, [])`, () => {
         genSubschemaExit(code, ctx);
       });
     } else if (!hasDynamicAnchor) {
-      code.if(_`!${staticFuncName}(${data}, errors, ${path}, ${dynamicScopeVar})`, () => {
+      code.if(_`!${staticFuncName}(${data}, true, ${path}, ${dynamicScopeVar})`, () => {
         genSubschemaExit(code, ctx);
       });
     } else {
@@ -50,7 +50,7 @@ export default function generateDynamicRefCheck(ctx: CompileContext): void {
         code.line(
           _`const validator = ${dynamicScopeVar}.get(${stringify(anchorName)}) || ${staticFuncName};`
         );
-        code.if(_`!validator(${data}, errors, ${path}, ${dynamicScopeVar})`, () => {
+        code.if(_`!validator(${data}, true, ${path}, ${dynamicScopeVar})`, () => {
           genSubschemaExit(code, ctx);
         });
       });
@@ -65,7 +65,7 @@ export default function generateDynamicRefCheck(ctx: CompileContext): void {
 
     const funcName = ctx.queueCompile(refSchema);
     const scopeArg = dynamicScopeVar || _`[]`;
-    code.if(_`!${funcName}(${data}, errors, ${path}, ${scopeArg})`, () => {
+    code.if(_`!${funcName}(${data}, true, ${path}, ${scopeArg})`, () => {
       genSubschemaExit(code, ctx);
     });
   }
