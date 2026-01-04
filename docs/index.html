@@ -793,7 +793,75 @@
     </div>
   </footer>
 
+  <script src="https://unpkg.com/typescript@5/lib/typescript.js"></script>
   <script type="module">
+    // Load tjs type definitions
+    const tjsDts = await fetch('./tjs.d.ts').then(r => r.text());
+
+    // Get inferred type using TypeScript compiler
+    function getInferredType(schemaJson) {
+      const code = `
+import { schema, Infer, JsonSchema } from './tjs';
+const s = ${schemaJson} as const;
+type Result = Infer<typeof s>;
+declare const result: Result;
+`;
+      const files = {
+        '/tjs.d.ts': tjsDts,
+        '/main.ts': code,
+      };
+
+      const options = {
+        target: ts.ScriptTarget.ESNext,
+        module: ts.ModuleKind.ESNext,
+        strict: true,
+        noEmit: true,
+      };
+
+      const host = {
+        getSourceFile: (name) => {
+          const content = files[name];
+          return content ? ts.createSourceFile(name, content, ts.ScriptTarget.ESNext, true) : undefined;
+        },
+        getDefaultLibFileName: () => '/lib.d.ts',
+        writeFile: () => {},
+        getCurrentDirectory: () => '/',
+        getCanonicalFileName: (f) => f,
+        useCaseSensitiveFileNames: () => true,
+        getNewLine: () => '\n',
+        fileExists: (name) => name in files || name === '/lib.d.ts',
+        readFile: (name) => files[name] || '',
+        resolveModuleNames: (names) => names.map(n => n === './tjs' ? { resolvedFileName: '/tjs.d.ts' } : undefined),
+      };
+
+      try {
+        const program = ts.createProgram(['/main.ts'], options, host);
+        const checker = program.getTypeChecker();
+        const sourceFile = program.getSourceFile('/main.ts');
+
+        // Find the Result type alias
+        let resultType = null;
+        ts.forEachChild(sourceFile, node => {
+          if (ts.isVariableStatement(node)) {
+            const decl = node.declarationList.declarations[0];
+            if (decl && decl.name.getText() === 'result') {
+              const type = checker.getTypeAtLocation(decl);
+              resultType = checker.typeToString(type, undefined,
+                ts.TypeFormatFlags.NoTruncation |
+                ts.TypeFormatFlags.MultilineObjectLiterals |
+                ts.TypeFormatFlags.WriteClassExpressionAsTypeLiteral
+              );
+            }
+          }
+        });
+
+        return resultType || 'unknown';
+      } catch (e) {
+        console.error('Type inference error:', e);
+        return 'unknown';
+      }
+    }
+
     const examples = {
       user: {
         schema: {
@@ -937,19 +1005,22 @@
         return;
       }
 
-      // Show actual usage code
-      const schemaStr = JSON.stringify(schema, null, 2).split('\n').map((l, i) => i === 0 ? l : '  ' + l).join('\n');
+      // Get actual inferred type from TypeScript
+      const schemaStr = JSON.stringify(schema, null, 2);
+      const inferredType = getInferredType(schemaStr);
+
+      // Show usage code with actual type
+      const indentedSchema = schemaStr.split('\n').map((l, i) => i === 0 ? l : '  ' + l).join('\n');
       usageCode.textContent = `import { schema } from 'tjs';
 
-const validator = schema(${schemaStr} as const);
+const validator = schema(${indentedSchema} as const);
 
-// TypeScript automatically infers the type from the schema
 type T = typeof validator.type;
+// T = ${inferredType}
 
-// Validate data
 const result = validator.validate(data);
 if (result.error === undefined) {
-  console.log(result.value); // fully typed as T
+  const value: T = result.value; // fully typed!
 }`;
 
       if (!tjs) {
