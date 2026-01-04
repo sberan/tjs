@@ -817,6 +817,8 @@ declare const result: Result;
         module: ts.ModuleKind.ESNext,
         strict: true,
         noEmit: true,
+        noLib: true,
+        skipLibCheck: true,
       };
 
       const host = {
