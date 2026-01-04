@@ -1,14 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 120" fill="none">
-  <defs>
-    <linearGradient id="bolt" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#5ed9a8"/>
-      <stop offset="100%" stop-color="#3fb97f"/>
-    </linearGradient>
-  </defs>
-  <!-- Shield outline -->
-  <path d="M50 4 L96 20 L96 52 C96 84 50 116 50 116 C50 116 4 84 4 52 L4 20 Z"
-        stroke="#2d5c4a" stroke-width="6" fill="none" stroke-linejoin="round"/>
-  <!-- Lightning bolt -->
-  <path d="M58 18 L32 58 L47 58 L40 102 L70 52 L54 52 L62 18 Z"
-        fill="url(#bolt)"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <!-- Shield with dark fill and gray border -->
+  <path d="M24 4 L44 12 L44 24 C44 36 24 46 24 46 C24 46 4 36 4 24 L4 12 Z"
+        fill="#1a1a1a" stroke="#6b7280" stroke-width="2"/>
+  <!-- Lightning bolt - bright green -->
+  <path d="M27 10 L15 26 L22 26 L19 38 L33 22 L26 22 L29 10 Z"
+        fill="#4ade80"/>
 </svg>
