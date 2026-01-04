@@ -2,15 +2,26 @@
 // Bundled from src/types.ts and src/infer.ts
 
 // Minimal lib.d.ts definitions needed for type inference (noLib: true)
+declare global {
+  interface Boolean {}
+  interface CallableFunction {}
+  interface NewableFunction {}
+  interface String {}
+  interface Number {}
+  interface Function {}
+  interface Object {}
+  interface IArguments {}
+  interface RegExp {}
+  interface Array<T> {
+    length: number;
+    [n: number]: T;
+  }
+  interface ReadonlyArray<T> {
+    readonly length: number;
+    readonly [n: number]: T;
+  }
+}
 declare type Record<K extends keyof any, T> = { [P in K]: T };
-interface Array<T> {
-  length: number;
-  [n: number]: T;
-}
-interface ReadonlyArray<T> {
-  readonly length: number;
-  readonly [n: number]: T;
-}
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonArray = JsonValue[];

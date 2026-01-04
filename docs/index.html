@@ -545,23 +545,23 @@
             </div>
           </div>
 
-          <div class="panel result-panel">
+          <div class="panel">
+            <div class="panel-header">
+              <span>inferred type</span>
+              <span style="color: var(--text-dim); font-size: 10px;">typeof validator.type</span>
+            </div>
+            <div class="panel-body">
+              <pre id="inferred-type" class="editor" style="min-height: 100px; max-height: 280px; padding: 16px; white-space: pre; overflow: auto; color: var(--purple);"></pre>
+            </div>
+          </div>
+
+          <div class="panel result-panel" style="grid-column: 1 / -1;">
             <div class="panel-header">
               <span>validation result</span>
               <span id="status-badge" class="status-badge status-valid">valid</span>
             </div>
             <div class="panel-body">
               <div id="result-message" class="result-message"></div>
-            </div>
-          </div>
-
-          <div class="panel" style="grid-column: 1 / -1;">
-            <div class="panel-header">
-              <span>inferred type</span>
-              <span style="color: var(--text-dim); font-size: 10px;">typeof validator.type</span>
-            </div>
-            <div class="panel-body">
-              <pre id="inferred-type" class="editor" style="min-height: 80px; padding: 16px; white-space: pre; overflow-x: auto; color: var(--purple);"></pre>
             </div>
           </div>
         </div>
@@ -799,6 +799,40 @@
     // Load tjs type definitions
     const tjsDts = await fetch('./tjs.d.ts').then(r => r.text());
 
+    // Format TypeScript type string for better readability
+    function formatType(typeStr) {
+      // Clean up the type string
+      let result = typeStr
+        .replace(/\s+/g, ' ')  // normalize whitespace
+        .replace(/\{ /g, '{\n  ')  // opening brace
+        .replace(/ \}/g, '\n}')  // closing brace
+        .replace(/; /g, ';\n  ')  // semicolons
+        .replace(/\n  \n/g, '\n')  // remove empty lines
+        .trim();
+
+      // Handle nested objects with proper indentation
+      let depth = 0;
+      let formatted = '';
+      for (let i = 0; i < result.length; i++) {
+        const char = result[i];
+        if (char === '{') {
+          depth++;
+          formatted += '{\n' + '  '.repeat(depth);
+        } else if (char === '}') {
+          depth--;
+          formatted += '\n' + '  '.repeat(depth) + '}';
+        } else if (char === ';' && result[i + 1] !== '\n') {
+          formatted += ';\n' + '  '.repeat(depth);
+        } else if (char === '\n') {
+          // skip, we handle newlines ourselves
+        } else {
+          formatted += char;
+        }
+      }
+
+      return formatted.replace(/\n\s*\n/g, '\n').trim();
+    }
+
     // Get inferred type using TypeScript compiler
     function getInferredType(schemaJson) {
       const code = `
@@ -842,6 +876,12 @@ declare const result: Result;
         const checker = program.getTypeChecker();
         const sourceFile = program.getSourceFile('/main.ts');
 
+        // Log any diagnostics for debugging
+        const diagnostics = ts.getPreEmitDiagnostics(program);
+        if (diagnostics.length > 0) {
+          console.log('TypeScript diagnostics:', diagnostics.map(d => d.messageText));
+        }
+
         // Find the Result type alias
         let resultType = null;
         ts.forEachChild(sourceFile, node => {
@@ -857,6 +897,11 @@ declare const result: Result;
             }
           }
         });
+
+        // Format the type for better readability
+        if (resultType) {
+          resultType = formatType(resultType);
+        }
 
         return resultType || 'unknown';
       } catch (e) {
@@ -1021,7 +1066,7 @@ declare const result: Result;
       }
 
       try {
-        const validator = tjs.schema(schema);
+        const validator = tjs.schema(schema, { formatAssertion: true });
         const result = validator.validate(data);
         if (result.error === undefined) {
           showStatus('valid', 'Validation passed');
