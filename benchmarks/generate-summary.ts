@@ -6,7 +6,7 @@
  *   npx tsx benchmarks/generate-summary.ts
  *
  * Reads from:
- *   benchmarks/results/*.json
+ *   benchmarks/results/*.json (individual validator benchmark results)
  *   benchmarks/BENCHMARKS.template.md
  */
 
@@ -17,6 +17,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const ALL_VALIDATORS = [
+  'tjs',
   'ajv',
   'zod',
   'joi',
@@ -29,6 +30,11 @@ const ALL_VALIDATORS = [
 ];
 
 const validatorInfo: Record<string, { name: string; link: string; description: string }> = {
+  tjs: {
+    name: 'tjs',
+    link: 'https://github.com/sberan/tjs',
+    description: 'The fastest JSON Schema validator with TypeScript inference',
+  },
   ajv: {
     name: 'ajv',
     link: 'https://ajv.js.org/',
@@ -76,36 +82,31 @@ const validatorInfo: Record<string, { name: string; link: string; description: s
   },
 };
 
-interface ValidatorStats {
+interface GroupResult {
+  groupDesc: string;
+  passed: boolean;
+  passCount: number;
+  failCount: number;
   nsPerTest: number;
-  pass: number;
-  fail: number;
+  testCount: number;
 }
 
-interface DraftSummary {
-  files: number;
-  tests: number;
-  tjs: ValidatorStats;
-  other: ValidatorStats;
+interface FileResult {
+  draft: string;
+  file: string;
+  groups: GroupResult[];
+  totalPass: number;
+  totalFail: number;
 }
 
-interface H2H {
-  validatorA: string;
-  validatorB: string;
-  avgNsA: number;
-  avgNsB: number;
-  faster: string;
-  ratio: number;
-  totalTests: number;
+interface ValidatorBenchmark {
+  validator: string;
+  timestamp: string;
+  results: FileResult[];
+  summary: Record<string, { totalPass: number; totalFail: number; files: number }>;
 }
 
-interface BenchmarkData {
-  compareValidator: string;
-  summary: Record<string, DraftSummary>;
-  headToHead: H2H | null;
-}
-
-function loadBenchmarkData(validator: string): BenchmarkData | null {
+function loadBenchmarkData(validator: string): ValidatorBenchmark | null {
   const filePath = path.join(__dirname, 'results', `${validator}.json`);
   if (!fs.existsSync(filePath)) {
     return null;
@@ -130,48 +131,102 @@ function formatPercent(value: number): string {
   return `${Math.round(value)}%`;
 }
 
-function generateSummaryTable(validatorData: Map<string, BenchmarkData>): string {
+// Calculate average ns/test for a validator across all passing groups
+function calculateAvgNs(data: ValidatorBenchmark): { avgNs: number; totalTests: number } {
+  let totalNs = 0;
+  let totalTests = 0;
+
+  for (const result of data.results) {
+    for (const group of result.groups) {
+      if (group.passed && group.nsPerTest > 0) {
+        totalNs += group.nsPerTest * group.testCount;
+        totalTests += group.testCount;
+      }
+    }
+  }
+
+  return {
+    avgNs: totalTests > 0 ? totalNs / totalTests : 0,
+    totalTests,
+  };
+}
+
+// Calculate compliance rate for a validator
+function calculateCompliance(data: ValidatorBenchmark): {
+  passed: number;
+  total: number;
+  rate: string;
+} {
+  let totalPassed = 0;
+  let totalTests = 0;
+
+  for (const draft of Object.values(data.summary)) {
+    totalPassed += draft.totalPass;
+    totalTests += draft.totalPass + draft.totalFail;
+  }
+
+  const rate = totalTests > 0 ? Math.round((totalPassed / totalTests) * 100) : 0;
+  return { passed: totalPassed, total: totalTests, rate: `${rate}%` };
+}
+
+function generateSummaryTable(validatorData: Map<string, ValidatorBenchmark>): string {
   const lines: string[] = [];
+  const tjsData = validatorData.get('tjs');
 
-  lines.push('| Validator | Compliance | tjs ops/s | Other ops/s | Winner | Speedup |');
-  lines.push('|-----------|----------:|----------:|------------:|:------:|--------:|');
+  if (!tjsData) {
+    return 'No tjs benchmark data available.';
+  }
 
+  const tjsStats = calculateAvgNs(tjsData);
+  const tjsCompliance = calculateCompliance(tjsData);
+
+  lines.push('| Validator | Compliance | ops/s | vs tjs |');
+  lines.push('|-----------|----------:|------:|-------:|');
+
+  // Add tjs row first
+  const tjsOps = formatOps(tjsStats.avgNs);
+  const tjsInfo = validatorInfo['tjs'];
+  lines.push(`| [${tjsInfo.name}](${tjsInfo.link}) | ${tjsCompliance.rate} | ${tjsOps} | - |`);
+
+  // Add other validators
   for (const validator of ALL_VALIDATORS) {
+    if (validator === 'tjs') continue;
+
     const data = validatorData.get(validator);
     if (!data) continue;
 
-    const h2h = data.headToHead;
-    if (!h2h) continue;
+    const stats = calculateAvgNs(data);
+    const compliance = calculateCompliance(data);
+    const ops = formatOps(stats.avgNs);
 
-    // Calculate compliance from summary
-    let totalPassed = 0;
-    let totalTests = 0;
-    for (const summary of Object.values(data.summary)) {
-      totalPassed += summary.other.pass;
-      totalTests += summary.other.pass + summary.other.fail;
+    // Calculate speedup vs tjs
+    let speedup = '-';
+    if (stats.avgNs > 0 && tjsStats.avgNs > 0) {
+      const ratio = stats.avgNs / tjsStats.avgNs;
+      if (ratio > 1) {
+        speedup = `${ratio.toFixed(1)}x slower`;
+      } else if (ratio < 1) {
+        speedup = `${(1 / ratio).toFixed(1)}x faster`;
+      } else {
+        speedup = 'same';
+      }
     }
-    const compliance = totalTests > 0 ? formatPercent((totalPassed / totalTests) * 100) : '-';
-
-    const tjsOps = formatOps(h2h.avgNsA);
-    const otherOps = formatOps(h2h.avgNsB);
-    const winner = h2h.faster === 'tjs' ? '**tjs**' : `${validator}`;
-    const speedup = `${h2h.ratio.toFixed(2)}x`;
 
     const info = validatorInfo[validator];
     const validatorLink = info ? `[${info.name}](${info.link})` : validator;
 
-    lines.push(
-      `| ${validatorLink} | ${compliance} | ${tjsOps} | ${otherOps} | ${winner} | ${speedup} |`
-    );
+    lines.push(`| ${validatorLink} | ${compliance.rate} | ${ops} | ${speedup} |`);
   }
 
   return lines.join('\n');
 }
 
-function generateDetailedReports(validatorData: Map<string, BenchmarkData>): string {
+function generateDetailedReports(validatorData: Map<string, ValidatorBenchmark>): string {
   const lines: string[] = [];
 
   for (const validator of ALL_VALIDATORS) {
+    if (validator === 'tjs') continue;
+
     const data = validatorData.get(validator);
     if (!data) continue;
 
@@ -185,16 +240,16 @@ function generateDetailedReports(validatorData: Map<string, BenchmarkData>): str
     }
   }
 
-  return lines.join('\n');
+  return lines.length > 0 ? lines.join('\n') : 'No detailed reports available yet.';
 }
 
-function generateDraftTable(validatorData: Map<string, BenchmarkData>): string {
+function generateDraftTable(validatorData: Map<string, ValidatorBenchmark>): string {
   const drafts = ['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'];
   const lines: string[] = [];
 
-  // Build header
-  let header = '| Draft | tjs |';
-  let separator = '|-------|----:|';
+  // Build header with all available validators
+  let header = '| Draft |';
+  let separator = '|-------|';
   for (const validator of ALL_VALIDATORS) {
     if (validatorData.has(validator)) {
       header += ` ${validator} |`;
@@ -204,30 +259,32 @@ function generateDraftTable(validatorData: Map<string, BenchmarkData>): string {
   lines.push(header);
   lines.push(separator);
 
+  // Build rows for each draft
   for (const draft of drafts) {
     let row = `| ${draft} |`;
-
-    // Get tjs time from first available validator's data
-    let tjsNs = 0;
-    for (const data of validatorData.values()) {
-      const summary = data.summary[draft];
-      if (summary && summary.tjs.nsPerTest > 0) {
-        tjsNs = summary.tjs.nsPerTest;
-        break;
-      }
-    }
-    row += ` ${Math.round(tjsNs)} |`;
 
     for (const validator of ALL_VALIDATORS) {
       const data = validatorData.get(validator);
       if (!data) continue;
-      const summary = data.summary[draft];
-      if (summary && summary.other.nsPerTest > 0) {
-        row += ` ${Math.round(summary.other.nsPerTest)} |`;
-      } else {
-        row += ' - |';
+
+      // Calculate average ns for this draft
+      const draftResults = data.results.filter((r) => r.draft === draft);
+      let draftNs = 0;
+      let draftTests = 0;
+
+      for (const result of draftResults) {
+        for (const group of result.groups) {
+          if (group.passed && group.nsPerTest > 0) {
+            draftNs += group.nsPerTest * group.testCount;
+            draftTests += group.testCount;
+          }
+        }
       }
+
+      const avgNs = draftTests > 0 ? Math.round(draftNs / draftTests) : 0;
+      row += avgNs > 0 ? ` ${avgNs} |` : ' - |';
     }
+
     lines.push(row);
   }
 
@@ -244,11 +301,12 @@ function main() {
   let template = fs.readFileSync(templatePath, 'utf-8');
 
   // Load all validators
-  const validatorData: Map<string, BenchmarkData> = new Map();
+  const validatorData: Map<string, ValidatorBenchmark> = new Map();
   for (const validator of ALL_VALIDATORS) {
     const data = loadBenchmarkData(validator);
     if (data) {
       validatorData.set(validator, data);
+      console.error(`Loaded ${validator}: ${data.results.length} files`);
     }
   }
 

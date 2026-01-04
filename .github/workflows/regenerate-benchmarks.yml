@@ -18,7 +18,7 @@ permissions:
   pull-requests: write
 
 jobs:
-  # Run isolated benchmarks for tjs (once per draft)
+  # Run benchmarks for tjs (once per draft for parallelism)
   benchmark-tjs:
     runs-on: ubuntu-latest
     strategy:
@@ -42,10 +42,10 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Run isolated benchmark for tjs ${{ matrix.draft }}
+      - name: Run benchmark for tjs ${{ matrix.draft }}
         run: |
           mkdir -p benchmarks/results
-          npx tsx benchmarks/bench-isolated.ts tjs ${{ matrix.draft }} \
+          npx tsx benchmarks/bench.ts -v tjs ${{ matrix.draft }} \
             --json benchmarks/results/tjs-${{ matrix.draft }}.json
 
       - name: Upload tjs benchmark results
@@ -54,7 +54,7 @@ jobs:
           name: benchmark-tjs-${{ matrix.draft }}
           path: benchmarks/results/tjs-${{ matrix.draft }}.json
 
-  # Run isolated benchmarks for each validator (per draft)
+  # Run benchmarks for each validator (per draft for parallelism)
   benchmark-validator:
     runs-on: ubuntu-latest
     strategy:
@@ -79,10 +79,10 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Run isolated benchmark for ${{ matrix.validator }} ${{ matrix.draft }}
+      - name: Run benchmark for ${{ matrix.validator }} ${{ matrix.draft }}
         run: |
           mkdir -p benchmarks/results
-          npx tsx benchmarks/bench-isolated.ts ${{ matrix.validator }} ${{ matrix.draft }} \
+          npx tsx benchmarks/bench.ts -v ${{ matrix.validator }} ${{ matrix.draft }} \
             --json benchmarks/results/${{ matrix.validator }}-${{ matrix.draft }}.json
 
       - name: Upload benchmark results
@@ -124,52 +124,47 @@ jobs:
           pattern: benchmark-*
           merge-multiple: true
 
-      - name: Merge tjs isolated results
+      - name: Merge benchmark results
         run: |
-          echo "Merging tjs isolated results..."
-          npx tsx benchmarks/merge-isolated.ts "benchmarks/results/tjs-isolated.json" \
+          # Merge tjs results from all drafts
+          echo "Merging tjs results..."
+          npx tsx benchmarks/merge-isolated.ts "benchmarks/results/tjs.json" \
             "benchmarks/results/tjs-draft4.json" \
             "benchmarks/results/tjs-draft6.json" \
             "benchmarks/results/tjs-draft7.json" \
             "benchmarks/results/tjs-draft2019-09.json" \
             "benchmarks/results/tjs-draft2020-12.json"
 
-      - name: Compare and generate reports for each validator
-        run: |
+          # Merge each validator's results from all drafts
           for v in ajv zod joi jsonschema is-my-json-valid z-schema djv jsen schemasafe; do
-            echo "Processing $v..."
-
-            # Merge validator isolated results
-            npx tsx benchmarks/merge-isolated.ts "benchmarks/results/${v}-isolated.json" \
+            echo "Merging $v results..."
+            npx tsx benchmarks/merge-isolated.ts "benchmarks/results/${v}.json" \
               "benchmarks/results/${v}-draft4.json" \
               "benchmarks/results/${v}-draft6.json" \
               "benchmarks/results/${v}-draft7.json" \
               "benchmarks/results/${v}-draft2019-09.json" \
               "benchmarks/results/${v}-draft2020-12.json"
-
-            # Compare tjs vs validator (generates group-level results)
-            npx tsx benchmarks/bench-compare.ts \
-              "benchmarks/results/tjs-isolated.json" \
-              "benchmarks/results/${v}-isolated.json" \
-              --json "benchmarks/results/${v}.json"
-
-            # Generate markdown report
-            UPPER_NAME=$(echo "$v" | tr '[:lower:]-' '[:upper:]_')
-            npx tsx benchmarks/json-to-markdown.ts "benchmarks/results/${v}.json" > "benchmarks/results/BENCHMARK_${UPPER_NAME}.md"
           done
 
-          # Clean up per-draft and isolated files
+          # Clean up per-draft files
           rm -f benchmarks/results/*-draft*.json
-          rm -f benchmarks/results/*-isolated.json
 
-      - name: Run compliance tests
-        run: npm test -- --reporter=verbose 2>&1 || true
+      - name: Generate summary and reports
+        run: |
+          # Generate BENCHMARKS.md
+          npx tsx benchmarks/generate-summary.ts
 
-      - name: Update SVG chart
-        run: npx tsx benchmarks/update-svg.ts
+          # Update README.md
+          npx tsx benchmarks/update-readme.ts
 
-      - name: Update README
-        run: npx tsx benchmarks/update-readme.ts
+          # Update SVG chart
+          npx tsx benchmarks/update-svg.ts
+
+          # Generate detailed markdown reports for each validator
+          for v in ajv zod joi jsonschema is-my-json-valid z-schema djv jsen schemasafe; do
+            UPPER_NAME=$(echo "$v" | tr '[:lower:]-' '[:upper:]_')
+            npx tsx benchmarks/generate-report.ts "$v" -o "benchmarks/results/BENCHMARK_${UPPER_NAME}.md"
+          done
 
       - name: Check for significant changes
         id: check_changes

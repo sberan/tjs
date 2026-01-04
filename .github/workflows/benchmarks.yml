@@ -8,7 +8,7 @@ permissions:
   pull-requests: write
 
 jobs:
-  # Run isolated benchmark for tjs
+  # Run benchmark for tjs (per draft for parallelism)
   benchmark-tjs:
     runs-on: ubuntu-latest
     strategy:
@@ -33,10 +33,10 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Run isolated benchmark for tjs ${{ matrix.draft }}
+      - name: Run benchmark for tjs ${{ matrix.draft }}
         run: |
           mkdir -p benchmarks/results
-          npx tsx benchmarks/bench-isolated.ts tjs ${{ matrix.draft }} \
+          npx tsx benchmarks/bench.ts -v tjs ${{ matrix.draft }} \
             --json benchmarks/results/tjs-${{ matrix.draft }}.json
 
       - name: Upload tjs benchmark results
@@ -45,7 +45,7 @@ jobs:
           name: benchmark-tjs-${{ matrix.draft }}
           path: benchmarks/results/tjs-${{ matrix.draft }}.json
 
-  # Run isolated benchmark for ajv
+  # Run benchmark for ajv (per draft for parallelism)
   benchmark-ajv:
     runs-on: ubuntu-latest
     strategy:
@@ -70,10 +70,10 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Run isolated benchmark for ajv ${{ matrix.draft }}
+      - name: Run benchmark for ajv ${{ matrix.draft }}
         run: |
           mkdir -p benchmarks/results
-          npx tsx benchmarks/bench-isolated.ts ajv ${{ matrix.draft }} \
+          npx tsx benchmarks/bench.ts -v ajv ${{ matrix.draft }} \
             --json benchmarks/results/ajv-${{ matrix.draft }}.json
 
       - name: Upload ajv benchmark results
@@ -111,32 +111,26 @@ jobs:
           pattern: benchmark-*
           merge-multiple: true
 
-      - name: Merge and compare benchmark results
+      - name: Merge benchmark results
         run: |
-          # Merge tjs results
-          npx tsx benchmarks/merge-isolated.ts benchmarks/results/tjs-isolated.json \
+          # Merge tjs results from all drafts
+          npx tsx benchmarks/merge-isolated.ts benchmarks/results/tjs.json \
             benchmarks/results/tjs-draft4.json \
             benchmarks/results/tjs-draft6.json \
             benchmarks/results/tjs-draft7.json \
             benchmarks/results/tjs-draft2019-09.json \
             benchmarks/results/tjs-draft2020-12.json
 
-          # Merge ajv results
-          npx tsx benchmarks/merge-isolated.ts benchmarks/results/ajv-isolated.json \
+          # Merge ajv results from all drafts
+          npx tsx benchmarks/merge-isolated.ts benchmarks/results/ajv.json \
             benchmarks/results/ajv-draft4.json \
             benchmarks/results/ajv-draft6.json \
             benchmarks/results/ajv-draft7.json \
             benchmarks/results/ajv-draft2019-09.json \
             benchmarks/results/ajv-draft2020-12.json
 
-          # Compare tjs vs ajv (generates group-level results)
-          npx tsx benchmarks/bench-compare.ts \
-            benchmarks/results/tjs-isolated.json \
-            benchmarks/results/ajv-isolated.json \
-            --json benchmarks/results/ajv.json
-
       - name: Generate PR comment
-        run: npx tsx benchmarks/generate-pr-comment.ts benchmarks/results/ajv.json > benchmark-comment.md
+        run: npx tsx benchmarks/generate-pr-comment.ts > benchmark-comment.md
 
       - name: Comment on PR
         uses: actions/github-script@v7
