@@ -1,45 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 480">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480">
   <defs>
     <!-- Gradients for bars -->
     <linearGradient id="grad-tjs" x1="0%" y1="0%" x2="0%" y2="100%">
       <stop offset="0%" style="stop-color:#34d399;stop-opacity:1" />
       <stop offset="100%" style="stop-color:#10b981;stop-opacity:1" />
     </linearGradient>
-    <linearGradient id="grad-jsen" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#f472b6;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#ec4899;stop-opacity:1" />
-    </linearGradient>
-    <linearGradient id="grad-is-my-json-valid" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#67e8f9;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#22d3ee;stop-opacity:1" />
-    </linearGradient>
-    <linearGradient id="grad-schemasafe" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#60a5fa;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#3b82f6;stop-opacity:1" />
-    </linearGradient>
     <linearGradient id="grad-ajv" x1="0%" y1="0%" x2="0%" y2="100%">
       <stop offset="0%" style="stop-color:#818cf8;stop-opacity:1" />
       <stop offset="100%" style="stop-color:#6366f1;stop-opacity:1" />
-    </linearGradient>
-    <linearGradient id="grad-djv" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#4ade80;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#22c55e;stop-opacity:1" />
-    </linearGradient>
-    <linearGradient id="grad-z-schema" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#fb923c;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#f97316;stop-opacity:1" />
-    </linearGradient>
-    <linearGradient id="grad-joi" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#f87171;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#ef4444;stop-opacity:1" />
-    </linearGradient>
-    <linearGradient id="grad-zod" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#fbbf24;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#f59e0b;stop-opacity:1" />
-    </linearGradient>
-    <linearGradient id="grad-jsonschema" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" style="stop-color:#a78bfa;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:1" />
     </linearGradient>
     <!-- Glow effects -->
     <filter id="glow-tjs" x="-20%" y="-20%" width="140%" height="140%">
@@ -52,77 +20,37 @@
   </defs>
 
   <!-- Background -->
-  <rect width="900" height="480" fill="#0f172a"/>
+  <rect width="800" height="480" fill="#0f172a"/>
 
   <!-- Subtle grid pattern -->
   <g opacity="0.1">
-    <line x1="80" y1="400" x2="800" y2="400" stroke="#94a3b8" stroke-width="1"/>
-    <line x1="80" y1="300" x2="800" y2="300" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
-    <line x1="80" y1="200" x2="800" y2="200" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
-    <line x1="80" y1="100" x2="800" y2="100" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
+    <line x1="80" y1="400" x2="260" y2="400" stroke="#94a3b8" stroke-width="1"/>
+    <line x1="80" y1="300" x2="260" y2="300" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
+    <line x1="80" y1="200" x2="260" y2="200" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
+    <line x1="80" y1="100" x2="260" y2="100" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
   </g>
 
   <!-- Y-axis labels -->
   <text x="70" y="405" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">0</text>
-  <text x="70" y="305" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">8.0M</text>
-  <text x="70" y="205" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">16.0M</text>
-  <text x="70" y="105" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">24.0M</text>
+  <text x="70" y="305" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">6.3M</text>
+  <text x="70" y="205" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">12.7M</text>
+  <text x="70" y="105" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">19.0M</text>
 
   <!-- Title -->
-  <text x="450" y="35" text-anchor="middle" fill="#f1f5f9" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">JSON Schema Validator Performance</text>
-  <text x="450" y="60" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="14">Operations per second (higher is better)</text>
+  <text x="400" y="35" text-anchor="middle" fill="#f1f5f9" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">JSON Schema Validator Performance</text>
+  <text x="400" y="60" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="14">Operations per second (higher is better)</text>
 
   <!-- Bars -->
-  <!-- tjs: 23.7M = 300px height -->
-  <rect x="100" y="100" width="50" height="300" rx="6" fill="url(#grad-tjs)" filter="url(#glow-tjs)"/>
-  <text x="125" y="425" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">tjs</text>
-  <text x="125" y="92" text-anchor="middle" fill="#34d399" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">23.7M</text>
+  <!-- tjs: 18.4M = 300px height -->
+  <rect x="100" y="100" width="60" height="300" rx="6" fill="url(#grad-tjs)" filter="url(#glow-tjs)"/>
+  <text x="130" y="425" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">tjs</text>
+  <text x="130" y="92" text-anchor="middle" fill="#34d399" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">18.4M</text>
 
-  <!-- jsen: 14.8M = 188px height -->
-  <rect x="170" y="212" width="50" height="188" rx="6" fill="url(#grad-jsen)"/>
-  <text x="195" y="425" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">jsen</text>
-  <text x="195" y="204" text-anchor="middle" fill="#f472b6" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">14.8M</text>
-
-  <!-- is-my-json-valid: 13.1M = 166px height -->
-  <rect x="240" y="234" width="50" height="166" rx="6" fill="url(#grad-is-my-json-valid)"/>
-  <text x="265" y="425" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">is-my-json..</text>
-  <text x="265" y="226" text-anchor="middle" fill="#67e8f9" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">13.1M</text>
-
-  <!-- schemasafe: 10.6M = 134px height -->
-  <rect x="310" y="266" width="50" height="134" rx="6" fill="url(#grad-schemasafe)"/>
-  <text x="335" y="425" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">schemasafe</text>
-  <text x="335" y="258" text-anchor="middle" fill="#60a5fa" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">10.6M</text>
-
-  <!-- ajv: 7.5M = 95px height -->
-  <rect x="380" y="305" width="50" height="95" rx="6" fill="url(#grad-ajv)"/>
-  <text x="405" y="425" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">ajv</text>
-  <text x="405" y="297" text-anchor="middle" fill="#818cf8" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">7.5M</text>
-
-  <!-- djv: 3.9M = 50px height -->
-  <rect x="450" y="350" width="50" height="50" rx="6" fill="url(#grad-djv)"/>
-  <text x="475" y="425" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">djv</text>
-  <text x="475" y="342" text-anchor="middle" fill="#4ade80" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">3.9M</text>
-
-  <!-- z-schema: 974K = 12px height -->
-  <rect x="520" y="388" width="50" height="12" rx="6" fill="url(#grad-z-schema)"/>
-  <text x="545" y="425" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">z-schema</text>
-  <text x="545" y="380" text-anchor="middle" fill="#fb923c" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">974K</text>
-
-  <!-- joi: 451K = 8px height -->
-  <rect x="590" y="392" width="50" height="8" rx="4" fill="url(#grad-joi)"/>
-  <text x="615" y="425" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">joi</text>
-  <text x="615" y="384" text-anchor="middle" fill="#f87171" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">451K</text>
-
-  <!-- zod: 143K = 8px height -->
-  <rect x="660" y="392" width="50" height="8" rx="4" fill="url(#grad-zod)"/>
-  <text x="685" y="425" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">zod</text>
-  <text x="685" y="384" text-anchor="middle" fill="#fbbf24" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">143K</text>
-
-  <!-- jsonschema: 119K = 8px height -->
-  <rect x="730" y="392" width="50" height="8" rx="4" fill="url(#grad-jsonschema)"/>
-  <text x="755" y="425" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">jsonschema</text>
-  <text x="755" y="384" text-anchor="middle" fill="#a78bfa" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">119K</text>
+  <!-- ajv: 7.8M = 127px height -->
+  <rect x="180" y="273" width="60" height="127" rx="6" fill="url(#grad-ajv)"/>
+  <text x="210" y="425" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">ajv</text>
+  <text x="210" y="265" text-anchor="middle" fill="#818cf8" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">2.4x</text>
 
   <!-- Legend note -->
-  <text x="450" y="460" text-anchor="middle" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="11">Using JSON Schema Test Suite · Only tests where both validators pass are compared</text>
+  <text x="400" y="460" text-anchor="middle" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="11">tjs shows ops/sec • others show how much slower (head-to-head on shared tests)</text>
 </svg>
