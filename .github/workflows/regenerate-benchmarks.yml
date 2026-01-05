@@ -259,7 +259,7 @@ jobs:
 
       # Trigger the test workflow on the benchmark branch
       # Note: push events from workflows don't trigger other workflows (GitHub anti-recursion)
-      # so we use workflow_dispatch with the PAT to explicitly trigger tests
+      # so we use repository_dispatch with the PAT to explicitly trigger tests
       - name: Trigger test workflow
         if: steps.check_changes.outputs.has_changes == 'true'
         env:
@@ -267,13 +267,19 @@ jobs:
         run: |
           COMMIT_SHA=$(git rev-parse HEAD)
           echo "Triggering test workflow for ref: chore/update-benchmarks (commit: $COMMIT_SHA)"
-          gh workflow run test.yml --ref chore/update-benchmarks -f ref=chore/update-benchmarks
+
+          # Use repository_dispatch to trigger the test workflow
+          # This only requires repo scope, not workflow scope
+          gh api repos/${{ github.repository }}/dispatches \
+            -f event_type=test-benchmark-pr \
+            -f client_payload[ref]=chore/update-benchmarks \
+            -f client_payload[sha]=$COMMIT_SHA
 
           # Wait a moment for the workflow to be queued
           sleep 5
 
-          # Get the run ID of the triggered workflow
-          RUN_ID=$(gh run list --workflow=test.yml --branch=chore/update-benchmarks --limit=1 --json databaseId --jq '.[0].databaseId')
+          # Get the run ID of the triggered workflow (look for repository_dispatch events)
+          RUN_ID=$(gh run list --workflow=test.yml --event=repository_dispatch --limit=1 --json databaseId --jq '.[0].databaseId')
           echo "Triggered run ID: $RUN_ID"
 
           # Create a pending status on the commit
