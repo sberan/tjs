@@ -188,12 +188,8 @@
 
     .playground-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr;
       gap: 16px;
-    }
-
-    @media (max-width: 1100px) {
-      .playground-grid { grid-template-columns: 1fr 1fr; }
     }
 
     @media (max-width: 700px) {
@@ -551,11 +547,11 @@
               <span style="color: var(--text-dim); font-size: 10px;">typeof validator.type</span>
             </div>
             <div class="panel-body">
-              <div id="inferred-type" class="editor" style="height: 280px;"></div>
+              <div id="inferred-type" class="editor" style="min-height: 280px;"></div>
             </div>
           </div>
 
-          <div class="panel result-panel" style="grid-column: 1 / -1;">
+          <div class="panel result-panel">
             <div class="panel-header">
               <span>validation result</span>
               <span id="status-badge" class="status-badge status-valid">valid</span>
@@ -838,37 +834,45 @@ declare function schema<const T extends JsonSchema>(definition: T): Validator<In
       + validatorDts;
 
     // Format TypeScript type string for better readability
-    function formatType(typeStr) {
-      // Clean up the type string
-      let result = typeStr
-        .replace(/\s+/g, ' ')  // normalize whitespace
-        .replace(/\{ /g, '{\n  ')  // opening brace
-        .replace(/ \}/g, '\n}')  // closing brace
-        .replace(/; /g, ';\n  ')  // semicolons
-        .replace(/\n  \n/g, '\n')  // remove empty lines
-        .trim();
+    function formatType(typeStr, maxWidth = 40) {
+      // Clean up whitespace
+      let result = typeStr.replace(/\s+/g, ' ').trim();
 
       // Handle nested objects with proper indentation
       let depth = 0;
       let formatted = '';
+      let lineLength = 0;
+
       for (let i = 0; i < result.length; i++) {
         const char = result[i];
         if (char === '{') {
           depth++;
-          formatted += '{\n' + '  '.repeat(depth);
+          const indent = '  '.repeat(depth);
+          formatted += '{\n' + indent;
+          lineLength = indent.length;
         } else if (char === '}') {
           depth--;
-          formatted += '\n' + '  '.repeat(depth) + '}';
-        } else if (char === ';' && result[i + 1] !== '\n') {
-          formatted += ';\n' + '  '.repeat(depth);
-        } else if (char === '\n') {
-          // skip, we handle newlines ourselves
+          const indent = '  '.repeat(depth);
+          formatted += '\n' + indent + '}';
+          lineLength = indent.length + 1;
+        } else if (char === ';') {
+          const indent = '  '.repeat(depth);
+          formatted += ';\n' + indent;
+          lineLength = indent.length;
+        } else if (char === '|' && depth === 0) {
+          // Break union types at top level
+          formatted += '\n  | ';
+          lineLength = 4;
+        } else if (char === ' ' && result[i - 1] === '|') {
+          // Skip space after | (we added our own)
+          continue;
         } else {
           formatted += char;
+          lineLength++;
         }
       }
 
-      return formatted.replace(/\n\s*\n/g, '\n').trim();
+      return 'type Result =\n  ' + formatted.replace(/\n\s*\n/g, '\n').trim();
     }
 
     // Get inferred type using TypeScript compiler
@@ -940,10 +944,10 @@ declare const result: Result;
           resultType = formatType(resultType);
         }
 
-        return resultType || 'unknown';
+        return resultType || 'type Result = unknown';
       } catch (e) {
         console.error('Type inference error:', e);
-        return 'unknown';
+        return 'type Result = unknown';
       }
     }
 
@@ -1192,7 +1196,7 @@ declare const result: Result;
         schema = extractSchemaFromCode(code);
       } catch (e) {
         showStatus('error', e.message);
-        if (typeEditor) typeEditor.setValue('unknown');
+        if (typeEditor) typeEditor.setValue('type Result = unknown');
         return;
       }
       try {
