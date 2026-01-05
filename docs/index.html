@@ -188,12 +188,8 @@
 
     .playground-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr;
       gap: 16px;
-    }
-
-    @media (max-width: 1100px) {
-      .playground-grid { grid-template-columns: 1fr 1fr; }
     }
 
     @media (max-width: 700px) {
@@ -545,23 +541,23 @@
             </div>
           </div>
 
-          <div class="panel">
-            <div class="panel-header">
-              <span>inferred type</span>
-              <span style="color: var(--text-dim); font-size: 10px;">typeof validator.type</span>
-            </div>
-            <div class="panel-body">
-              <div id="inferred-type" class="editor" style="height: 280px;"></div>
-            </div>
-          </div>
-
-          <div class="panel result-panel" style="grid-column: 1 / -1;">
+          <div class="panel result-panel">
             <div class="panel-header">
               <span>validation result</span>
               <span id="status-badge" class="status-badge status-valid">valid</span>
             </div>
             <div class="panel-body">
               <div id="result-message" class="result-message"></div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-header">
+              <span>inferred type</span>
+              <span style="color: var(--text-dim); font-size: 10px;">typeof validator.type</span>
+            </div>
+            <div class="panel-body">
+              <div id="inferred-type" class="editor" style="min-height: 280px;"></div>
             </div>
           </div>
         </div>
