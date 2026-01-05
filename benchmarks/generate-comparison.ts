@@ -15,33 +15,28 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-interface ValidatorStats {
+interface GroupResult {
+  groupDesc: string;
+  passed: boolean;
+  passCount: number;
+  failCount: number;
   nsPerTest: number;
-  pass: number;
-  fail: number;
+  testCount: number;
 }
 
-interface DraftSummary {
-  files: number;
-  tests: number;
-  tjs: ValidatorStats;
-  other: ValidatorStats;
+interface FileResult {
+  draft: string;
+  file: string;
+  groups: GroupResult[];
+  totalPass: number;
+  totalFail: number;
 }
 
-interface H2H {
-  validatorA: string;
-  validatorB: string;
-  avgNsA: number;
-  avgNsB: number;
-  faster: string;
-  ratio: number;
-  totalTests: number;
-}
-
-interface BenchmarkData {
-  compareValidator: string;
-  summary: Record<string, DraftSummary>;
-  headToHead: H2H | null;
+interface ValidatorBenchmark {
+  validator: string;
+  timestamp: string;
+  results: FileResult[];
+  summary: Record<string, { totalPass: number; totalFail: number; files: number }>;
 }
 
 function getMainFileContent(filePath: string): string | null {
@@ -55,12 +50,31 @@ function getMainFileContent(filePath: string): string | null {
   }
 }
 
-function loadJson(content: string): BenchmarkData | null {
+function loadJson(content: string): ValidatorBenchmark | null {
   try {
-    return JSON.parse(content);
+    const data = JSON.parse(content);
+    // Validate that this is the new format (has results array with groups)
+    if (!data.results || !Array.isArray(data.results)) return null;
+    if (data.results.length > 0 && !Array.isArray(data.results[0].groups)) return null;
+    return data;
   } catch {
     return null;
   }
+}
+
+function loadValidatorData(validator: string): ValidatorBenchmark | null {
+  const filePath = path.join(__dirname, 'results', `${validator}.json`);
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
+  const content = fs.readFileSync(filePath, 'utf-8');
+  return loadJson(content);
+}
+
+function loadValidatorDataFromMain(validator: string): ValidatorBenchmark | null {
+  const filePath = path.join(__dirname, 'results', `${validator}.json`);
+  const content = getMainFileContent(filePath);
+  return content ? loadJson(content) : null;
 }
 
 function formatOps(ns: number): string {
@@ -88,60 +102,82 @@ function formatDiffEmoji(newNs: number, oldNs: number, threshold = 5): string {
   return diff > 0 ? '🟢' : '🔴';
 }
 
+// Calculate average ns/test for a validator's draft
+function calculateDraftNs(data: ValidatorBenchmark, draft: string): number {
+  const draftResults = data.results.filter((r) => r.draft === draft);
+  let totalNs = 0;
+  let totalTests = 0;
+
+  for (const result of draftResults) {
+    for (const group of result.groups) {
+      if (group.passed && group.nsPerTest > 0) {
+        totalNs += group.nsPerTest * group.testCount;
+        totalTests += group.testCount;
+      }
+    }
+  }
+
+  return totalTests > 0 ? totalNs / totalTests : 0;
+}
+
+// Calculate head-to-head comparison between two validators
+function calculateH2H(
+  tjsData: ValidatorBenchmark,
+  otherData: ValidatorBenchmark
+): { faster: string; ratio: number; tests: number } | null {
+  // Build lookup for other validator's groups
+  const otherLookup = new Map<string, GroupResult>();
+  for (const result of otherData.results) {
+    for (const group of result.groups) {
+      const key = `${result.draft}:${result.file}:${group.groupDesc}`;
+      otherLookup.set(key, group);
+    }
+  }
+
+  let h2hTjsNs = 0;
+  let h2hOtherNs = 0;
+  let h2hTests = 0;
+
+  for (const result of tjsData.results) {
+    for (const tjsGroup of result.groups) {
+      const key = `${result.draft}:${result.file}:${tjsGroup.groupDesc}`;
+      const otherGroup = otherLookup.get(key);
+
+      if (
+        tjsGroup.passed &&
+        otherGroup?.passed &&
+        tjsGroup.nsPerTest > 0 &&
+        otherGroup.nsPerTest > 0
+      ) {
+        h2hTjsNs += tjsGroup.nsPerTest * tjsGroup.testCount;
+        h2hOtherNs += otherGroup.nsPerTest * otherGroup.testCount;
+        h2hTests += tjsGroup.testCount;
+      }
+    }
+  }
+
+  if (h2hTests === 0) return null;
+
+  const tjsAvg = h2hTjsNs / h2hTests;
+  const otherAvg = h2hOtherNs / h2hTests;
+
+  const faster = tjsAvg < otherAvg ? 'tjs' : otherData.validator;
+  const ratio = tjsAvg < otherAvg ? otherAvg / tjsAvg : tjsAvg / otherAvg;
+
+  return { faster, ratio, tests: h2hTests };
+}
+
 interface ValidatorComparison {
   validator: string;
   drafts: {
     draft: string;
-    tjs: { old: number; new: number };
-    other: { old: number; new: number };
+    tjsOld: number;
+    tjsNew: number;
+    otherOld: number;
+    otherNew: number;
   }[];
-  h2hOld: H2H | null;
-  h2hNew: H2H | null;
-}
-
-function compareValidator(validator: string): ValidatorComparison | null {
-  const filePath = path.join(__dirname, 'results', `${validator}.json`);
-
-  if (!fs.existsSync(filePath)) {
-    return null;
-  }
-
-  const newContent = fs.readFileSync(filePath, 'utf-8');
-  const oldContent = getMainFileContent(filePath);
-
-  const newData = loadJson(newContent);
-  const oldData = oldContent ? loadJson(oldContent) : null;
-
-  if (!newData) return null;
-
-  const drafts = ['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'];
-  const draftComparisons = [];
-
-  for (const draft of drafts) {
-    const newSummary = newData.summary[draft];
-    const oldSummary = oldData?.summary[draft];
-
-    if (!newSummary) continue;
-
-    draftComparisons.push({
-      draft,
-      tjs: {
-        old: oldSummary?.tjs.nsPerTest ?? 0,
-        new: newSummary.tjs.nsPerTest,
-      },
-      other: {
-        old: oldSummary?.other.nsPerTest ?? 0,
-        new: newSummary.other.nsPerTest,
-      },
-    });
-  }
-
-  return {
-    validator,
-    drafts: draftComparisons,
-    h2hOld: oldData?.headToHead ?? null,
-    h2hNew: newData.headToHead,
-  };
+  h2hOld: { faster: string; ratio: number; tests: number } | null;
+  h2hNew: { faster: string; ratio: number; tests: number } | null;
 }
 
 const ALL_VALIDATORS = [
@@ -156,9 +192,43 @@ const ALL_VALIDATORS = [
   'schemasafe',
 ];
 
+function compareValidator(validator: string): ValidatorComparison | null {
+  const tjsNew = loadValidatorData('tjs');
+  const otherNew = loadValidatorData(validator);
+
+  if (!tjsNew || !otherNew) return null;
+
+  const tjsOld = loadValidatorDataFromMain('tjs');
+  const otherOld = loadValidatorDataFromMain(validator);
+
+  const drafts = ['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'];
+  const draftComparisons = [];
+
+  for (const draft of drafts) {
+    const tjsNewNs = calculateDraftNs(tjsNew, draft);
+    const otherNewNs = calculateDraftNs(otherNew, draft);
+
+    if (tjsNewNs === 0 && otherNewNs === 0) continue;
+
+    draftComparisons.push({
+      draft,
+      tjsOld: tjsOld ? calculateDraftNs(tjsOld, draft) : 0,
+      tjsNew: tjsNewNs,
+      otherOld: otherOld ? calculateDraftNs(otherOld, draft) : 0,
+      otherNew: otherNewNs,
+    });
+  }
+
+  return {
+    validator,
+    drafts: draftComparisons,
+    h2hOld: tjsOld && otherOld ? calculateH2H(tjsOld, otherOld) : null,
+    h2hNew: calculateH2H(tjsNew, otherNew),
+  };
+}
+
 function generatePrComment(): string {
-  const validators = ALL_VALIDATORS;
-  const comparisons = validators.map(compareValidator).filter((c) => c !== null);
+  const comparisons = ALL_VALIDATORS.map(compareValidator).filter((c) => c !== null);
 
   if (comparisons.length === 0) {
     return '## Benchmark Results\n\nNo benchmark data available.';
@@ -169,7 +239,7 @@ function generatePrComment(): string {
   lines.push('');
 
   for (const comp of comparisons) {
-    const hasOldData = comp.drafts.some((d) => d.tjs.old > 0);
+    const hasOldData = comp.drafts.some((d) => d.tjsOld > 0);
 
     lines.push(`### tjs vs ${comp.validator}`);
     lines.push('');
@@ -187,20 +257,20 @@ function generatePrComment(): string {
 
     for (const d of comp.drafts) {
       if (hasOldData) {
-        const tjsDiff = formatDiffPercent(d.tjs.new, d.tjs.old);
-        const tjsEmoji = formatDiffEmoji(d.tjs.new, d.tjs.old);
-        const otherDiff = formatDiffPercent(d.other.new, d.other.old);
-        const otherEmoji = formatDiffEmoji(d.other.new, d.other.old);
+        const tjsDiff = formatDiffPercent(d.tjsNew, d.tjsOld);
+        const tjsEmoji = formatDiffEmoji(d.tjsNew, d.tjsOld);
+        const otherDiff = formatDiffPercent(d.otherNew, d.otherOld);
+        const otherEmoji = formatDiffEmoji(d.otherNew, d.otherOld);
 
         lines.push(
-          `| ${d.draft} | ${formatOps(d.tjs.new)} | ${formatOps(d.tjs.old)} | ${tjsEmoji} ${tjsDiff} | ` +
-            `${formatOps(d.other.new)} | ${formatOps(d.other.old)} | ${otherEmoji} ${otherDiff} |`
+          `| ${d.draft} | ${formatOps(d.tjsNew)} | ${formatOps(d.tjsOld)} | ${tjsEmoji} ${tjsDiff} | ` +
+            `${formatOps(d.otherNew)} | ${formatOps(d.otherOld)} | ${otherEmoji} ${otherDiff} |`
         );
       } else {
-        const ratio = d.other.new > 0 ? ((d.tjs.new - d.other.new) / d.other.new) * 100 : 0;
+        const ratio = d.otherNew > 0 ? ((d.tjsNew - d.otherNew) / d.otherNew) * 100 : 0;
         const emoji = ratio < 0 ? '🟢' : ratio > 0 ? '🔴' : '';
         lines.push(
-          `| ${d.draft} | ${formatOps(d.tjs.new)} | ${formatOps(d.other.new)} | ${emoji} ${ratio > 0 ? '+' : ''}${ratio.toFixed(0)}% |`
+          `| ${d.draft} | ${formatOps(d.tjsNew)} | ${formatOps(d.otherNew)} | ${emoji} ${ratio > 0 ? '+' : ''}${ratio.toFixed(0)}% |`
         );
       }
     }
@@ -227,7 +297,7 @@ function generatePrComment(): string {
         );
       } else {
         lines.push(
-          `**Head-to-Head**: ${emoji} ${h2h.faster} is **${h2h.ratio.toFixed(2)}×** faster (${h2h.totalTests} tests)`
+          `**Head-to-Head**: ${emoji} ${h2h.faster} is **${h2h.ratio.toFixed(2)}×** faster (${h2h.tests} tests)`
         );
       }
       lines.push('');
@@ -238,8 +308,7 @@ function generatePrComment(): string {
 }
 
 function generatePrBody(): string {
-  const validators = ALL_VALIDATORS;
-  const comparisons = validators.map(compareValidator).filter((c) => c !== null);
+  const comparisons = ALL_VALIDATORS.map(compareValidator).filter((c) => c !== null);
 
   const lines: string[] = [];
   lines.push('## Summary');
@@ -252,7 +321,7 @@ function generatePrBody(): string {
     lines.push('');
 
     for (const comp of comparisons) {
-      const hasOldData = comp.drafts.some((d) => d.tjs.old > 0);
+      const hasOldData = comp.drafts.some((d) => d.tjsOld > 0);
       if (!hasOldData) continue;
 
       // Calculate overall change
@@ -260,9 +329,9 @@ function generatePrBody(): string {
       let totalNewNs = 0;
       let totalTests = 0;
       for (const d of comp.drafts) {
-        if (d.tjs.old > 0 && d.tjs.new > 0) {
-          totalOldNs += d.tjs.old;
-          totalNewNs += d.tjs.new;
+        if (d.tjsOld > 0 && d.tjsNew > 0) {
+          totalOldNs += d.tjsOld;
+          totalNewNs += d.tjsNew;
           totalTests++;
         }
       }
@@ -294,7 +363,7 @@ function generatePrBody(): string {
     lines.push('');
 
     for (const comp of comparisons) {
-      const hasOldData = comp.drafts.some((d) => d.tjs.old > 0);
+      const hasOldData = comp.drafts.some((d) => d.tjsOld > 0);
       if (!hasOldData) continue;
 
       lines.push(`#### tjs vs ${comp.validator}`);
@@ -303,11 +372,11 @@ function generatePrBody(): string {
       lines.push('|-------|-----------|-----------|---|');
 
       for (const d of comp.drafts) {
-        if (d.tjs.old === 0) continue;
-        const diff = formatDiffPercent(d.tjs.new, d.tjs.old);
-        const emoji = formatDiffEmoji(d.tjs.new, d.tjs.old);
+        if (d.tjsOld === 0) continue;
+        const diff = formatDiffPercent(d.tjsNew, d.tjsOld);
+        const emoji = formatDiffEmoji(d.tjsNew, d.tjsOld);
         lines.push(
-          `| ${d.draft} | ${formatOps(d.tjs.new)} | ${formatOps(d.tjs.old)} | ${emoji} ${diff} |`
+          `| ${d.draft} | ${formatOps(d.tjsNew)} | ${formatOps(d.tjsOld)} | ${emoji} ${diff} |`
         );
       }
       lines.push('');
