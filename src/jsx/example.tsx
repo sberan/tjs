@@ -10,9 +10,6 @@ import {
   Property,
   ArrayScope,
   Items,
-  BooleanType,
-  ConstValue,
-  EnumValue,
 } from './validators.js';
 import { DataContext, ErrorContext, type DataPath, type ErrorAccumulator } from './context.js';
 
@@ -37,35 +34,22 @@ function PersonValidator(_props: {}, ctx: RenderContext): CodeNode {
 }
 
 // =============================================================================
-// Example 2: Union Types (showing optimizations)
+// Example 2: Union Types
 // =============================================================================
 
 function UnionTypeExamples(_props: {}, ctx: RenderContext): CodeNode {
   return (
     <>
-      {/* Single type */}
       <TypeCheck type="string" />
-
-      {/* Optimized: string | number | boolean -> cache typeof */}
       <TypeCheck type={['string', 'number', 'boolean']} />
-
-      {/* Optimized: string | number -> common pattern */}
       <TypeCheck type={['string', 'number']} />
-
-      {/* Optimized: array | object -> typeof === 'object' && !== null */}
       <TypeCheck type={['array', 'object']} />
-
-      {/* Optimized: null | string */}
-      <TypeCheck type={['null', 'string']} />
-
-      {/* Fallback: mixed types without optimization */}
-      <TypeCheck type={['string', 'array', 'null']} />
     </>
   );
 }
 
 // =============================================================================
-// Example 3: Array with items
+// Example 3: Array
 // =============================================================================
 
 function ArrayValidator(_props: {}, ctx: RenderContext): CodeNode {
@@ -84,17 +68,12 @@ function ArrayValidator(_props: {}, ctx: RenderContext): CodeNode {
 
 function generateValidator(name: string, component: (props: {}, ctx: RenderContext) => CodeNode): string {
   const dataPath: DataPath = { expr: 'data', path: '' };
-  const errorAcc: ErrorAccumulator = {
-    errorsVar: 'errors',
-    genError: () => '',
-  };
+  const errorAcc: ErrorAccumulator = { errorsVar: 'errors', genError: () => '' };
 
-  // Create render context with initial values
   const ctx = new RenderContext()
     .with(DataContext, dataPath)
     .with(ErrorContext, errorAcc);
 
-  // Render the component tree
   const tree = jsx(component, {});
   const body = render(tree, ctx);
 
@@ -117,5 +96,3 @@ console.log(generateValidator('validateUnionTypes', UnionTypeExamples));
 
 console.log('\n\n=== Array Validator ===\n');
 console.log(generateValidator('validateArray', ArrayValidator));
-
-console.log('\n=== End ===');

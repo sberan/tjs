@@ -1,19 +1,35 @@
 // Semantic validation components
 /* @jsx jsx */
-import { jsx, type CodeNode, type CodeElement, RenderContext, renderNode } from './runtime.js';
+import { jsx, type CodeNode, RenderContext, renderNode } from './runtime.js';
 import { DataContext, ErrorContext, type DataPath } from './context.js';
-import { If, Const, For, Stmt } from './core.js';
+import { _, str, when } from './template.js';
 
-// WithData - updates the data context for children
+// =============================================================================
+// Context Helpers
+// =============================================================================
+
+function useData(ctx: RenderContext) {
+  return ctx.get(DataContext);
+}
+
+function useErrors(ctx: RenderContext) {
+  return ctx.get(ErrorContext);
+}
+
+// Render JSX within templates
+function $(node: CodeNode, ctx: RenderContext): string {
+  return renderNode(node, ctx);
+}
+
+// =============================================================================
+// WithData - updates data context for children
+// =============================================================================
+
 export function WithData(
   { expr, path, children }: { expr: string; path: string; children?: CodeNode },
   ctx: RenderContext
-): CodeNode {
-  // Create a new context with updated DataContext
-  const newDataPath: DataPath = { expr, path };
-  const newCtx = ctx.with(DataContext, newDataPath);
-
-  // Render children with the new context using the runtime's renderNode
+): string {
+  const newCtx = ctx.with(DataContext, { expr, path });
   return renderNode(children, newCtx);
 }
 
@@ -24,146 +40,91 @@ export function WithData(
 export function Error(
   { keyword, message, params }: { keyword: string; message: string; params?: Record<string, unknown> },
   ctx: RenderContext
-): CodeNode {
-  const dataCtx = ctx.get(DataContext);
-  const errorCtx = ctx.get(ErrorContext);
+): string {
+  const { path } = useData(ctx);
+  const { errorsVar } = useErrors(ctx);
 
-  const errorObj: Record<string, unknown> = {
-    instancePath: dataCtx.path,
-    keyword,
-    message,
-    ...(params ?? {}),
-  };
-
-  return <Stmt>{`${errorCtx.errorsVar}.push(${JSON.stringify(errorObj)})`}</Stmt>;
+  const errorObj = { instancePath: path, keyword, message, ...(params ?? {}) };
+  return `${errorsVar}.push(${str(errorObj)});`;
 }
 
 // =============================================================================
-// Type Keyword - Full Implementation
+// Type Keyword
 // =============================================================================
 
 export function TypeCheck(
   { type }: { type: string | readonly string[] },
   ctx: RenderContext
-): CodeNode {
-  const dataCtx = ctx.get(DataContext);
-  const data = dataCtx.expr;
-
+): string {
+  const { expr: data } = useData(ctx);
   const types = Array.isArray(type) ? type : [type];
 
   if (types.length === 1) {
-    // Single type - simple check
     const t = types[0];
-    const check = getTypeCheck(data, t);
-    return (
-      <If test={`!(${check})`}>
-        <Error keyword="type" message={`must be ${t}`} params={{ type: t }} />
-      </If>
-    );
+    return _`
+if (!(${getTypeCheck(data, t)})) {
+  ${$(<Error keyword="type" message={`must be ${t}`} params={{ type: t }} />, ctx)}
+}
+`;
   }
 
   // Multiple types - try optimizations
-  const canOptimizeWithTypeof = types.every(
-    t => t === 'string' || t === 'number' || t === 'boolean'
-  );
+  const canOptimizeWithTypeof = types.every(t => t === 'string' || t === 'number' || t === 'boolean');
 
   if (canOptimizeWithTypeof) {
-    // Cache typeof result for efficiency
     const typeVar = ctx.genVar('t');
-    const checks = types.map(t => `${typeVar} === "${t}"`);
-    return [
-      <Const name={typeVar} value={`typeof ${data}`} />,
-      <If test={`!(${checks.join(' || ')})`}>
-        <Error keyword="type" message={`must be ${types.join(' or ')}`} params={{ type: types }} />
-      </If>,
-    ];
+    const checks = types.map(t => `${typeVar} === "${t}"`).join(' || ');
+    return _`
+const ${typeVar} = typeof ${data};
+if (!(${checks})) {
+  ${$(<Error keyword="type" message={`must be ${types.join(' or ')}`} params={{ type: types }} />, ctx)}
+}
+`;
   }
 
-  // Try optimized union check for common patterns
   const optimizedCheck = getOptimizedUnionTypeCheck(data, types);
   if (optimizedCheck) {
-    return (
-      <If test={`!(${optimizedCheck})`}>
-        <Error keyword="type" message={`must be ${types.join(' or ')}`} params={{ type: types }} />
-      </If>
-    );
+    return _`
+if (!(${optimizedCheck})) {
+  ${$(<Error keyword="type" message={`must be ${types.join(' or ')}`} params={{ type: types }} />, ctx)}
+}
+`;
   }
 
-  // Fallback: OR individual type checks
-  const checks = types.map(t => getTypeCheck(data, t));
-  return (
-    <If test={`!(${checks.join(' || ')})`}>
-      <Error keyword="type" message={`must be ${types.join(' or ')}`} params={{ type: types }} />
-    </If>
-  );
+  const checks = types.map(t => getTypeCheck(data, t)).join(' || ');
+  return _`
+if (!(${checks})) {
+  ${$(<Error keyword="type" message={`must be ${types.join(' or ')}`} params={{ type: types }} />, ctx)}
 }
-
-// =============================================================================
-// Type Check Helpers
-// =============================================================================
+`;
+}
 
 function getTypeCheck(data: string, type: string): string {
   switch (type) {
-    case 'string':
-      return `typeof ${data} === "string"`;
-    case 'number':
-      return `typeof ${data} === "number"`;
-    case 'integer':
-      return `Number.isInteger(${data})`;
-    case 'boolean':
-      return `typeof ${data} === "boolean"`;
-    case 'null':
-      return `${data} === null`;
-    case 'array':
-      return `Array.isArray(${data})`;
-    case 'object':
-      return `(${data} && typeof ${data} === "object" && !Array.isArray(${data}))`;
-    default:
-      return 'false';
+    case 'string': return `typeof ${data} === "string"`;
+    case 'number': return `typeof ${data} === "number"`;
+    case 'integer': return `Number.isInteger(${data})`;
+    case 'boolean': return `typeof ${data} === "boolean"`;
+    case 'null': return `${data} === null`;
+    case 'array': return `Array.isArray(${data})`;
+    case 'object': return `(${data} && typeof ${data} === "object" && !Array.isArray(${data}))`;
+    default: return 'false';
   }
 }
 
-/**
- * Get optimized type check for common union patterns.
- * Returns undefined if no optimization is available.
- */
 function getOptimizedUnionTypeCheck(data: string, types: readonly string[]): string | undefined {
-  // Sort to normalize for pattern matching
-  const sorted = [...types].sort();
-  const key = sorted.join(',');
-
+  const key = [...types].sort().join(',');
   switch (key) {
-    case 'number,string': {
-      const t = `typeof ${data}`;
-      return `(${t} === "string" || ${t} === "number")`;
-    }
-    case 'boolean,number,string': {
-      const t = `typeof ${data}`;
-      return `(${t} === "string" || ${t} === "number" || ${t} === "boolean")`;
-    }
-    case 'null,string':
-      return `(${data} === null || typeof ${data} === "string")`;
-    case 'null,number':
-      return `(${data} === null || typeof ${data} === "number")`;
-    case 'array,object':
-      // array OR object means typeof === 'object' && not null
-      return `(typeof ${data} === "object" && ${data} !== null)`;
-    case 'array,null,object':
-      // array OR object OR null means typeof === 'object'
-      return `(typeof ${data} === "object")`;
-    case 'boolean,null':
-      return `(${data} === null || typeof ${data} === "boolean")`;
-    case 'integer,string':
-      return `(Number.isInteger(${data}) || typeof ${data} === "string")`;
-    case 'integer,number':
-      // integer OR number - both are numbers
-      return `(typeof ${data} === "number")`;
-    case 'array,null':
-      return `(${data} === null || Array.isArray(${data}))`;
-    case 'null,object':
-      return `(${data} === null || (typeof ${data} === "object" && !Array.isArray(${data})))`;
+    case 'number,string': return `(typeof ${data} === "string" || typeof ${data} === "number")`;
+    case 'boolean,number,string': return `(typeof ${data} === "string" || typeof ${data} === "number" || typeof ${data} === "boolean")`;
+    case 'null,string': return `(${data} === null || typeof ${data} === "string")`;
+    case 'null,number': return `(${data} === null || typeof ${data} === "number")`;
+    case 'array,object': return `(typeof ${data} === "object" && ${data} !== null)`;
+    case 'array,null,object': return `(typeof ${data} === "object")`;
+    case 'integer,number': return `(typeof ${data} === "number")`;
+    case 'array,null': return `(${data} === null || Array.isArray(${data}))`;
+    case 'null,object': return `(${data} === null || (typeof ${data} === "object" && !Array.isArray(${data})))`;
   }
-
   return undefined;
 }
 
@@ -172,57 +133,34 @@ function getOptimizedUnionTypeCheck(data: string, types: readonly string[]): str
 // =============================================================================
 
 export function StringType(
-  { minLength, maxLength, pattern }: {
-    minLength?: number;
-    maxLength?: number;
-    pattern?: string;
-  },
+  { minLength, maxLength, pattern }: { minLength?: number; maxLength?: number; pattern?: string },
   ctx: RenderContext
-): CodeNode {
-  const dataCtx = ctx.get(DataContext);
-  const data = dataCtx.expr;
+): string {
+  const { expr: data } = useData(ctx);
+  const hasConstraints = minLength !== undefined || maxLength !== undefined || pattern !== undefined;
 
-  const checks: CodeNode[] = [];
-
-  // Type check first
-  checks.push(<TypeCheck type="string" />);
-
-  // Only do string validations if it's a string
-  const stringChecks: CodeNode[] = [];
-
-  if (minLength !== undefined) {
-    stringChecks.push(
-      <If test={`${data}.length < ${minLength}`}>
-        <Error keyword="minLength" message={`must have at least ${minLength} characters`} params={{ limit: minLength }} />
-      </If>
-    );
+  return _`
+${$(<TypeCheck type="string" />, ctx)}
+${when(hasConstraints, _`
+if (typeof ${data} === "string") {
+  ${when(minLength !== undefined, _`
+  if (${data}.length < ${minLength}) {
+    ${$(<Error keyword="minLength" message={`must have at least ${minLength} characters`} params={{ limit: minLength }} />, ctx)}
   }
-
-  if (maxLength !== undefined) {
-    stringChecks.push(
-      <If test={`${data}.length > ${maxLength}`}>
-        <Error keyword="maxLength" message={`must have at most ${maxLength} characters`} params={{ limit: maxLength }} />
-      </If>
-    );
+  `)}
+  ${when(maxLength !== undefined, _`
+  if (${data}.length > ${maxLength}) {
+    ${$(<Error keyword="maxLength" message={`must have at most ${maxLength} characters`} params={{ limit: maxLength }} />, ctx)}
   }
-
-  if (pattern !== undefined) {
-    stringChecks.push(
-      <If test={`!/${pattern}/.test(${data})`}>
-        <Error keyword="pattern" message={`must match pattern ${pattern}`} params={{ pattern }} />
-      </If>
-    );
+  `)}
+  ${when(pattern !== undefined, _`
+  if (!/${pattern}/.test(${data})) {
+    ${$(<Error keyword="pattern" message={`must match pattern ${pattern}`} params={{ pattern }} />, ctx)}
   }
-
-  if (stringChecks.length > 0) {
-    checks.push(
-      <If test={`typeof ${data} === "string"`}>
-        {stringChecks}
-      </If>
-    );
-  }
-
-  return checks;
+  `)}
+}
+`)}
+`;
 }
 
 // =============================================================================
@@ -231,81 +169,45 @@ export function StringType(
 
 export function NumberType(
   { min, max, exclusiveMin, exclusiveMax, multipleOf, integer }: {
-    min?: number;
-    max?: number;
-    exclusiveMin?: number;
-    exclusiveMax?: number;
-    multipleOf?: number;
-    integer?: boolean;
+    min?: number; max?: number; exclusiveMin?: number; exclusiveMax?: number; multipleOf?: number; integer?: boolean;
   },
   ctx: RenderContext
-): CodeNode {
-  const dataCtx = ctx.get(DataContext);
-  const data = dataCtx.expr;
+): string {
+  const { expr: data } = useData(ctx);
+  const hasConstraints = min !== undefined || max !== undefined || exclusiveMin !== undefined || exclusiveMax !== undefined || multipleOf !== undefined;
 
-  const checks: CodeNode[] = [];
-  const expectedType = integer ? 'integer' : 'number';
-
-  // Type check
-  checks.push(<TypeCheck type={expectedType} />);
-
-  // Number-specific validations (only run if it's a number)
-  const numChecks: CodeNode[] = [];
-
-  if (min !== undefined) {
-    numChecks.push(
-      <If test={`${data} < ${min}`}>
-        <Error keyword="minimum" message={`must be >= ${min}`} params={{ comparison: '>=', limit: min }} />
-      </If>
-    );
+  return _`
+${$(<TypeCheck type={integer ? 'integer' : 'number'} />, ctx)}
+${when(hasConstraints, _`
+if (typeof ${data} === "number") {
+  ${when(min !== undefined, _`
+  if (${data} < ${min}) {
+    ${$(<Error keyword="minimum" message={`must be >= ${min}`} params={{ comparison: '>=', limit: min }} />, ctx)}
   }
-
-  if (max !== undefined) {
-    numChecks.push(
-      <If test={`${data} > ${max}`}>
-        <Error keyword="maximum" message={`must be <= ${max}`} params={{ comparison: '<=', limit: max }} />
-      </If>
-    );
+  `)}
+  ${when(max !== undefined, _`
+  if (${data} > ${max}) {
+    ${$(<Error keyword="maximum" message={`must be <= ${max}`} params={{ comparison: '<=', limit: max }} />, ctx)}
   }
-
-  if (exclusiveMin !== undefined) {
-    numChecks.push(
-      <If test={`${data} <= ${exclusiveMin}`}>
-        <Error keyword="exclusiveMinimum" message={`must be > ${exclusiveMin}`} params={{ comparison: '>', limit: exclusiveMin }} />
-      </If>
-    );
+  `)}
+  ${when(exclusiveMin !== undefined, _`
+  if (${data} <= ${exclusiveMin}) {
+    ${$(<Error keyword="exclusiveMinimum" message={`must be > ${exclusiveMin}`} params={{ comparison: '>', limit: exclusiveMin }} />, ctx)}
   }
-
-  if (exclusiveMax !== undefined) {
-    numChecks.push(
-      <If test={`${data} >= ${exclusiveMax}`}>
-        <Error keyword="exclusiveMaximum" message={`must be < ${exclusiveMax}`} params={{ comparison: '<', limit: exclusiveMax }} />
-      </If>
-    );
+  `)}
+  ${when(exclusiveMax !== undefined, _`
+  if (${data} >= ${exclusiveMax}) {
+    ${$(<Error keyword="exclusiveMaximum" message={`must be < ${exclusiveMax}`} params={{ comparison: '<', limit: exclusiveMax }} />, ctx)}
   }
-
-  if (multipleOf !== undefined) {
-    // Handle floating point precision issues
-    const isInteger = Number.isInteger(multipleOf);
-    const check = isInteger
-      ? `${data} % ${multipleOf} !== 0`
-      : `Math.abs(Math.round(${data} / ${multipleOf}) * ${multipleOf} - ${data}) > 1e-10`;
-    numChecks.push(
-      <If test={check}>
-        <Error keyword="multipleOf" message={`must be a multiple of ${multipleOf}`} params={{ multipleOf }} />
-      </If>
-    );
+  `)}
+  ${when(multipleOf !== undefined, _`
+  if (${Number.isInteger(multipleOf) ? `${data} % ${multipleOf} !== 0` : `Math.abs(Math.round(${data} / ${multipleOf}) * ${multipleOf} - ${data}) > 1e-10`}) {
+    ${$(<Error keyword="multipleOf" message={`must be a multiple of ${multipleOf}`} params={{ multipleOf }} />, ctx)}
   }
-
-  if (numChecks.length > 0) {
-    checks.push(
-      <If test={`typeof ${data} === "number"`}>
-        {numChecks}
-      </If>
-    );
-  }
-
-  return checks;
+  `)}
+}
+`)}
+`;
 }
 
 // =============================================================================
@@ -315,16 +217,15 @@ export function NumberType(
 export function ObjectScope(
   { children }: { children?: CodeNode },
   ctx: RenderContext
-): CodeNode {
-  const dataCtx = ctx.get(DataContext);
-  const data = dataCtx.expr;
+): string {
+  const { expr: data } = useData(ctx);
 
-  return [
-    <TypeCheck type="object" />,
-    <If test={`${data} && typeof ${data} === "object" && !Array.isArray(${data})`}>
-      {children}
-    </If>,
-  ];
+  return _`
+${$(<TypeCheck type="object" />, ctx)}
+if (${data} && typeof ${data} === "object" && !Array.isArray(${data})) {
+${$(children, ctx.indented())}
+}
+`;
 }
 
 // =============================================================================
@@ -334,32 +235,22 @@ export function ObjectScope(
 export function Property(
   { name, required, children }: { name: string; required?: boolean; children?: CodeNode },
   ctx: RenderContext
-): CodeNode {
-  const dataCtx = ctx.get(DataContext);
-  const data = dataCtx.expr;
-  const propExpr = `${data}[${JSON.stringify(name)}]`;
-  const propPath = `${dataCtx.path}/${name}`;
+): string {
+  const { expr: data, path } = useData(ctx);
+  const propExpr = `${data}[${str(name)}]`;
+  const propPath = `${path}/${name}`;
+  const ind = '  '.repeat(ctx.indent);
 
-  const result: CodeNode[] = [];
-
-  if (required) {
-    result.push(
-      <If test={`!(${JSON.stringify(name)} in ${data})`}>
-        <Error keyword="required" message={`must have required property '${name}'`} params={{ missingProperty: name }} />
-      </If>
-    );
-  }
-
-  // Validate the property if it exists
-  result.push(
-    <If test={`${JSON.stringify(name)} in ${data}`}>
-      <WithData expr={propExpr} path={propPath}>
-        {children}
-      </WithData>
-    </If>
-  );
-
-  return result;
+  return _`
+${when(required === true, _`
+${ind}if (!(${str(name)} in ${data})) {
+${ind}  ${$(<Error keyword="required" message={`must have required property '${name}'`} params={{ missingProperty: name }} />, ctx)}
+${ind}}
+`)}
+${ind}if (${str(name)} in ${data}) {
+${$(<WithData expr={propExpr} path={propPath}>{children}</WithData>, ctx)}
+${ind}}
+`;
 }
 
 // =============================================================================
@@ -369,143 +260,95 @@ export function Property(
 export function ArrayScope(
   { minItems, maxItems, children }: { minItems?: number; maxItems?: number; children?: CodeNode },
   ctx: RenderContext
-): CodeNode {
-  const dataCtx = ctx.get(DataContext);
-  const data = dataCtx.expr;
+): string {
+  const { expr: data } = useData(ctx);
 
-  const result: CodeNode[] = [
-    <TypeCheck type="array" />,
-  ];
-
-  const arrayChecks: CodeNode[] = [];
-
-  if (minItems !== undefined) {
-    arrayChecks.push(
-      <If test={`${data}.length < ${minItems}`}>
-        <Error keyword="minItems" message={`must have at least ${minItems} items`} params={{ limit: minItems }} />
-      </If>
-    );
+  return _`
+${$(<TypeCheck type="array" />, ctx)}
+if (Array.isArray(${data})) {
+  ${when(minItems !== undefined, _`
+  if (${data}.length < ${minItems}) {
+    ${$(<Error keyword="minItems" message={`must have at least ${minItems} items`} params={{ limit: minItems }} />, ctx)}
   }
-
-  if (maxItems !== undefined) {
-    arrayChecks.push(
-      <If test={`${data}.length > ${maxItems}`}>
-        <Error keyword="maxItems" message={`must have at most ${maxItems} items`} params={{ limit: maxItems }} />
-      </If>
-    );
+  `)}
+  ${when(maxItems !== undefined, _`
+  if (${data}.length > ${maxItems}) {
+    ${$(<Error keyword="maxItems" message={`must have at most ${maxItems} items`} params={{ limit: maxItems }} />, ctx)}
   }
-
-  if (arrayChecks.length > 0 || children) {
-    result.push(
-      <If test={`Array.isArray(${data})`}>
-        {arrayChecks}
-        {children}
-      </If>
-    );
-  }
-
-  return result;
+  `)}
+${$(children, ctx.indented())}
+}
+`;
 }
 
 // =============================================================================
-// Array Items Validation
+// Array Items
 // =============================================================================
 
 export function Items(
   { children }: { children?: CodeNode },
   ctx: RenderContext
-): CodeNode {
-  const dataCtx = ctx.get(DataContext);
-  const data = dataCtx.expr;
-  const indexVar = ctx.genVar('i');
-  const itemExpr = `${data}[${indexVar}]`;
-  const itemPath = `${dataCtx.path}/` + '${' + indexVar + '}';  // Template for dynamic path
+): string {
+  const { expr: data, path } = useData(ctx);
+  const i = ctx.genVar('i');
 
-  return (
-    <For init={`let ${indexVar} = 0`} test={`${indexVar} < ${data}.length`} update={`${indexVar}++`}>
-      <WithData expr={itemExpr} path={itemPath}>
-        {children}
-      </WithData>
-    </For>
-  );
+  return _`
+for (let ${i} = 0; ${i} < ${data}.length; ${i}++) {
+${$(<WithData expr={`${data}[${i}]`} path={`${path}/\${${i}}`}>{children}</WithData>, ctx)}
+}
+`;
 }
 
 // =============================================================================
-// Boolean Type
+// Simple Types
 // =============================================================================
 
-export function BooleanType(
-  _props: {},
-  ctx: RenderContext
-): CodeNode {
-  return <TypeCheck type="boolean" />;
+export function BooleanType(_: {}, ctx: RenderContext): string {
+  return $(<TypeCheck type="boolean" />, ctx);
+}
+
+export function NullType(_: {}, ctx: RenderContext): string {
+  return $(<TypeCheck type="null" />, ctx);
 }
 
 // =============================================================================
-// Null Type
+// Const & Enum
 // =============================================================================
 
-export function NullType(
-  _props: {},
-  ctx: RenderContext
-): CodeNode {
-  return <TypeCheck type="null" />;
-}
+export function ConstValue({ value }: { value: unknown }, ctx: RenderContext): string {
+  const { expr: data } = useData(ctx);
 
-// =============================================================================
-// Const Validation
-// =============================================================================
-
-export function ConstValue(
-  { value }: { value: unknown },
-  ctx: RenderContext
-): CodeNode {
-  const dataCtx = ctx.get(DataContext);
-  const data = dataCtx.expr;
-
-  // For primitives, use direct comparison
   if (value === null || typeof value !== 'object') {
-    return (
-      <If test={`${data} !== ${JSON.stringify(value)}`}>
-        <Error keyword="const" message="must be equal to constant" params={{ allowedValue: value }} />
-      </If>
-    );
+    return _`
+if (${data} !== ${str(value)}) {
+  ${$(<Error keyword="const" message="must be equal to constant" params={{ allowedValue: value }} />, ctx)}
+}
+`;
   }
 
-  // For objects/arrays, need deep equality (simplified for spike)
-  return (
-    <If test={`JSON.stringify(${data}) !== ${JSON.stringify(JSON.stringify(value))}`}>
-      <Error keyword="const" message="must be equal to constant" params={{ allowedValue: value }} />
-    </If>
-  );
+  return _`
+if (JSON.stringify(${data}) !== ${str(JSON.stringify(value))}) {
+  ${$(<Error keyword="const" message="must be equal to constant" params={{ allowedValue: value }} />, ctx)}
+}
+`;
 }
 
-// =============================================================================
-// Enum Validation
-// =============================================================================
+export function EnumValue({ values }: { values: readonly unknown[] }, ctx: RenderContext): string {
+  const { expr: data } = useData(ctx);
 
-export function EnumValue(
-  { values }: { values: readonly unknown[] },
-  ctx: RenderContext
-): CodeNode {
-  const dataCtx = ctx.get(DataContext);
-  const data = dataCtx.expr;
-
-  // For all primitives, use direct comparison
   if (values.every(v => v === null || typeof v !== 'object')) {
-    const checks = values.map(v => `${data} === ${JSON.stringify(v)}`);
-    return (
-      <If test={`!(${checks.join(' || ')})`}>
-        <Error keyword="enum" message="must be one of the allowed values" params={{ allowedValues: values }} />
-      </If>
-    );
+    const checks = values.map(v => `${data} === ${str(v)}`).join(' || ');
+    return _`
+if (!(${checks})) {
+  ${$(<Error keyword="enum" message="must be one of the allowed values" params={{ allowedValues: values }} />, ctx)}
+}
+`;
   }
 
-  // Mixed or complex values - use JSON.stringify (simplified)
-  const jsonValues = values.map(v => JSON.stringify(v));
-  return (
-    <If test={`![${jsonValues.map(j => JSON.stringify(j)).join(', ')}].includes(JSON.stringify(${data}))`}>
-      <Error keyword="enum" message="must be one of the allowed values" params={{ allowedValues: values }} />
-    </If>
-  );
+  const jsonValues = values.map(v => str(JSON.stringify(v))).join(', ');
+  return _`
+if (![${jsonValues}].includes(JSON.stringify(${data}))) {
+  ${$(<Error keyword="enum" message="must be one of the allowed values" params={{ allowedValues: values }} />, ctx)}
+}
+`;
 }
