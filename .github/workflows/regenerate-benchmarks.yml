@@ -241,13 +241,47 @@ jobs:
           if [ -n "$EXISTING_PR" ]; then
             echo "Updating PR #$EXISTING_PR..."
             gh pr edit "$EXISTING_PR" --body "$PR_BODY"
+            echo "pr_number=$EXISTING_PR" >> $GITHUB_OUTPUT
             echo "PR URL: https://github.com/${{ github.repository }}/pull/$EXISTING_PR"
           else
             echo "Creating new PR..."
-            gh pr create \
+            NEW_PR_URL=$(gh pr create \
               --title "chore: update benchmark results" \
-              --body "$PR_BODY"
+              --body "$PR_BODY")
+            # Extract PR number from URL
+            NEW_PR_NUMBER=$(echo "$NEW_PR_URL" | grep -o '[0-9]*$')
+            echo "pr_number=$NEW_PR_NUMBER" >> $GITHUB_OUTPUT
           fi
+
+          # Save the commit SHA for triggering tests
+          COMMIT_SHA=$(git rev-parse HEAD)
+          echo "commit_sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
+
+      # Trigger the test workflow on the benchmark branch
+      # Note: push events from workflows don't trigger other workflows (GitHub anti-recursion)
+      # so we use workflow_dispatch with the PAT to explicitly trigger tests
+      - name: Trigger test workflow
+        if: steps.check_changes.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          COMMIT_SHA=$(git rev-parse HEAD)
+          echo "Triggering test workflow for ref: chore/update-benchmarks (commit: $COMMIT_SHA)"
+          gh workflow run test.yml --ref chore/update-benchmarks -f ref=chore/update-benchmarks
+
+          # Wait a moment for the workflow to be queued
+          sleep 5
+
+          # Get the run ID of the triggered workflow
+          RUN_ID=$(gh run list --workflow=test.yml --branch=chore/update-benchmarks --limit=1 --json databaseId --jq '.[0].databaseId')
+          echo "Triggered run ID: $RUN_ID"
+
+          # Create a pending status on the commit
+          gh api repos/${{ github.repository }}/statuses/$COMMIT_SHA \
+            -f state=pending \
+            -f context="Test" \
+            -f description="Tests are running..." \
+            -f target_url="https://github.com/${{ github.repository }}/actions/runs/$RUN_ID"
 
       - name: No changes message
         if: steps.check_changes.outputs.has_changes != 'true'
