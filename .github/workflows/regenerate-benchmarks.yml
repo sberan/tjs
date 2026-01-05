@@ -202,9 +202,11 @@ jobs:
         run: |
           BRANCH_NAME="chore/update-benchmarks"
 
-          # Configure git to use PAT for push (triggers workflows)
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Configure git to use PAT for push
+          # IMPORTANT: Use a real user identity (not github-actions[bot]) so the push triggers workflows
+          # GitHub blocks workflow triggers from bot commits even when using a PAT
+          git config user.name "sberan"
+          git config user.email "sberan@gmail.com"
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
 
           # Always start fresh from main (single commit approach)
