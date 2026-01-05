@@ -126,28 +126,60 @@ function calculateComplianceRate(data: ValidatorBenchmark): {
   return { passed: totalPassed, total: totalTests, rate: `${rate}%` };
 }
 
-// Calculate average ns/test for a validator's draft
-function calculateDraftNs(
-  data: ValidatorBenchmark,
-  draft: string
-): { avgNs: number; tests: number; files: number } {
-  const draftResults = data.results.filter((r) => r.draft === draft);
-  let totalNs = 0;
-  let totalTests = 0;
-
-  for (const result of draftResults) {
+// Build a lookup map for groups by draft:file:groupDesc
+function buildGroupLookup(data: ValidatorBenchmark): Map<string, GroupResult> {
+  const lookup = new Map<string, GroupResult>();
+  for (const result of data.results) {
     for (const group of result.groups) {
-      if (group.passed && group.nsPerTest > 0) {
-        totalNs += group.nsPerTest * group.testCount;
-        totalTests += group.testCount;
+      const key = `${result.draft}:${result.file}:${group.groupDesc}`;
+      lookup.set(key, group);
+    }
+  }
+  return lookup;
+}
+
+// Calculate head-to-head comparison (only tests where both validators pass)
+// Optionally filter by draft
+function calculateH2H(
+  tjsData: ValidatorBenchmark,
+  ajvData: ValidatorBenchmark,
+  filterDraft?: string
+): { tjsNs: number; ajvNs: number; tests: number; files: number } | null {
+  const ajvLookup = buildGroupLookup(ajvData);
+
+  let h2hTjsNs = 0;
+  let h2hAjvNs = 0;
+  let h2hTests = 0;
+  const filesSet = new Set<string>();
+
+  for (const result of tjsData.results) {
+    if (filterDraft && result.draft !== filterDraft) continue;
+
+    for (const tjsGroup of result.groups) {
+      const key = `${result.draft}:${result.file}:${tjsGroup.groupDesc}`;
+      const ajvGroup = ajvLookup.get(key);
+
+      if (
+        tjsGroup.passed &&
+        ajvGroup?.passed &&
+        tjsGroup.nsPerTest > 0 &&
+        ajvGroup.nsPerTest > 0
+      ) {
+        h2hTjsNs += tjsGroup.nsPerTest * tjsGroup.testCount;
+        h2hAjvNs += ajvGroup.nsPerTest * ajvGroup.testCount;
+        h2hTests += tjsGroup.testCount;
+        filesSet.add(`${result.draft}:${result.file}`);
       }
     }
   }
 
+  if (h2hTests === 0) return null;
+
   return {
-    avgNs: totalTests > 0 ? totalNs / totalTests : 0,
-    tests: totalTests,
-    files: draftResults.length,
+    tjsNs: h2hTjsNs / h2hTests,
+    ajvNs: h2hAjvNs / h2hTests,
+    tests: h2hTests,
+    files: filesSet.size,
   };
 }
 
@@ -206,19 +238,18 @@ function generatePerfTable(
 
   const perfRows: string[] = [];
   for (const draft of drafts) {
-    const tjsDraft = calculateDraftNs(tjsData, draft);
-    const ajvDraft = calculateDraftNs(ajvData, draft);
+    // Use H2H comparison for fair benchmarking
+    const h2h = calculateH2H(tjsData, ajvData, draft);
+    if (!h2h) continue;
 
-    if (tjsDraft.tests === 0) continue;
+    totalFiles += h2h.files;
+    totalTests += h2h.tests;
+    totalTjsNs += h2h.tjsNs * h2h.tests;
+    totalAjvNs += h2h.ajvNs * h2h.tests;
 
-    totalFiles += tjsDraft.files;
-    totalTests += tjsDraft.tests;
-    totalTjsNs += tjsDraft.avgNs * tjsDraft.tests;
-    totalAjvNs += ajvDraft.avgNs * ajvDraft.tests;
-
-    const diff = formatDiff(tjsDraft.avgNs, ajvDraft.avgNs);
+    const diff = formatDiff(h2h.tjsNs, h2h.ajvNs);
     perfRows.push(
-      `${draftDisplayNames[draft].padEnd(14)}${String(tjsDraft.files).padStart(5)}${String(tjsDraft.tests).padStart(8)} |${String(Math.round(tjsDraft.avgNs)).padStart(11)}${String(Math.round(ajvDraft.avgNs)).padStart(13)}${diff.padStart(10)}`
+      `${draftDisplayNames[draft].padEnd(14)}${String(h2h.files).padStart(5)}${String(h2h.tests).padStart(8)} |${String(Math.round(h2h.tjsNs)).padStart(11)}${String(Math.round(h2h.ajvNs)).padStart(13)}${diff.padStart(10)}`
     );
   }
 
@@ -227,7 +258,7 @@ function generatePerfTable(
   const totalDiff = formatDiff(avgTjsNs, avgAjvNs);
   const perfImprovement = Math.round(((avgAjvNs - avgTjsNs) / avgAjvNs) * 100);
 
-  const table = `Performance vs ajv (JSON Schema Test Suite):
+  const table = `Performance vs ajv (head-to-head on shared tests):
 --------------------------------------------------------------------------------
 Draft          Files   Tests | tjs ns/test  ajv ns/test      Diff
 --------------------------------------------------------------------------------

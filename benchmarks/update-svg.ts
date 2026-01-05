@@ -87,14 +87,59 @@ function loadBenchmarkData(validator: string): ValidatorBenchmark | null {
   }
 }
 
-// Calculate ops/sec for a validator
-function calculateOps(data: ValidatorBenchmark): number {
+// Build a lookup map for groups by draft:file:groupDesc
+function buildGroupLookup(data: ValidatorBenchmark): Map<string, GroupResult> {
+  const lookup = new Map<string, GroupResult>();
+  for (const result of data.results) {
+    for (const group of result.groups) {
+      const key = `${result.draft}:${result.file}:${group.groupDesc}`;
+      lookup.set(key, group);
+    }
+  }
+  return lookup;
+}
+
+// Calculate ops/sec for tjs on all its passing tests
+function calculateTjsOps(tjsData: ValidatorBenchmark): number {
   let totalNs = 0;
   let totalTests = 0;
 
-  for (const result of data.results) {
+  for (const result of tjsData.results) {
     for (const group of result.groups) {
       if (group.passed && group.nsPerTest > 0) {
+        totalNs += group.nsPerTest * group.testCount;
+        totalTests += group.testCount;
+      }
+    }
+  }
+
+  if (totalTests === 0 || totalNs === 0) return 0;
+  return (1e9 * totalTests) / totalNs;
+}
+
+// Calculate ops/sec for a validator using H2H comparison with tjs
+// (only tests where both validators pass - fair comparison)
+function calculateH2HOps(
+  tjsData: ValidatorBenchmark,
+  otherData: ValidatorBenchmark
+): number {
+  const tjsLookup = buildGroupLookup(tjsData);
+
+  let totalNs = 0;
+  let totalTests = 0;
+
+  for (const result of otherData.results) {
+    for (const group of result.groups) {
+      const key = `${result.draft}:${result.file}:${group.groupDesc}`;
+      const tjsGroup = tjsLookup.get(key);
+
+      // Only include tests where BOTH validators pass (fair comparison)
+      if (
+        group.passed &&
+        tjsGroup?.passed &&
+        group.nsPerTest > 0 &&
+        tjsGroup.nsPerTest > 0
+      ) {
         totalNs += group.nsPerTest * group.testCount;
         totalTests += group.testCount;
       }
@@ -120,16 +165,34 @@ const validatorColors: Record<string, { start: string; end: string; label: strin
 };
 
 function main() {
-  // Load all validator data and calculate ops/sec
+  // Load tjs data first (required for H2H comparisons)
+  const tjsData = loadBenchmarkData('tjs');
+  if (!tjsData) {
+    console.error('tjs.json is required. Run benchmarks first.');
+    process.exit(1);
+  }
+
+  // Load all validator data and calculate ops/sec using H2H with tjs
   const validatorOps: Array<{ name: string; ops: number }> = [];
 
+  // Add tjs using its own full test set
+  const tjsOpsValue = calculateTjsOps(tjsData);
+  if (tjsOpsValue > 0) {
+    validatorOps.push({ name: 'tjs', ops: tjsOpsValue });
+    console.error(`Loaded tjs: ${formatOps(tjsOpsValue)} ops/sec (all passing tests)`);
+  }
+
+  // Add other validators using H2H comparison with tjs
   for (const validator of ALL_VALIDATORS) {
+    if (validator === 'tjs') continue;
+
     const data = loadBenchmarkData(validator);
     if (data) {
-      const ops = calculateOps(data);
+      // Use H2H to only compare on tests both validators pass
+      const ops = calculateH2HOps(tjsData, data);
       if (ops > 0) {
         validatorOps.push({ name: validator, ops });
-        console.error(`Loaded ${validator}: ${formatOps(ops)} ops/sec`);
+        console.error(`Loaded ${validator}: ${formatOps(ops)} ops/sec (H2H with tjs)`);
       }
     }
   }
@@ -250,7 +313,7 @@ ${gradientDefs}
 ${barsSvg}
 
   <!-- Legend note -->
-  <text x="${chartWidth / 2}" y="460" text-anchor="middle" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="11">Using JSON Schema Test Suite · Only passing test groups are benchmarked</text>
+  <text x="${chartWidth / 2}" y="460" text-anchor="middle" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="11">Head-to-head comparison on tests both validators pass</text>
 </svg>
 `;
 

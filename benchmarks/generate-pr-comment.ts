@@ -86,36 +86,6 @@ function formatDiffEmoji(newNs: number, oldNs: number, threshold = 5): string {
   return diff > 0 ? '🟢' : '🔴';
 }
 
-// Calculate average ns/test for a validator's draft
-function calculateDraftStats(
-  data: ValidatorBenchmark,
-  draft: string
-): { avgNs: number; tests: number; pass: number; fail: number } {
-  const draftResults = data.results.filter((r) => r.draft === draft);
-  let totalNs = 0;
-  let totalTests = 0;
-  let totalPass = 0;
-  let totalFail = 0;
-
-  for (const result of draftResults) {
-    totalPass += result.totalPass;
-    totalFail += result.totalFail;
-    for (const group of result.groups) {
-      if (group.passed && group.nsPerTest > 0) {
-        totalNs += group.nsPerTest * group.testCount;
-        totalTests += group.testCount;
-      }
-    }
-  }
-
-  return {
-    avgNs: totalTests > 0 ? totalNs / totalTests : 0,
-    tests: totalTests,
-    pass: totalPass,
-    fail: totalFail,
-  };
-}
-
 // Build a lookup map for groups by draft:file:groupDesc
 function buildGroupLookup(data: ValidatorBenchmark): Map<string, GroupResult> {
   const lookup = new Map<string, GroupResult>();
@@ -126,6 +96,65 @@ function buildGroupLookup(data: ValidatorBenchmark): Map<string, GroupResult> {
     }
   }
   return lookup;
+}
+
+// Calculate head-to-head comparison (only tests where both validators pass)
+// Optionally filter by draft
+function calculateH2H(
+  tjsData: ValidatorBenchmark,
+  ajvData: ValidatorBenchmark,
+  filterDraft?: string
+): { tjsNs: number; ajvNs: number; tests: number } | null {
+  const ajvLookup = buildGroupLookup(ajvData);
+
+  let h2hTjsNs = 0;
+  let h2hAjvNs = 0;
+  let h2hTests = 0;
+
+  for (const result of tjsData.results) {
+    if (filterDraft && result.draft !== filterDraft) continue;
+
+    for (const tjsGroup of result.groups) {
+      const key = `${result.draft}:${result.file}:${tjsGroup.groupDesc}`;
+      const ajvGroup = ajvLookup.get(key);
+
+      if (
+        tjsGroup.passed &&
+        ajvGroup?.passed &&
+        tjsGroup.nsPerTest > 0 &&
+        ajvGroup.nsPerTest > 0
+      ) {
+        h2hTjsNs += tjsGroup.nsPerTest * tjsGroup.testCount;
+        h2hAjvNs += ajvGroup.nsPerTest * ajvGroup.testCount;
+        h2hTests += tjsGroup.testCount;
+      }
+    }
+  }
+
+  if (h2hTests === 0) return null;
+
+  return {
+    tjsNs: h2hTjsNs / h2hTests,
+    ajvNs: h2hAjvNs / h2hTests,
+    tests: h2hTests,
+  };
+}
+
+// Calculate compliance stats for a validator's draft
+function calculateCompliance(
+  data: ValidatorBenchmark,
+  draft: string
+): { pass: number; total: number } {
+  const draftResults = data.results.filter((r) => r.draft === draft);
+  let totalPass = 0;
+  let totalFail = 0;
+
+  for (const result of draftResults) {
+    totalPass += result.totalPass;
+    totalFail += result.totalFail;
+  }
+
+  return { pass: totalPass, total: totalPass + totalFail };
 }
 
 function main() {
@@ -155,24 +184,26 @@ function main() {
 
   lines.push('## Benchmark Results');
   lines.push('');
+  lines.push('_All comparisons use head-to-head benchmarks on tests both validators pass._');
+  lines.push('');
   lines.push('### tjs vs ajv');
   lines.push('');
 
   if (hasBaseData) {
-    // Show comparison with base
+    // Show comparison with base using H2H per draft
     lines.push('| Draft | tjs (PR) | tjs (base) | Δ tjs | ajv (PR) | ajv (base) | Δ ajv |');
     lines.push('|-------|----------|------------|-------|----------|------------|-------|');
 
     for (const draft of drafts) {
-      const tjsStats = calculateDraftStats(tjsData, draft);
-      const ajvStats = calculateDraftStats(ajvData, draft);
-      const baseTjsStats = baseTjsData ? calculateDraftStats(baseTjsData, draft) : null;
-      const baseAjvStats = baseAjvData ? calculateDraftStats(baseAjvData, draft) : null;
+      const h2hNew = calculateH2H(tjsData, ajvData, draft);
+      const h2hOld = baseTjsData && baseAjvData ? calculateH2H(baseTjsData, baseAjvData, draft) : null;
 
-      const tjsNew = tjsStats.avgNs;
-      const tjsOld = baseTjsStats?.avgNs ?? 0;
-      const ajvNew = ajvStats.avgNs;
-      const ajvOld = baseAjvStats?.avgNs ?? 0;
+      if (!h2hNew) continue;
+
+      const tjsNew = h2hNew.tjsNs;
+      const ajvNew = h2hNew.ajvNs;
+      const tjsOld = h2hOld?.tjsNs ?? 0;
+      const ajvOld = h2hOld?.ajvNs ?? 0;
 
       const tjsDiff = tjsOld > 0 ? formatDiffPercent(tjsNew, tjsOld) : 'new';
       const tjsEmoji = tjsOld > 0 ? formatDiffEmoji(tjsNew, tjsOld) : '';
@@ -185,104 +216,66 @@ function main() {
       );
     }
   } else {
-    // No base data, show simple comparison
+    // No base data, show simple H2H comparison per draft
     lines.push('| Draft | tjs | ajv | tjs vs ajv |');
     lines.push('|-------|----:|----:|:----------:|');
 
     for (const draft of drafts) {
-      const tjsStats = calculateDraftStats(tjsData, draft);
-      const ajvStats = calculateDraftStats(ajvData, draft);
+      const h2h = calculateH2H(tjsData, ajvData, draft);
+      if (!h2h) continue;
 
-      const ratio =
-        ajvStats.avgNs > 0 ? ((tjsStats.avgNs - ajvStats.avgNs) / ajvStats.avgNs) * 100 : 0;
-      const emoji = ratio < 0 ? '🟢' : ratio > 0 ? '🔴' : '';
+      // Calculate ratio: positive means tjs is slower
+      const ratio = h2h.ajvNs > 0 ? ((h2h.tjsNs - h2h.ajvNs) / h2h.ajvNs) * 100 : 0;
+      const emoji = ratio < -5 ? '🟢' : ratio > 5 ? '🔴' : '';
       const diff = `${ratio > 0 ? '+' : ''}${Math.round(ratio)}%`;
 
-      lines.push(
-        `| ${draft} | ${formatOps(tjsStats.avgNs)} | ${formatOps(ajvStats.avgNs)} | ${emoji} ${diff} |`
-      );
+      lines.push(`| ${draft} | ${formatOps(h2h.tjsNs)} | ${formatOps(h2h.ajvNs)} | ${emoji} ${diff} |`);
     }
   }
 
   lines.push('');
 
-  // Head-to-head (only groups where both pass)
-  lines.push('### Head-to-Head');
-  lines.push('');
-  lines.push('_Only includes test groups where both validators pass all tests._');
+  // Overall head-to-head
+  lines.push('### Overall');
   lines.push('');
 
-  const tjsLookup = buildGroupLookup(tjsData);
-  const ajvLookup = buildGroupLookup(ajvData);
+  const h2hOverall = calculateH2H(tjsData, ajvData);
 
-  // Calculate head-to-head stats
-  let h2hTjsNs = 0;
-  let h2hAjvNs = 0;
-  let h2hTests = 0;
-  let h2hGroups = 0;
-
-  for (const [key, tjsGroup] of tjsLookup) {
-    const ajvGroup = ajvLookup.get(key);
-    if (tjsGroup.passed && ajvGroup?.passed && tjsGroup.nsPerTest > 0 && ajvGroup.nsPerTest > 0) {
-      h2hTjsNs += tjsGroup.nsPerTest * tjsGroup.testCount;
-      h2hAjvNs += ajvGroup.nsPerTest * ajvGroup.testCount;
-      h2hTests += tjsGroup.testCount;
-      h2hGroups++;
-    }
-  }
-
-  if (h2hTests > 0) {
-    const h2hTjsAvg = h2hTjsNs / h2hTests;
-    const h2hAjvAvg = h2hAjvNs / h2hTests;
-    const faster = h2hTjsAvg < h2hAjvAvg ? 'tjs' : 'ajv';
-    const ratio = h2hTjsAvg < h2hAjvAvg ? h2hAjvAvg / h2hTjsAvg : h2hTjsAvg / h2hAjvAvg;
+  if (h2hOverall) {
+    const faster = h2hOverall.tjsNs < h2hOverall.ajvNs ? 'tjs' : 'ajv';
+    const ratio =
+      h2hOverall.tjsNs < h2hOverall.ajvNs
+        ? h2hOverall.ajvNs / h2hOverall.tjsNs
+        : h2hOverall.tjsNs / h2hOverall.ajvNs;
     const emoji = faster === 'tjs' ? '🟢' : '🔴';
 
     // Check for base comparison
     if (hasBaseData) {
-      const baseTjsLookup = buildGroupLookup(baseTjsData!);
-      const baseAjvLookup = buildGroupLookup(baseAjvData!);
+      const h2hBase = calculateH2H(baseTjsData!, baseAjvData!);
 
-      let baseH2hTjsNs = 0;
-      let baseH2hAjvNs = 0;
-      let baseH2hTests = 0;
-
-      for (const [key, tjsGroup] of baseTjsLookup) {
-        const ajvGroup = baseAjvLookup.get(key);
-        if (
-          tjsGroup.passed &&
-          ajvGroup?.passed &&
-          tjsGroup.nsPerTest > 0 &&
-          ajvGroup.nsPerTest > 0
-        ) {
-          baseH2hTjsNs += tjsGroup.nsPerTest * tjsGroup.testCount;
-          baseH2hAjvNs += ajvGroup.nsPerTest * ajvGroup.testCount;
-          baseH2hTests += tjsGroup.testCount;
-        }
-      }
-
-      if (baseH2hTests > 0) {
+      if (h2hBase) {
+        const baseFaster = h2hBase.tjsNs < h2hBase.ajvNs ? 'tjs' : 'ajv';
         const baseRatio =
-          baseH2hTjsNs < baseH2hAjvNs ? baseH2hAjvNs / baseH2hTjsNs : baseH2hTjsNs / baseH2hAjvNs;
+          h2hBase.tjsNs < h2hBase.ajvNs
+            ? h2hBase.ajvNs / h2hBase.tjsNs
+            : h2hBase.tjsNs / h2hBase.ajvNs;
         const ratioChange = ((ratio - baseRatio) / baseRatio) * 100;
 
         let changeStr = '';
-        if (Math.abs(ratioChange) >= 1) {
+        if (Math.abs(ratioChange) >= 1 || faster !== baseFaster) {
           const arrow = ratioChange > 0 ? '↑' : '↓';
           changeStr = ` (was ${baseRatio.toFixed(2)}×, ${arrow}${Math.abs(ratioChange).toFixed(1)}%)`;
         }
 
-        lines.push(
-          `- **tjs vs ajv**: ${emoji} ${faster} is **${ratio.toFixed(2)}×** faster${changeStr}`
-        );
+        lines.push(`- **tjs vs ajv**: ${emoji} ${faster} is **${ratio.toFixed(2)}×** faster${changeStr}`);
       } else {
         lines.push(
-          `- **tjs vs ajv**: ${emoji} ${faster} is **${ratio.toFixed(2)}×** faster (${h2hTests} tests, ${h2hGroups} groups)`
+          `- **tjs vs ajv**: ${emoji} ${faster} is **${ratio.toFixed(2)}×** faster (${h2hOverall.tests} tests)`
         );
       }
     } else {
       lines.push(
-        `- **tjs vs ajv**: ${emoji} ${faster} is **${ratio.toFixed(2)}×** faster (${h2hTests} tests, ${h2hGroups} groups)`
+        `- **tjs vs ajv**: ${emoji} ${faster} is **${ratio.toFixed(2)}×** faster (${h2hOverall.tests} tests)`
       );
     }
   }
@@ -294,11 +287,9 @@ function main() {
   lines.push('| Draft | tjs | ajv |');
   lines.push('|-------|----:|----:|');
   for (const draft of drafts) {
-    const tjsStats = calculateDraftStats(tjsData, draft);
-    const ajvStats = calculateDraftStats(ajvData, draft);
-    const tjsTotal = tjsStats.pass + tjsStats.fail;
-    const ajvTotal = ajvStats.pass + ajvStats.fail;
-    lines.push(`| ${draft} | ${tjsStats.pass}/${tjsTotal} | ${ajvStats.pass}/${ajvTotal} |`);
+    const tjsComp = calculateCompliance(tjsData, draft);
+    const ajvComp = calculateCompliance(ajvData, draft);
+    lines.push(`| ${draft} | ${tjsComp.pass}/${tjsComp.total} | ${ajvComp.pass}/${ajvComp.total} |`);
   }
 
   console.log(lines.join('\n'));

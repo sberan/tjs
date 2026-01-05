@@ -169,6 +169,53 @@ function calculateCompliance(data: ValidatorBenchmark): {
   return { passed: totalPassed, total: totalTests, rate: `${rate}%` };
 }
 
+// Build a lookup map for groups by draft:file:groupDesc
+function buildGroupLookup(data: ValidatorBenchmark): Map<string, GroupResult> {
+  const lookup = new Map<string, GroupResult>();
+  for (const result of data.results) {
+    for (const group of result.groups) {
+      const key = `${result.draft}:${result.file}:${group.groupDesc}`;
+      lookup.set(key, group);
+    }
+  }
+  return lookup;
+}
+
+// Calculate head-to-head comparison (only tests where both validators pass)
+function calculateH2H(
+  tjsData: ValidatorBenchmark,
+  otherData: ValidatorBenchmark
+): { tjsNs: number; otherNs: number; tests: number } | null {
+  const tjsLookup = buildGroupLookup(tjsData);
+  const otherLookup = buildGroupLookup(otherData);
+
+  let h2hTjsNs = 0;
+  let h2hOtherNs = 0;
+  let h2hTests = 0;
+
+  for (const [key, tjsGroup] of tjsLookup) {
+    const otherGroup = otherLookup.get(key);
+    if (
+      tjsGroup.passed &&
+      otherGroup?.passed &&
+      tjsGroup.nsPerTest > 0 &&
+      otherGroup.nsPerTest > 0
+    ) {
+      h2hTjsNs += tjsGroup.nsPerTest * tjsGroup.testCount;
+      h2hOtherNs += otherGroup.nsPerTest * otherGroup.testCount;
+      h2hTests += tjsGroup.testCount;
+    }
+  }
+
+  if (h2hTests === 0) return null;
+
+  return {
+    tjsNs: h2hTjsNs / h2hTests,
+    otherNs: h2hOtherNs / h2hTests,
+    tests: h2hTests,
+  };
+}
+
 function generateSummaryTable(validatorData: Map<string, ValidatorBenchmark>): string {
   const lines: string[] = [];
   const tjsData = validatorData.get('tjs');
@@ -177,38 +224,44 @@ function generateSummaryTable(validatorData: Map<string, ValidatorBenchmark>): s
     return 'No tjs benchmark data available.';
   }
 
-  const tjsStats = calculateAvgNs(tjsData);
   const tjsCompliance = calculateCompliance(tjsData);
 
   lines.push('| Validator | Compliance | ops/s | vs tjs |');
   lines.push('|-----------|----------:|------:|-------:|');
 
-  // Add tjs row first
+  // Add tjs row first (use overall average for tjs's own row)
+  const tjsStats = calculateAvgNs(tjsData);
   const tjsOps = formatOps(tjsStats.avgNs);
   const tjsInfo = validatorInfo['tjs'];
   lines.push(`| [${tjsInfo.name}](${tjsInfo.link}) | ${tjsCompliance.rate} | ${tjsOps} | - |`);
 
-  // Add other validators
+  // Add other validators using head-to-head comparison
   for (const validator of ALL_VALIDATORS) {
     if (validator === 'tjs') continue;
 
     const data = validatorData.get(validator);
     if (!data) continue;
 
-    const stats = calculateAvgNs(data);
     const compliance = calculateCompliance(data);
-    const ops = formatOps(stats.avgNs);
 
-    // Calculate speedup vs tjs
+    // Use H2H comparison for fair ops/s and speedup
+    const h2h = calculateH2H(tjsData, data);
+
+    let ops = '-';
     let speedup = '-';
-    if (stats.avgNs > 0 && tjsStats.avgNs > 0) {
-      const ratio = stats.avgNs / tjsStats.avgNs;
-      if (ratio > 1) {
+
+    if (h2h) {
+      // Show the validator's ops/s on the shared test set
+      ops = formatOps(h2h.otherNs);
+
+      // Calculate speedup ratio on shared tests
+      const ratio = h2h.otherNs / h2h.tjsNs;
+      if (ratio > 1.05) {
         speedup = `${ratio.toFixed(1)}x slower`;
-      } else if (ratio < 1) {
+      } else if (ratio < 0.95) {
         speedup = `${(1 / ratio).toFixed(1)}x faster`;
       } else {
-        speedup = 'same';
+        speedup = '~same';
       }
     }
 
