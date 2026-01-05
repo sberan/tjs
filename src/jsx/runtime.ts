@@ -21,10 +21,44 @@ export function createContext<T>(defaultValue: T): ContextValue<T> {
   return { _brand: 'context', defaultValue };
 }
 
-export interface RenderContext {
-  get<T>(context: ContextValue<T>): T;
+// Mutable render context that can be extended
+export class RenderContext {
+  private values: Map<ContextValue<unknown>, unknown>;
+  private _varCounter: number;
   indent: number;
-  genVar(prefix?: string): string;
+
+  constructor(
+    values?: Map<ContextValue<unknown>, unknown>,
+    varCounter = 0,
+    indent = 0
+  ) {
+    this.values = values ?? new Map();
+    this._varCounter = varCounter;
+    this.indent = indent;
+  }
+
+  get<T>(context: ContextValue<T>): T {
+    if (this.values.has(context)) {
+      return this.values.get(context) as T;
+    }
+    return context.defaultValue;
+  }
+
+  // Create a new context with an updated value (immutable update)
+  with<T>(context: ContextValue<T>, value: T): RenderContext {
+    const newValues = new Map(this.values);
+    newValues.set(context, value);
+    return new RenderContext(newValues, this._varCounter, this.indent);
+  }
+
+  genVar(prefix = 'v'): string {
+    return `${prefix}${this._varCounter++}`;
+  }
+
+  // Create a child context with increased indent
+  indented(): RenderContext {
+    return new RenderContext(this.values, this._varCounter, this.indent + 1);
+  }
 }
 
 // JSX factory function
@@ -44,35 +78,18 @@ export function jsx(
 export const jsxs = jsx;
 
 // Fragment just returns children
-export function Fragment({ children }: { children?: CodeNode[] }): CodeNode[] {
+export function Fragment({ children }: { children?: CodeNode }): CodeNode {
   return children ?? [];
 }
 
-// Render a CodeNode tree to a string
-export function render(node: CodeNode, contexts?: Map<ContextValue<unknown>, unknown>): string {
-  let varCounter = 0;
-
-  const ctx: RenderContext = {
-    get<T>(context: ContextValue<T>): T {
-      if (contexts?.has(context)) {
-        return contexts.get(context) as T;
-      }
-      return context.defaultValue;
-    },
-    indent: 0,
-    genVar(prefix = 'v') {
-      return `${prefix}${varCounter++}`;
-    },
-  };
-
-  return renderNode(node, ctx, contexts ?? new Map());
+// Main render function
+export function render(node: CodeNode, ctx?: RenderContext): string {
+  const context = ctx ?? new RenderContext();
+  return renderNode(node, context);
 }
 
-function renderNode(
-  node: CodeNode,
-  ctx: RenderContext,
-  contexts: Map<ContextValue<unknown>, unknown>
-): string {
+// Internal render function
+export function renderNode(node: CodeNode, ctx: RenderContext): string {
   if (node === null || node === undefined || node === false) {
     return '';
   }
@@ -82,31 +99,19 @@ function renderNode(
   }
 
   if (Array.isArray(node)) {
-    return node.map(n => renderNode(n, ctx, contexts)).join('');
+    return node.map(n => renderNode(n, ctx)).join('');
   }
 
   // It's a CodeElement
   const { type, props, children } = node;
 
   if (typeof type === 'function') {
-    // Component function
+    // Component function - call it with current context
     const propsWithChildren = { ...props, children };
     const result = type(propsWithChildren, ctx);
-    return renderNode(result, ctx, contexts);
+    return renderNode(result, ctx);
   }
 
   // Intrinsic element (shouldn't happen in our system, but handle it)
-  return renderNode(children, ctx, contexts);
-}
-
-// Helper to provide context values
-export function withContext<T>(
-  context: ContextValue<T>,
-  value: T,
-  node: CodeNode,
-  existingContexts?: Map<ContextValue<unknown>, unknown>
-): string {
-  const contexts = new Map(existingContexts ?? []);
-  contexts.set(context, value);
-  return render(node, contexts);
+  return renderNode(children, ctx);
 }

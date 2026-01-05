@@ -1,9 +1,9 @@
 // Core code generation components
-import type { CodeNode, RenderContext } from './runtime.js';
+import { type CodeNode, RenderContext, renderNode } from './runtime.js';
 
 // Indentation helper
-function indent(level: number): string {
-  return '  '.repeat(level);
+function ind(ctx: RenderContext): string {
+  return '  '.repeat(ctx.indent);
 }
 
 // Raw line of code
@@ -12,7 +12,7 @@ export function Line(
   ctx: RenderContext
 ): string {
   const content = typeof children === 'string' ? children : '';
-  return `${indent(ctx.indent)}${content}\n`;
+  return `${ind(ctx)}${content}\n`;
 }
 
 // Code block with braces
@@ -20,11 +20,11 @@ export function Block(
   { children }: { children?: CodeNode },
   ctx: RenderContext
 ): CodeNode {
-  const innerCtx = { ...ctx, indent: ctx.indent + 1 };
+  const innerCtx = ctx.indented();
   return [
     `{\n`,
-    renderChildren(children, innerCtx),
-    `${indent(ctx.indent)}}`,
+    renderNode(children, innerCtx),
+    `${ind(ctx)}}`,
   ];
 }
 
@@ -33,11 +33,11 @@ export function If(
   { test, children }: { test: string; children?: CodeNode },
   ctx: RenderContext
 ): CodeNode {
-  const innerCtx = { ...ctx, indent: ctx.indent + 1 };
+  const innerCtx = ctx.indented();
   return [
-    `${indent(ctx.indent)}if (${test}) {\n`,
-    renderChildren(children, innerCtx),
-    `${indent(ctx.indent)}}\n`,
+    `${ind(ctx)}if (${test}) {\n`,
+    renderNode(children, innerCtx),
+    `${ind(ctx)}}\n`,
   ];
 }
 
@@ -46,12 +46,11 @@ export function Else(
   { children }: { children?: CodeNode },
   ctx: RenderContext
 ): CodeNode {
-  // Remove the newline from previous If and add else
-  const innerCtx = { ...ctx, indent: ctx.indent + 1 };
+  const innerCtx = ctx.indented();
   return [
     ` else {\n`,
-    renderChildren(children, innerCtx),
-    `${indent(ctx.indent)}}\n`,
+    renderNode(children, innerCtx),
+    `${ind(ctx)}}\n`,
   ];
 }
 
@@ -60,18 +59,18 @@ export function IfElse(
   { test, then, else: elseBlock }: { test: string; then: CodeNode; else?: CodeNode },
   ctx: RenderContext
 ): CodeNode {
-  const innerCtx = { ...ctx, indent: ctx.indent + 1 };
+  const innerCtx = ctx.indented();
   const result: CodeNode[] = [
-    `${indent(ctx.indent)}if (${test}) {\n`,
-    renderChildren(then, innerCtx),
-    `${indent(ctx.indent)}}`,
+    `${ind(ctx)}if (${test}) {\n`,
+    renderNode(then, innerCtx),
+    `${ind(ctx)}}`,
   ];
 
   if (elseBlock) {
     result.push(
       ` else {\n`,
-      renderChildren(elseBlock, innerCtx),
-      `${indent(ctx.indent)}}`
+      renderNode(elseBlock, innerCtx),
+      `${ind(ctx)}}`
     );
   }
   result.push('\n');
@@ -80,11 +79,11 @@ export function IfElse(
 
 // Const declaration
 export function Const(
-  { name, value, children }: { name?: string; value: string; children?: CodeNode },
+  { name, value }: { name?: string; value: string },
   ctx: RenderContext
 ): CodeNode {
   const varName = name ?? ctx.genVar();
-  return `${indent(ctx.indent)}const ${varName} = ${value};\n`;
+  return `${ind(ctx)}const ${varName} = ${value};\n`;
 }
 
 // Let declaration
@@ -94,7 +93,7 @@ export function Let(
 ): CodeNode {
   const varName = name ?? ctx.genVar();
   const assignment = value !== undefined ? ` = ${value}` : '';
-  return `${indent(ctx.indent)}let ${varName}${assignment};\n`;
+  return `${ind(ctx)}let ${varName}${assignment};\n`;
 }
 
 // For loop
@@ -102,11 +101,11 @@ export function For(
   { init, test, update, children }: { init: string; test: string; update: string; children?: CodeNode },
   ctx: RenderContext
 ): CodeNode {
-  const innerCtx = { ...ctx, indent: ctx.indent + 1 };
+  const innerCtx = ctx.indented();
   return [
-    `${indent(ctx.indent)}for (${init}; ${test}; ${update}) {\n`,
-    renderChildren(children, innerCtx),
-    `${indent(ctx.indent)}}\n`,
+    `${ind(ctx)}for (${init}; ${test}; ${update}) {\n`,
+    renderNode(children, innerCtx),
+    `${ind(ctx)}}\n`,
   ];
 }
 
@@ -115,11 +114,11 @@ export function ForOf(
   { item, iterable, children }: { item: string; iterable: string; children?: CodeNode },
   ctx: RenderContext
 ): CodeNode {
-  const innerCtx = { ...ctx, indent: ctx.indent + 1 };
+  const innerCtx = ctx.indented();
   return [
-    `${indent(ctx.indent)}for (const ${item} of ${iterable}) {\n`,
-    renderChildren(children, innerCtx),
-    `${indent(ctx.indent)}}\n`,
+    `${ind(ctx)}for (const ${item} of ${iterable}) {\n`,
+    renderNode(children, innerCtx),
+    `${ind(ctx)}}\n`,
   ];
 }
 
@@ -129,9 +128,9 @@ export function Return(
   ctx: RenderContext
 ): CodeNode {
   if (value === undefined) {
-    return `${indent(ctx.indent)}return;\n`;
+    return `${ind(ctx)}return;\n`;
   }
-  return `${indent(ctx.indent)}return ${value};\n`;
+  return `${ind(ctx)}return ${value};\n`;
 }
 
 // Statement (any expression as statement)
@@ -139,7 +138,7 @@ export function Stmt(
   { children }: { children?: string },
   ctx: RenderContext
 ): CodeNode {
-  return `${indent(ctx.indent)}${children ?? ''};\n`;
+  return `${ind(ctx)}${children ?? ''};\n`;
 }
 
 // Raw code (no processing)
@@ -148,25 +147,4 @@ export function Raw(
   _ctx: RenderContext
 ): CodeNode {
   return children ?? '';
-}
-
-// Helper to render children
-function renderChildren(children: CodeNode, ctx: RenderContext): CodeNode {
-  if (!children) return '';
-  if (typeof children === 'string') return children;
-  if (Array.isArray(children)) {
-    return children.map(child => {
-      if (typeof child === 'function') {
-        return (child as any)({}, ctx);
-      }
-      if (typeof child === 'object' && child !== null && 'type' in child) {
-        const { type, props, children: c } = child;
-        if (typeof type === 'function') {
-          return type({ ...props, children: c }, ctx);
-        }
-      }
-      return child;
-    });
-  }
-  return children;
 }
