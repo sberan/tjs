@@ -1,0 +1,81 @@
+name: Test Trigger (Debug)
+
+# Manual trigger only - for testing workflow triggering
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  statuses: write
+
+jobs:
+  test-push-and-trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create test branch and push
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          BRANCH_NAME="test/workflow-trigger-debug"
+
+          git config user.name "sberan"
+          git config user.email "sberan@gmail.com"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+
+          # Create branch from main
+          git checkout -B "$BRANCH_NAME" origin/main
+
+          # Make a trivial change
+          echo "# Test $(date)" >> TEST_TRIGGER.md
+          git add TEST_TRIGGER.md
+          git commit -m "test: workflow trigger debug"
+
+          # Push
+          git push -f origin "$BRANCH_NAME"
+
+          COMMIT_SHA=$(git rev-parse HEAD)
+          echo "commit_sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
+          echo "Pushed commit: $COMMIT_SHA"
+
+      - name: Create or update PR
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          BRANCH_NAME="test/workflow-trigger-debug"
+
+          EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --json number --jq '.[0].number' 2>/dev/null || echo "")
+
+          if [ -n "$EXISTING_PR" ]; then
+            echo "PR #$EXISTING_PR already exists"
+          else
+            gh pr create \
+              --title "test: workflow trigger debug" \
+              --body "Testing if workflow_dispatch can trigger tests on this PR"
+          fi
+
+      - name: Trigger test workflow
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+        run: |
+          BRANCH_NAME="test/workflow-trigger-debug"
+          COMMIT_SHA=$(git rev-parse HEAD)
+
+          echo "Triggering test workflow for ref: $BRANCH_NAME (commit: $COMMIT_SHA)"
+          gh workflow run test.yml --ref "$BRANCH_NAME" -f ref="$BRANCH_NAME"
+
+          sleep 5
+
+          RUN_ID=$(gh run list --workflow=test.yml --branch="$BRANCH_NAME" --limit=1 --json databaseId --jq '.[0].databaseId')
+          echo "Triggered run ID: $RUN_ID"
+
+          # Create pending status
+          gh api repos/${{ github.repository }}/statuses/$COMMIT_SHA \
+            -f state=pending \
+            -f context="Test" \
+            -f description="Tests are running..." \
+            -f target_url="https://github.com/${{ github.repository }}/actions/runs/$RUN_ID"
