@@ -263,10 +263,28 @@ function main() {
       // Truncate long names
       const labelName = displayName.length > 12 ? displayName.substring(0, 10) + '..' : displayName;
 
+      // For tjs, show ops/sec; for others, show percentage vs tjs
+      let valueLabel: string;
+      if (v.name === 'tjs') {
+        valueLabel = formatOps(v.ops);
+      } else {
+        // Calculate how much slower this validator is vs tjs
+        const ratio = tjsOps / v.ops;
+        if (ratio >= 10) {
+          valueLabel = `${Math.round(ratio)}x`;
+        } else if (ratio >= 1.05) {
+          valueLabel = `${ratio.toFixed(1)}x`;
+        } else if (ratio <= 0.95) {
+          valueLabel = `${(1 / ratio).toFixed(1)}x faster`;
+        } else {
+          valueLabel = '~same';
+        }
+      }
+
       return `  <!-- ${v.name}: ${formatOps(v.ops)} = ${height}px height -->
   <rect x="${x}" y="${y}" width="${barWidth}" height="${height}" rx="${rx}" fill="url(#${gradientId})"${filter}/>
   <text x="${x + barWidth / 2}" y="425" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">${labelName}</text>
-  <text x="${x + barWidth / 2}" y="${y - 8}" text-anchor="middle" fill="${colors.label}" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">${formatOps(v.ops)}</text>`;
+  <text x="${x + barWidth / 2}" y="${y - 8}" text-anchor="middle" fill="${colors.label}" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">${valueLabel}</text>`;
     })
     .join('\n\n');
 
@@ -313,7 +331,7 @@ ${gradientDefs}
 ${barsSvg}
 
   <!-- Legend note -->
-  <text x="${chartWidth / 2}" y="460" text-anchor="middle" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="11">Head-to-head comparison on tests both validators pass</text>
+  <text x="${chartWidth / 2}" y="460" text-anchor="middle" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="11">tjs shows ops/sec • others show how much slower (head-to-head on shared tests)</text>
 </svg>
 `;
 
