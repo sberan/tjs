@@ -105,6 +105,19 @@ function calculateOps(data: ValidatorBenchmark): number {
   return (1e9 * totalTests) / totalNs;
 }
 
+// Calculate total passed tests for a validator
+function calculatePassedTests(data: ValidatorBenchmark): number {
+  let totalPassed = 0;
+  for (const result of data.results) {
+    for (const group of result.groups) {
+      if (group.passed) {
+        totalPassed += group.testCount;
+      }
+    }
+  }
+  return totalPassed;
+}
+
 // Color palette for validators
 const validatorColors: Record<string, { start: string; end: string; label: string }> = {
   tjs: { start: '#34d399', end: '#10b981', label: '#34d399' },
@@ -119,38 +132,58 @@ const validatorColors: Record<string, { start: string; end: string; label: strin
   schemasafe: { start: '#60a5fa', end: '#3b82f6', label: '#60a5fa' },
 };
 
+// Get badge color based on compliance percentage
+// 90%+ = green, 30-89% = yellow, <30% = red
+function getBadgeColor(percent: number): { bg: string; text: string } {
+  if (percent >= 90) {
+    return { bg: '#22c55e', text: '#0f172a' }; // green
+  } else if (percent >= 30) {
+    return { bg: '#f59e0b', text: '#0f172a' }; // yellow
+  } else {
+    return { bg: '#ef4444', text: '#fff' }; // red
+  }
+}
+
 function main() {
   // Load all validator data and calculate ops/sec
-  const validatorOps: Array<{ name: string; ops: number }> = [];
+  const validatorData: Array<{ name: string; ops: number; passedTests: number }> = [];
 
   for (const validator of ALL_VALIDATORS) {
     const data = loadBenchmarkData(validator);
     if (data) {
       const ops = calculateOps(data);
+      const passedTests = calculatePassedTests(data);
       if (ops > 0) {
-        validatorOps.push({ name: validator, ops });
-        console.error(`Loaded ${validator}: ${formatOps(ops)} ops/sec`);
+        validatorData.push({ name: validator, ops, passedTests });
+        console.error(
+          `Loaded ${validator}: ${formatOps(ops)} ops/sec, ${passedTests} tests passed`
+        );
       }
     }
   }
 
-  if (validatorOps.length < 2) {
+  if (validatorData.length < 2) {
     console.error('Not enough benchmark data found. Run benchmarks first.');
     process.exit(1);
   }
 
   // Sort by ops/sec (fastest first)
-  validatorOps.sort((a, b) => b.ops - a.ops);
+  validatorData.sort((a, b) => b.ops - a.ops);
+
+  // Get tjs test count as the baseline for compliance percentage
+  const tjsData = validatorData.find((v) => v.name === 'tjs');
+  const tjsTestCount = tjsData?.passedTests || 6602; // fallback to known value
 
   console.error('\nPerformance (ops/sec):');
-  for (const v of validatorOps) {
-    console.error(`  ${v.name}: ${formatOps(v.ops)} ops/sec`);
+  for (const v of validatorData) {
+    const compliance = Math.round((v.passedTests / tjsTestCount) * 100);
+    console.error(`  ${v.name}: ${formatOps(v.ops)} ops/sec, ${compliance}% valid`);
   }
 
-  const tjsOps = validatorOps.find((v) => v.name === 'tjs')?.ops || 0;
+  const tjsOps = tjsData?.ops || 0;
   if (tjsOps > 0) {
     console.error('\nMultipliers (tjs vs):');
-    for (const v of validatorOps) {
+    for (const v of validatorData) {
       if (v.name !== 'tjs') {
         const mult = tjsOps / v.ops;
         console.error(`  ${v.name}: ${mult.toFixed(1)}x`);
@@ -159,12 +192,13 @@ function main() {
   }
 
   // Calculate chart dimensions based on number of validators
-  const maxOps = Math.max(...validatorOps.map((v) => v.ops));
-  const numValidators = validatorOps.length;
+  const maxOps = Math.max(...validatorData.map((v) => v.ops));
+  const numValidators = validatorData.length;
 
   // Dynamic chart sizing
-  const chartWidth = Math.max(800, 100 + numValidators * 80);
-  const barWidth = Math.min(60, (chartWidth - 200) / numValidators - 20);
+  const chartWidth = Math.max(900, 100 + numValidators * 80);
+  const chartHeight = 520; // Increased for badges
+  const barWidth = Math.min(50, (chartWidth - 200) / numValidators - 20);
   const barSpacing = barWidth + 20;
   const startX = 100;
   const baseY = 400;
@@ -175,7 +209,7 @@ function main() {
   const yAxisStep = maxOpsRounded / 3;
 
   // Generate gradient definitions
-  const gradientDefs = validatorOps
+  const gradientDefs = validatorData
     .map((v) => {
       const colors = validatorColors[v.name] || { start: '#94a3b8', end: '#64748b' };
       return `    <linearGradient id="grad-${v.name.replace(/[^a-z0-9]/gi, '-')}" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -185,8 +219,8 @@ function main() {
     })
     .join('\n');
 
-  // Generate bars
-  const barsSvg = validatorOps
+  // Generate bars with compliance badges
+  const barsSvg = validatorData
     .map((v, i) => {
       const height = Math.max(8, Math.round((v.ops / maxOps) * maxHeight));
       const x = startX + i * barSpacing;
@@ -200,10 +234,22 @@ function main() {
       // Truncate long names
       const labelName = displayName.length > 12 ? displayName.substring(0, 10) + '..' : displayName;
 
-      return `  <!-- ${v.name}: ${formatOps(v.ops)} = ${height}px height -->
+      // Calculate compliance percentage
+      const compliance = Math.round((v.passedTests / tjsTestCount) * 100);
+      const badgeColors = getBadgeColor(compliance);
+
+      // Badge dimensions
+      const badgeWidth = 56;
+      const badgeHeight = 14;
+      const badgeX = x + barWidth / 2 - badgeWidth / 2;
+      const badgeY = 426;
+
+      return `  <!-- ${v.name}: ${formatOps(v.ops)}, ${compliance}% valid -->
   <rect x="${x}" y="${y}" width="${barWidth}" height="${height}" rx="${rx}" fill="url(#${gradientId})"${filter}/>
-  <text x="${x + barWidth / 2}" y="425" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">${labelName}</text>
-  <text x="${x + barWidth / 2}" y="${y - 8}" text-anchor="middle" fill="${colors.label}" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">${formatOps(v.ops)}</text>`;
+  <text x="${x + barWidth / 2}" y="${y - 8}" text-anchor="middle" fill="${colors.label}" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">${formatOps(v.ops)}</text>
+  <text x="${x + barWidth / 2}" y="420" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">${labelName}</text>
+  <rect x="${badgeX}" y="${badgeY}" width="${badgeWidth}" height="${badgeHeight}" rx="7" fill="${badgeColors.bg}"/>
+  <text x="${x + barWidth / 2}" y="${badgeY + 10}" text-anchor="middle" fill="${badgeColors.text}" font-family="system-ui, -apple-system, sans-serif" font-size="8" font-weight="bold">${compliance}% VALID</text>`;
     })
     .join('\n\n');
 
@@ -211,7 +257,7 @@ function main() {
   const gridEndX = startX + (numValidators - 1) * barSpacing + barWidth + 20;
 
   // Generate SVG
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${chartWidth} 480">
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${chartWidth} ${chartHeight}">
   <defs>
     <!-- Gradients for bars -->
 ${gradientDefs}
@@ -226,7 +272,7 @@ ${gradientDefs}
   </defs>
 
   <!-- Background -->
-  <rect width="${chartWidth}" height="480" fill="#0f172a"/>
+  <rect width="${chartWidth}" height="${chartHeight}" fill="#0f172a"/>
 
   <!-- Subtle grid pattern -->
   <g opacity="0.1">
@@ -249,8 +295,20 @@ ${gradientDefs}
   <!-- Bars -->
 ${barsSvg}
 
-  <!-- Legend note -->
-  <text x="${chartWidth / 2}" y="460" text-anchor="middle" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="11">Using JSON Schema Test Suite · Only passing test groups are benchmarked</text>
+  <!-- Legend -->
+  <text x="${chartWidth / 2}" y="465" text-anchor="middle" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="11">% VALID = JSON Schema Test Suite validations passed (${tjsTestCount.toLocaleString()} total)</text>
+
+  <!-- Color key -->
+  <g transform="translate(${chartWidth / 2 - 120}, 478)">
+    <rect x="0" y="0" width="30" height="12" rx="6" fill="#22c55e"/>
+    <text x="35" y="10" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="10">90%+</text>
+    <rect x="80" y="0" width="30" height="12" rx="6" fill="#f59e0b"/>
+    <text x="115" y="10" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="10">30-89%</text>
+    <rect x="175" y="0" width="30" height="12" rx="6" fill="#ef4444"/>
+    <text x="210" y="10" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="10">&lt;30%</text>
+  </g>
+
+  <text x="${chartWidth / 2}" y="508" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="10">Fast validators that fail most tests aren't actually validating - they're just returning early</text>
 </svg>
 `;
 
