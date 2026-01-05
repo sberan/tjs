@@ -43,16 +43,4 @@ jobs:
             -f client_payload[ref]=$BRANCH_NAME \
             -f client_payload[sha]=$COMMIT_SHA
 
-          sleep 5
-
-          # Get the run ID
-          RUN_ID=$(gh run list --workflow=test.yml --event=repository_dispatch --limit=1 --json databaseId --jq '.[0].databaseId')
-          echo "Triggered run ID: $RUN_ID"
-
-          # Create pending status on the commit
-          echo "Creating pending status..."
-          gh api repos/${{ github.repository }}/statuses/$COMMIT_SHA \
-            -f state=pending \
-            -f context="Test" \
-            -f description="Tests are running..." \
-            -f target_url="https://github.com/${{ github.repository }}/actions/runs/$RUN_ID"
+          echo "Test workflow triggered. The report-status job will update the commit status when tests complete."
