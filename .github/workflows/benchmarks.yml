@@ -102,7 +102,7 @@ jobs:
           submodules: true
           ref: ${{ github.head_ref }}
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PAT_TOKEN }}
 
       - name: Fetch main branch for comparison
         run: git fetch origin main:refs/remotes/origin/main
