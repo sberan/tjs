@@ -188,12 +188,18 @@ export function compile(schema: JsonSchema, options: CompileOptions = {}): Valid
     }
   }
 
-  const fullCode = `
+  // Only reset errors if validation code was generated (schema can fail)
+  // For no-op schemas (true, {}), skip errors reset for performance
+  const codeStr = code.toString();
+  const hasValidationCode = codeStr.trim().length > 0;
+  const fullCode = hasValidationCode
+    ? `
 ${scopeInit}
-${code.toString()}
+${codeStr}
 ${mainFuncName}.errors = null;
 return true;
-`;
+`
+    : `return true;`;
 
   // Create the function with runtime dependencies injected
   // Note: The main function takes only 'data' parameter for performance.
@@ -202,7 +208,10 @@ return true;
     ...runtimeNames,
     `return function ${mainFuncName}(data) {\n${fullCode}\n}`
   );
-  return factory(...runtimeValues) as ValidateFn;
+  const fn = factory(...runtimeValues) as ValidateFn;
+  // Initialize errors to null (required by AJV-compatible interface)
+  fn.errors = null;
+  return fn;
 }
 
 /**
