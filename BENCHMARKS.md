@@ -8,15 +8,15 @@ Head-to-head performance comparison (tjs vs each validator). Only test groups wh
 
 | Validator | Compliance | ops/s | vs tjs |
 |-----------|----------:|------:|-------:|
-| [tjs](https://github.com/sberan/tjs) | 100% | 19.8M | - |
-| [ajv](https://ajv.js.org/) | 95% | 7.9M | 2.5x slower |
-| [zod](https://zod.dev/) | 59% | 169K | 116.9x slower |
-| [joi](https://joi.dev/) | 58% | 454K | 43.6x slower |
-| [is-my-json-valid](https://www.npmjs.com/package/is-my-json-valid) | 81% | 17.9M | 1.1x slower |
-| [z-schema](https://github.com/zaggino/z-schema) | 52% | 814K | 24.3x slower |
-| [djv](https://github.com/korzio/djv) | 76% | 4.1M | 4.8x slower |
-| [jsen](https://github.com/bugventure/jsen) | 76% | 16.7M | 1.2x slower |
-| [@exodus/schemasafe](https://github.com/ExodusMovement/schemasafe) | 90% | 19.2M | 1.0x slower |
+| [tjs](https://github.com/sberan/tjs) | 100% | 20.7M | - |
+| [ajv](https://ajv.js.org/) | 95% | 8.9M | 2.3x slower |
+| [zod](https://zod.dev/) | 59% | 167K | 124.1x slower |
+| [joi](https://joi.dev/) | 58% | 439K | 47.2x slower |
+| [is-my-json-valid](https://www.npmjs.com/package/is-my-json-valid) | 81% | 18.0M | 1.2x slower |
+| [z-schema](https://github.com/zaggino/z-schema) | 52% | 791K | 26.2x slower |
+| [djv](https://github.com/korzio/djv) | 76% | 4.1M | 5.1x slower |
+| [jsen](https://github.com/bugventure/jsen) | 76% | 16.5M | 1.3x slower |
+| [@exodus/schemasafe](https://github.com/ExodusMovement/schemasafe) | 90% | 18.9M | 1.1x slower |
 
 ## Performance Chart
 
@@ -41,11 +41,11 @@ Average nanoseconds per test for each JSON Schema draft version (lower is better
 
 | Draft | tjs | ajv | zod | joi | is-my-json-valid | z-schema | djv | jsen | schemasafe |
 |-------|----:|----:|----:|----:|----:|----:|----:|----:|----:|
-| draft4 | 38 | 76 | 6866 | 2566 | 66 | 1189 | 286 | 67 | 46 |
-| draft6 | 34 | 67 | 6685 | 2232 | 63 | - | 272 | 66 | 42 |
-| draft7 | 62 | 75 | 5911 | 2218 | 53 | - | 249 | 57 | 47 |
-| draft2019-09 | 57 | 159 | 5422 | 2095 | 50 | 1496 | 216 | 56 | 53 |
-| draft2020-12 | 51 | 199 | 5202 | 2023 | 50 | 1480 | 215 | 56 | 66 |
+| draft4 | 38 | 77 | 6950 | 2927 | 65 | 1197 | 288 | 66 | 47 |
+| draft6 | 34 | 69 | 6775 | 2299 | 59 | - | 277 | 64 | 43 |
+| draft7 | 63 | 75 | 5935 | 2065 | 54 | - | 250 | 58 | 47 |
+| draft2019-09 | 51 | 152 | 5477 | 2151 | 50 | 1933 | 217 | 60 | 53 |
+| draft2020-12 | 48 | 147 | 5349 | 2103 | 54 | 1476 | 215 | 55 | 67 |
 
 ## Methodology
 
