@@ -59,6 +59,23 @@ export function analyzePattern(pattern: string): PatternOptimization {
     return { type: 'includes', literal: pattern };
   }
 
+  // Pattern: c+ (one or more of single char) -> includes("c")
+  // This matches "at least one c" which is equivalent to includes("c")
+  if (len === 2 && pattern.charCodeAt(1) === 43 /* + */) {
+    const char = pattern.charAt(0);
+    if (isPlainLiteral(char)) {
+      return { type: 'includes', literal: char };
+    }
+  }
+
+  // Pattern: literal+ (one or more of literal) -> includes(literal)
+  if (len > 1 && pattern.charCodeAt(len - 1) === 43 /* + */) {
+    const base = pattern.slice(0, -1);
+    if (isPlainLiteral(base)) {
+      return { type: 'includes', literal: base };
+    }
+  }
+
   return { type: 'regex' };
 }
 
