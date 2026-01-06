@@ -2,7 +2,7 @@ import type { JsonSchema } from '../../../types.js';
 import { Code, Name, _, and, pathExpr, pathExprDynamic, indexAccess } from '../../codegen.js';
 import type { CompileContext } from '../../context.js';
 import { hasTypeConstraint, isNoOpSchema, genPropertyCheck } from '../shared/utils.js';
-import { determineRegexFlags } from '../string/regex-flags.js';
+import { determineRegexFlags, generateOptimizedPatternCheck } from '../string/regex-flags.js';
 
 function generateAdditionalPropsCheck(
   schema: JsonSchema,
@@ -77,12 +77,21 @@ export default function generatePropertiesChecks(ctx: CompileContext): void {
       const definedProps = schema.properties ? Object.keys(schema.properties) : [];
       const allPatterns = schema.patternProperties ? Object.keys(schema.patternProperties) : [];
 
-      const patternRegexNames: Name[] = [];
+      // For each pattern, determine if we can use optimized string methods or need regex
+      const patternChecks: Array<{ pattern: string; check: Code | Name; isOptimized: boolean }> =
+        [];
       for (const pattern of allPatterns) {
-        const flags = determineRegexFlags(pattern);
-        const regexName = new Name(ctx.genRuntimeName('patternRe'));
-        ctx.addRuntimeFunction(regexName.str, new RegExp(pattern, flags));
-        patternRegexNames.push(regexName);
+        const optimized = generateOptimizedPatternCheck(pattern, new Name('key'));
+        if (optimized) {
+          // Use optimized string method (startsWith, endsWith, etc.)
+          patternChecks.push({ pattern, check: optimized, isOptimized: true });
+        } else {
+          // Fall back to regex
+          const flags = determineRegexFlags(pattern);
+          const regexName = new Name(ctx.genRuntimeName('patternRe'));
+          ctx.addRuntimeFunction(regexName.str, new RegExp(pattern, flags));
+          patternChecks.push({ pattern, check: regexName, isOptimized: false });
+        }
       }
 
       if (nonTrivialPatternProps.length > 0 || hasAdditionalProps) {
@@ -92,9 +101,15 @@ export default function generatePropertiesChecks(ctx: CompileContext): void {
 
           for (let i = 0; i < nonTrivialPatternProps.length; i++) {
             const [pattern, patternSchema] = nonTrivialPatternProps[i];
-            const regexIdx = allPatterns.indexOf(pattern);
-            const regexName = patternRegexNames[regexIdx];
-            code.if(_`${regexName}.test(${keyVar})`, () => {
+            const patternIdx = allPatterns.indexOf(pattern);
+            const patternInfo = patternChecks[patternIdx];
+
+            // Generate condition based on whether we're using optimized check or regex
+            const condition = patternInfo.isOptimized
+              ? patternInfo.check // Already a Code expression like key.startsWith("S_")
+              : _`${patternInfo.check}.test(${keyVar})`; // Regex test
+
+            code.if(condition, () => {
               const propAccessed = indexAccess(data, keyVar);
               const propVar = code.genVar('pv');
               code.line(_`const ${propVar} = ${propAccessed};`);
@@ -118,8 +133,13 @@ export default function generatePropertiesChecks(ctx: CompileContext): void {
               conditions.push(_`!${propsSetName}.has(${keyVar})`);
             }
 
-            for (const regexName of patternRegexNames) {
-              conditions.push(_`!${regexName}.test(${keyVar})`);
+            // Add negated pattern checks for additionalProperties
+            for (const patternInfo of patternChecks) {
+              if (patternInfo.isOptimized) {
+                conditions.push(_`!(${patternInfo.check})`);
+              } else {
+                conditions.push(_`!${patternInfo.check}.test(${keyVar})`);
+              }
             }
 
             if (conditions.length > 0) {
