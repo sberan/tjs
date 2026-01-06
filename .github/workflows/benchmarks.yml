@@ -100,6 +100,9 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Fetch main branch for comparison
+        run: git fetch origin main:refs/remotes/origin/main
+
       - name: Use Node.js 22
         uses: actions/setup-node@v4
         with:
@@ -185,7 +188,7 @@ jobs:
           git push origin HEAD:${{ github.head_ref }}
 
       - name: Generate PR comment
-        run: npx tsx benchmarks/generate-pr-comment.ts > benchmark-comment.md
+        run: npx tsx benchmarks/generate-comparison.ts --format pr-comment > benchmark-comment.md
 
       - name: Comment on PR
         uses: actions/github-script@v7
