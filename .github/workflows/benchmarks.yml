@@ -12,11 +12,33 @@ permissions:
   pull-requests: write
 
 jobs:
+  # Check if this is a benchmark commit to prevent infinite loop
+  check-skip:
+    runs-on: ubuntu-latest
+    outputs:
+      should_skip: ${{ steps.check.outputs.should_skip }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+      - name: Check if benchmark commit
+        id: check
+        run: |
+          COMMIT_MSG=$(git log -1 --format=%s)
+          if [[ "$COMMIT_MSG" == "chore: update benchmark results" ]]; then
+            echo "should_skip=true" >> $GITHUB_OUTPUT
+            echo "Skipping: benchmark commit detected"
+          else
+            echo "should_skip=false" >> $GITHUB_OUTPUT
+            echo "Running: not a benchmark commit"
+          fi
+
   # Run benchmarks for tjs (once per draft for parallelism)
   benchmark-tjs:
     runs-on: ubuntu-latest
-    # Skip if this is a bot commit (prevents infinite loop)
-    if: github.actor != 'github-actions[bot]'
+    needs: check-skip
+    if: needs.check-skip.outputs.should_skip != 'true'
     strategy:
       matrix:
         draft: [draft4, draft6, draft7, draft2019-09, draft2020-12]
@@ -54,8 +76,8 @@ jobs:
   # Run benchmarks for each validator (per draft for parallelism)
   benchmark-validator:
     runs-on: ubuntu-latest
-    # Skip if this is a bot commit (prevents infinite loop)
-    if: github.actor != 'github-actions[bot]'
+    needs: check-skip
+    if: needs.check-skip.outputs.should_skip != 'true'
     strategy:
       matrix:
         draft: [draft4, draft6, draft7, draft2019-09, draft2020-12]
@@ -94,7 +116,8 @@ jobs:
   # Merge results, update files, commit back to PR, and post comment
   finalize:
     runs-on: ubuntu-latest
-    needs: [benchmark-tjs, benchmark-validator]
+    needs: [check-skip, benchmark-tjs, benchmark-validator]
+    if: needs.check-skip.outputs.should_skip != 'true'
 
     steps:
       - uses: actions/checkout@v4
