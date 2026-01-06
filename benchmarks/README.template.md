@@ -14,7 +14,7 @@
   <a href="https://sberan.github.io/tjs/"><img src="https://img.shields.io/badge/try-playground-blue" alt="playground"></a>
 </p>
 
-![Benchmark](assets/benchmark.svg)
+[![Benchmark](assets/benchmark.svg)](https://raw.githubusercontent.com/sberan/tjs/main/assets/benchmark.svg)
 
 {{TAGLINE}}
 

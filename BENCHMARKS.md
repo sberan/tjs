@@ -20,7 +20,7 @@ Head-to-head performance comparison (tjs vs each validator). Only test groups wh
 
 ## Performance Chart
 
-![Benchmark](assets/benchmark.svg)
+[![Benchmark](assets/benchmark.svg)](https://raw.githubusercontent.com/sberan/tjs/main/assets/benchmark.svg)
 
 ## Detailed Reports
 

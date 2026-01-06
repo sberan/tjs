@@ -197,10 +197,11 @@ function main() {
 
   // Dynamic chart sizing
   const chartWidth = Math.max(900, 100 + numValidators * 80);
-  const chartHeight = 520; // Increased for badges
+  const chartHeight = 470; // Reduced height (no color key)
   const barWidth = Math.min(50, (chartWidth - 200) / numValidators - 20);
   const barSpacing = barWidth + 20;
-  const startX = 100;
+  const totalBarsWidth = (numValidators - 1) * barSpacing + barWidth;
+  const startX = (chartWidth - totalBarsWidth) / 2; // Center the bars
   const baseY = 400;
   const maxHeight = 300;
 
@@ -254,6 +255,7 @@ function main() {
     .join('\n\n');
 
   // Generate grid lines based on chart width
+  const gridStartX = startX - 20;
   const gridEndX = startX + (numValidators - 1) * barSpacing + barWidth + 20;
 
   // Generate SVG
@@ -276,17 +278,17 @@ ${gradientDefs}
 
   <!-- Subtle grid pattern -->
   <g opacity="0.1">
-    <line x1="80" y1="400" x2="${gridEndX}" y2="400" stroke="#94a3b8" stroke-width="1"/>
-    <line x1="80" y1="300" x2="${gridEndX}" y2="300" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
-    <line x1="80" y1="200" x2="${gridEndX}" y2="200" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
-    <line x1="80" y1="100" x2="${gridEndX}" y2="100" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
+    <line x1="${gridStartX}" y1="400" x2="${gridEndX}" y2="400" stroke="#94a3b8" stroke-width="1"/>
+    <line x1="${gridStartX}" y1="300" x2="${gridEndX}" y2="300" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
+    <line x1="${gridStartX}" y1="200" x2="${gridEndX}" y2="200" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
+    <line x1="${gridStartX}" y1="100" x2="${gridEndX}" y2="100" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
   </g>
 
   <!-- Y-axis labels -->
-  <text x="70" y="405" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">0</text>
-  <text x="70" y="305" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">${formatOps(yAxisStep)}</text>
-  <text x="70" y="205" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">${formatOps(yAxisStep * 2)}</text>
-  <text x="70" y="105" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">${formatOps(yAxisStep * 3)}</text>
+  <text x="${gridStartX - 10}" y="405" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">0</text>
+  <text x="${gridStartX - 10}" y="305" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">${formatOps(yAxisStep)}</text>
+  <text x="${gridStartX - 10}" y="205" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">${formatOps(yAxisStep * 2)}</text>
+  <text x="${gridStartX - 10}" y="105" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">${formatOps(yAxisStep * 3)}</text>
 
   <!-- Title -->
   <text x="${chartWidth / 2}" y="35" text-anchor="middle" fill="#f1f5f9" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">JSON Schema Validator Performance</text>
@@ -296,19 +298,7 @@ ${gradientDefs}
 ${barsSvg}
 
   <!-- Legend -->
-  <text x="${chartWidth / 2}" y="465" text-anchor="middle" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="11">% VALID = JSON Schema Test Suite validations passed (${tjsTestCount.toLocaleString()} total)</text>
-
-  <!-- Color key -->
-  <g transform="translate(${chartWidth / 2 - 120}, 478)">
-    <rect x="0" y="0" width="30" height="12" rx="6" fill="#22c55e"/>
-    <text x="35" y="10" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="10">90%+</text>
-    <rect x="80" y="0" width="30" height="12" rx="6" fill="#f59e0b"/>
-    <text x="115" y="10" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="10">30-89%</text>
-    <rect x="175" y="0" width="30" height="12" rx="6" fill="#ef4444"/>
-    <text x="210" y="10" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="10">&lt;30%</text>
-  </g>
-
-  <text x="${chartWidth / 2}" y="508" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="10">Fast validators that fail most tests aren't actually validating - they're just returning early</text>
+  <text x="${chartWidth / 2}" y="460" text-anchor="middle" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="11">% VALID = JSON Schema Test Suite validations passed (${tjsTestCount.toLocaleString()} total)</text>
 </svg>
 `;
 
