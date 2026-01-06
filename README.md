@@ -88,20 +88,20 @@ Performance vs ajv (JSON Schema Test Suite):
 --------------------------------------------------------------------------------
 Draft          Files   Tests | tjs ns/test  ajv ns/test      Diff
 --------------------------------------------------------------------------------
-draft-04         43     881 |         35           76      -54%
-draft-06         52    1170 |         34           68      -50%
-draft-07         63    1534 |         62           77      -20%
-draft-2019-09    77    1941 |         51          153      -67%
-draft-2020-12    80    1990 |         49          151      -68%
+draft-04         43     881 |         35           77      -54%
+draft-06         52    1170 |         33           66      -50%
+draft-07         63    1534 |         61           76      -20%
+draft-2019-09    77    1941 |         50          153      -68%
+draft-2020-12    80    1990 |         49          147      -67%
 --------------------------------------------------------------------------------
-TOTAL            315    7516 |         48          100      -52%
+TOTAL            315    7516 |         47           98      -52%
 --------------------------------------------------------------------------------
 ```
 
-Format validation is where tjs really shines — up to **259x faster** for complex formats:
+Format validation is where tjs really shines — up to **245x faster** for complex formats:
 
 ```
-idn-email                259x faster than ajv
+idn-email                245x faster than ajv
 date-time                9x faster than ajv
 ipv6                     6x faster than ajv
 ```
