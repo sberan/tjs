@@ -204,9 +204,9 @@ function generateSummaryTable(validatorData: Map<string, ValidatorBenchmark>): s
     if (stats.avgNs > 0 && tjsStats.avgNs > 0) {
       const ratio = stats.avgNs / tjsStats.avgNs;
       if (ratio > 1) {
-        speedup = `${ratio.toFixed(1)}x slower`;
+        speedup = `🟢 ${ratio.toFixed(1)}x slower`;
       } else if (ratio < 1) {
-        speedup = `${(1 / ratio).toFixed(1)}x faster`;
+        speedup = `🔴 ${(1 / ratio).toFixed(1)}x faster`;
       } else {
         speedup = 'same';
       }
