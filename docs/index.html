@@ -308,76 +308,6 @@
     .error-path { color: var(--yellow); font-size: 12px; }
     .error-msg { color: var(--text-dim); font-size: 12px; margin-top: 2px; }
 
-    /* Benchmarks */
-    .bench-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 24px;
-    }
-
-    @media (max-width: 768px) {
-      .bench-grid { grid-template-columns: 1fr; }
-    }
-
-    .bench-card {
-      background: var(--bg-alt);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 20px;
-    }
-
-    .bench-title {
-      font-size: 13px;
-      color: var(--text);
-      margin-bottom: 16px;
-    }
-
-    .bench-bar-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 12px;
-    }
-
-    .bench-label {
-      width: 40px;
-      font-size: 11px;
-      color: var(--text-dim);
-    }
-
-    .bench-bar-container {
-      flex: 1;
-      height: 24px;
-      background: var(--bg);
-      border-radius: 4px;
-      overflow: hidden;
-      position: relative;
-    }
-
-    .bench-bar {
-      height: 100%;
-      border-radius: 4px;
-      display: flex;
-      align-items: center;
-      justify-content: flex-end;
-      padding-right: 8px;
-      font-size: 10px;
-      color: var(--bg);
-      font-weight: 600;
-    }
-
-    .bench-bar.tjs { background: var(--green); }
-    .bench-bar.ajv { background: var(--orange); }
-
-    .bench-diff {
-      font-size: 11px;
-      width: 60px;
-      text-align: right;
-    }
-
-    .bench-diff.faster { color: var(--green); }
-    .bench-diff.slower { color: var(--red); }
-
     /* Compliance */
     .compliance-grid {
       display: grid;
@@ -566,121 +496,13 @@
 
     <section id="benchmarks">
       <div class="container">
-        <h2>benchmarks vs ajv</h2>
+        <h2>benchmarks</h2>
         <p style="color: var(--text-dim); margin-bottom: 24px; font-size: 12px;">
-          Using the official <a href="https://github.com/json-schema-org/JSON-Schema-Test-Suite">JSON Schema Test Suite</a>.
-          Lower bars = faster. Negative % = tjs is faster.
+          Performance comparison against all major JSON Schema validators using the official
+          <a href="https://github.com/json-schema-org/JSON-Schema-Test-Suite">JSON Schema Test Suite</a>.
         </p>
 
-        <div class="bench-grid">
-          <div class="bench-card">
-            <div class="bench-title">Draft 2020-12 (ops/sec)</div>
-            <div class="bench-bar-row">
-              <span class="bench-label">tjs</span>
-              <div class="bench-bar-container">
-                <div class="bench-bar tjs" style="width: 100%;">18.8M</div>
-              </div>
-              <span class="bench-diff faster">-64%</span>
-            </div>
-            <div class="bench-bar-row">
-              <span class="bench-label">ajv</span>
-              <div class="bench-bar-container">
-                <div class="bench-bar ajv" style="width: 36%;">6.8M</div>
-              </div>
-              <span class="bench-diff"></span>
-            </div>
-          </div>
-
-          <div class="bench-card">
-            <div class="bench-title">Draft 2019-09 (ops/sec)</div>
-            <div class="bench-bar-row">
-              <span class="bench-label">tjs</span>
-              <div class="bench-bar-container">
-                <div class="bench-bar tjs" style="width: 100%;">18.6M</div>
-              </div>
-              <span class="bench-diff faster">-66%</span>
-            </div>
-            <div class="bench-bar-row">
-              <span class="bench-label">ajv</span>
-              <div class="bench-bar-container">
-                <div class="bench-bar ajv" style="width: 34%;">6.3M</div>
-              </div>
-              <span class="bench-diff"></span>
-            </div>
-          </div>
-
-          <div class="bench-card">
-            <div class="bench-title">date-time format (ops/sec)</div>
-            <div class="bench-bar-row">
-              <span class="bench-label">tjs</span>
-              <div class="bench-bar-container">
-                <div class="bench-bar tjs" style="width: 100%;">80M</div>
-              </div>
-              <span class="bench-diff faster">-32%</span>
-            </div>
-            <div class="bench-bar-row">
-              <span class="bench-label">ajv</span>
-              <div class="bench-bar-container">
-                <div class="bench-bar ajv" style="width: 68%;">55M</div>
-              </div>
-              <span class="bench-diff"></span>
-            </div>
-          </div>
-
-          <div class="bench-card">
-            <div class="bench-title">ipv6 format (ops/sec)</div>
-            <div class="bench-bar-row">
-              <span class="bench-label">tjs</span>
-              <div class="bench-bar-container">
-                <div class="bench-bar tjs" style="width: 100%;">80M</div>
-              </div>
-              <span class="bench-diff faster">-31%</span>
-            </div>
-            <div class="bench-bar-row">
-              <span class="bench-label">ajv</span>
-              <div class="bench-bar-container">
-                <div class="bench-bar ajv" style="width: 69%;">55M</div>
-              </div>
-              <span class="bench-diff"></span>
-            </div>
-          </div>
-
-          <div class="bench-card">
-            <div class="bench-title">oneOf composition (ops/sec)</div>
-            <div class="bench-bar-row">
-              <span class="bench-label">tjs</span>
-              <div class="bench-bar-container">
-                <div class="bench-bar tjs" style="width: 100%;">74M</div>
-              </div>
-              <span class="bench-diff faster">-72%</span>
-            </div>
-            <div class="bench-bar-row">
-              <span class="bench-label">ajv</span>
-              <div class="bench-bar-container">
-                <div class="bench-bar ajv" style="width: 28%;">21M</div>
-              </div>
-              <span class="bench-diff"></span>
-            </div>
-          </div>
-
-          <div class="bench-card">
-            <div class="bench-title">Overall (ops/sec)</div>
-            <div class="bench-bar-row">
-              <span class="bench-label">tjs</span>
-              <div class="bench-bar-container">
-                <div class="bench-bar tjs" style="width: 100%;">19.7M</div>
-              </div>
-              <span class="bench-diff faster">-55%</span>
-            </div>
-            <div class="bench-bar-row">
-              <span class="bench-label">ajv</span>
-              <div class="bench-bar-container">
-                <div class="bench-bar ajv" style="width: 45%;">8.8M</div>
-              </div>
-              <span class="bench-diff"></span>
-            </div>
-          </div>
-        </div>
+        <img src="../assets/benchmark.svg" alt="Benchmark comparison chart" style="width: 100%; max-width: 900px; border-radius: 8px;">
       </div>
     </section>
 
