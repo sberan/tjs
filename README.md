@@ -193,6 +193,22 @@ const User = schema({
 });
 ```
 
+### `validator(data)` (AJV-compatible)
+
+Validators are callable functions that return a boolean and set the `.errors` property:
+
+```typescript
+const isValid = User(input);  // Returns true/false
+
+if (isValid) {
+  console.log('Valid!');
+} else {
+  console.log(User.errors);  // ValidationError[] with details
+}
+```
+
+This pattern is compatible with AJV, making migration straightforward.
+
 ### `validator.validate(data)`
 
 Validate and return result with value or error:
@@ -200,10 +216,10 @@ Validate and return result with value or error:
 ```typescript
 const result = User.validate(input);
 
-if (result.error === undefined) {
+if (result.valid) {
   console.log(result.value);  // Typed & coerced data
 } else {
-  console.log(result.error);  // Validation errors with paths
+  console.log(result.error);  // ValidationError[] with paths
 }
 ```
 
@@ -249,6 +265,31 @@ Create a validator that automatically fetches remote `$ref` schemas:
 const validator = await schemaAsync({
   $ref: 'https://json-schema.org/draft/2020-12/schema',
 });
+```
+
+Additional options for async loading:
+
+```typescript
+const validator = await schemaAsync(mySchema, {
+  fetch: customFetch,  // Custom fetch function (default: global fetch)
+  concurrency: 5,      // Max concurrent fetches (default: 5)
+  timeout: 10000,      // Request timeout in ms (default: 10000)
+  silent: false,       // Suppress fetch warnings (default: false)
+});
+```
+
+### `loadRemoteSchemas(schema, options?)`
+
+Pre-load remote schemas referenced by a schema. Returns a map of URI → schema:
+
+```typescript
+import { loadRemoteSchemas, schema } from 'tjs';
+
+// Load all remote $refs
+const remotes = await loadRemoteSchemas(mySchema, { timeout: 5000 });
+
+// Use with schema()
+const validator = schema(mySchema, { remotes });
 ```
 
 ### Schema Composition
@@ -352,7 +393,54 @@ interface ValidatorOptions {
     null?: boolean;
     array?: boolean;
   };
+
+  // Default JSON Schema dialect when schema has no $schema
+  // (default: 'https://json-schema.org/draft/2020-12/schema')
+  defaultMeta?: string;
 }
+```
+
+## Meta-Schemas
+
+tjs exports bundled meta-schemas for validating JSON Schema documents:
+
+```typescript
+import { metaSchemas, draft07Schema, draft04Schema, draft06Schema } from 'tjs';
+
+// Validate a schema against the JSON Schema meta-schema
+const schemaValidator = schema(draft07Schema);
+schemaValidator.assert(mySchema);  // Throws if mySchema is invalid
+
+// Use metaSchemas with remotes to resolve meta-schema $refs
+const validator = schema(mySchema, { remotes: metaSchemas });
+```
+
+## Type String Shorthand
+
+For convenience, type strings can be used as shorthand in schema definitions:
+
+```typescript
+const User = schema({
+  type: 'object',
+  properties: {
+    name: 'string',      // Shorthand for { type: 'string' }
+    age: 'integer',      // Shorthand for { type: 'integer' }
+    active: 'boolean',   // Shorthand for { type: 'boolean' }
+  },
+  required: ['name'],
+});
+```
+
+## Extracting Types
+
+Use `typeof validator.type` to extract the inferred TypeScript type:
+
+```typescript
+const User = schema({ ... });
+type User = typeof User.type;  // Extract the type
+
+// Note: validator.type is a phantom property for type inference only.
+// Accessing it at runtime throws an error.
 ```
 
 ## License
