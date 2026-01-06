@@ -16,7 +16,7 @@
 
 ![Benchmark](assets/benchmark.svg)
 
-100% spec compliance. 52% faster than ajv. Zero dependencies. Full TypeScript inference.
+100% spec compliance. 51% faster than ajv. Zero dependencies. Full TypeScript inference.
 
 
 ## At a Glance
@@ -81,28 +81,28 @@ See [COMPLIANCE.md](COMPLIANCE.md) for details.
 ### Blazing Fast
 
 See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance comparison.
-tjs uses JIT compilation to generate optimized validation code — **52% faster than ajv** overall:
+tjs uses JIT compilation to generate optimized validation code — **51% faster than ajv** overall:
 
 ```
 Performance vs ajv (JSON Schema Test Suite):
 --------------------------------------------------------------------------------
 Draft          Files   Tests | tjs ns/test  ajv ns/test      Diff
 --------------------------------------------------------------------------------
-draft-04         43     881 |         35           76      -54%
-draft-06         52    1170 |         34           68      -50%
-draft-07         63    1534 |         62           77      -20%
-draft-2019-09    77    1941 |         51          153      -67%
-draft-2020-12    80    1990 |         49          151      -68%
+draft-04         43     881 |         38           77      -51%
+draft-06         52    1170 |         34           69      -51%
+draft-07         63    1534 |         63           75      -17%
+draft-2019-09    77    1941 |         51          152      -67%
+draft-2020-12    80    1990 |         48          147      -67%
 --------------------------------------------------------------------------------
-TOTAL            315    7516 |         48          100      -52%
+TOTAL            315    7516 |         48           99      -51%
 --------------------------------------------------------------------------------
 ```
 
-Format validation is where tjs really shines — up to **259x faster** for complex formats:
+Format validation is where tjs really shines — up to **240x faster** for complex formats:
 
 ```
-idn-email                259x faster than ajv
-date-time                9x faster than ajv
+idn-email                240x faster than ajv
+date-time                8x faster than ajv
 ipv6                     6x faster than ajv
 ```
 
