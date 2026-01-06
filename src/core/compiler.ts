@@ -190,13 +190,14 @@ export function compile(schema: JsonSchema, options: CompileOptions = {}): Valid
 
   // Only reset errors if validation code was generated (schema can fail)
   // For no-op schemas (true, {}), skip errors reset for performance
+  // Note: Setting errors = null at START (like schemasafe) avoids write on success path
   const codeStr = code.toString();
   const hasValidationCode = codeStr.trim().length > 0;
   const fullCode = hasValidationCode
     ? `
+${mainFuncName}.errors = null;
 ${scopeInit}
 ${codeStr}
-${mainFuncName}.errors = null;
 return true;
 `
     : `return true;`;

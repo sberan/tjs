@@ -10,6 +10,14 @@ export default function generateAllOfCheck(ctx: CompileContext): void {
   const { schema } = ctx;
   if (!schema.allOf || schema.allOf.length === 0) return;
 
+  // Fast path: if any schema is false, allOf always fails
+  for (const subSchema of schema.allOf) {
+    if (subSchema === false) {
+      ctx.genError('allOf', 'must match all schemas in allOf', {});
+      return;
+    }
+  }
+
   const nonNoOpSchemas = schema.allOf.filter((s) => !isNoOpSchema(s));
 
   if (nonNoOpSchemas.length > 0) {

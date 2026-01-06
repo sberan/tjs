@@ -38,4 +38,13 @@ When making API changes, **always update README.md** to reflect the current API:
 ### Important
 - There is NO `.parse()` method - use `.assert()` for throwing validation or `.validate()` for result-based
 - `.validate()` returns an object `{ value, error }`, NOT a boolean
-- ALWAYS use src/claude-debug.js for any scratch work. do no use heredocs or shell scripts or cat commands.
+- ALWAYS use src/claude-debug.js for any scratch work. do not use heredocs or shell scripts or cat commands.
+
+## Benchmark Commands
+When testing performance:
+- Full benchmark: `npm run bench:tjs` and `npm run bench:schemasafe`
+- **Micro benchmark with filter**: `npm run bench -- draft7 --filter pattern -v tjs` (use this for testing specific groups)
+- Comparison report: `npx tsx benchmarks/generate-report.ts schemasafe`
+- Filter regex examples: `--filter "pattern|format"`, `--filter "oneOf"`
+
+**Always use the official benchmark tool with --filter for micro benchmarks**, not custom scripts.
