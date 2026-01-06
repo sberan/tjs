@@ -120,14 +120,16 @@ function calculateDraftNs(data: ValidatorBenchmark, draft: string): number {
   return totalTests > 0 ? totalNs / totalTests : 0;
 }
 
-// Calculate head-to-head comparison between two validators
+// Calculate head-to-head comparison between two validators (optionally filtered by draft)
 function calculateH2H(
   tjsData: ValidatorBenchmark,
-  otherData: ValidatorBenchmark
-): { faster: string; ratio: number; tests: number } | null {
+  otherData: ValidatorBenchmark,
+  draftFilter?: string
+): { faster: string; ratio: number; tests: number; tjsNs: number; otherNs: number } | null {
   // Build lookup for other validator's groups
   const otherLookup = new Map<string, GroupResult>();
   for (const result of otherData.results) {
+    if (draftFilter && result.draft !== draftFilter) continue;
     for (const group of result.groups) {
       const key = `${result.draft}:${result.file}:${group.groupDesc}`;
       otherLookup.set(key, group);
@@ -139,6 +141,7 @@ function calculateH2H(
   let h2hTests = 0;
 
   for (const result of tjsData.results) {
+    if (draftFilter && result.draft !== draftFilter) continue;
     for (const tjsGroup of result.groups) {
       const key = `${result.draft}:${result.file}:${tjsGroup.groupDesc}`;
       const otherGroup = otherLookup.get(key);
@@ -164,20 +167,23 @@ function calculateH2H(
   const faster = tjsAvg < otherAvg ? 'tjs' : otherData.validator;
   const ratio = tjsAvg < otherAvg ? otherAvg / tjsAvg : tjsAvg / otherAvg;
 
-  return { faster, ratio, tests: h2hTests };
+  return { faster, ratio, tests: h2hTests, tjsNs: tjsAvg, otherNs: otherAvg };
+}
+
+interface DraftH2H {
+  draft: string;
+  tjsNs: number;
+  otherNs: number;
+  tests: number;
+  faster: string;
+  ratio: number;
 }
 
 interface ValidatorComparison {
   validator: string;
-  drafts: {
-    draft: string;
-    tjsOld: number;
-    tjsNew: number;
-    otherOld: number;
-    otherNew: number;
-  }[];
-  h2hOld: { faster: string; ratio: number; tests: number } | null;
-  h2hNew: { faster: string; ratio: number; tests: number } | null;
+  drafts: DraftH2H[];
+  h2hOld: { faster: string; ratio: number; tests: number; tjsNs: number; otherNs: number } | null;
+  h2hNew: { faster: string; ratio: number; tests: number; tjsNs: number; otherNs: number } | null;
 }
 
 const ALL_VALIDATORS = [
@@ -202,20 +208,20 @@ function compareValidator(validator: string): ValidatorComparison | null {
   const otherOld = loadValidatorDataFromMain(validator);
 
   const drafts = ['draft4', 'draft6', 'draft7', 'draft2019-09', 'draft2020-12'];
-  const draftComparisons = [];
+  const draftComparisons: DraftH2H[] = [];
 
+  // Use per-draft H2H to only compare tests BOTH validators pass
   for (const draft of drafts) {
-    const tjsNewNs = calculateDraftNs(tjsNew, draft);
-    const otherNewNs = calculateDraftNs(otherNew, draft);
-
-    if (tjsNewNs === 0 && otherNewNs === 0) continue;
+    const h2h = calculateH2H(tjsNew, otherNew, draft);
+    if (!h2h) continue;
 
     draftComparisons.push({
       draft,
-      tjsOld: tjsOld ? calculateDraftNs(tjsOld, draft) : 0,
-      tjsNew: tjsNewNs,
-      otherOld: otherOld ? calculateDraftNs(otherOld, draft) : 0,
-      otherNew: otherNewNs,
+      tjsNs: h2h.tjsNs,
+      otherNs: h2h.otherNs,
+      tests: h2h.tests,
+      faster: h2h.faster,
+      ratio: h2h.ratio,
     });
   }
 
@@ -237,46 +243,26 @@ function generatePrComment(): string {
   const lines: string[] = [];
   lines.push('## Benchmark Results');
   lines.push('');
+  lines.push('*Only tests where both validators pass are compared (apples-to-apples)*');
+  lines.push('');
 
   for (const comp of comparisons) {
-    const hasOldData = comp.drafts.some((d) => d.tjsOld > 0);
-
     lines.push(`### tjs vs ${comp.validator}`);
     lines.push('');
 
-    if (hasOldData) {
-      lines.push(
-        '| Draft | tjs (PR) | tjs (main) | Δ | ' +
-          `${comp.validator} (PR) | ${comp.validator} (main) | Δ |`
-      );
-      lines.push('|-------|----------|------------|---|----------|------------|---|');
-    } else {
-      lines.push(`| Draft | tjs | ${comp.validator} | tjs vs ${comp.validator} |`);
-      lines.push('|-------|-----|-----|-----|');
-    }
+    lines.push(`| Draft | Tests | tjs | ${comp.validator} | Winner |`);
+    lines.push('|-------|-------|-----|-----|--------|');
 
     for (const d of comp.drafts) {
-      if (hasOldData) {
-        const tjsDiff = formatDiffPercent(d.tjsNew, d.tjsOld);
-        const tjsEmoji = formatDiffEmoji(d.tjsNew, d.tjsOld);
-        const otherDiff = formatDiffPercent(d.otherNew, d.otherOld);
-        const otherEmoji = formatDiffEmoji(d.otherNew, d.otherOld);
-
-        lines.push(
-          `| ${d.draft} | ${formatOps(d.tjsNew)} | ${formatOps(d.tjsOld)} | ${tjsEmoji} ${tjsDiff} | ` +
-            `${formatOps(d.otherNew)} | ${formatOps(d.otherOld)} | ${otherEmoji} ${otherDiff} |`
-        );
-      } else {
-        const ratio = d.otherNew > 0 ? ((d.tjsNew - d.otherNew) / d.otherNew) * 100 : 0;
-        const emoji = ratio < 0 ? '🟢' : ratio > 0 ? '🔴' : '';
-        lines.push(
-          `| ${d.draft} | ${formatOps(d.tjsNew)} | ${formatOps(d.otherNew)} | ${emoji} ${ratio > 0 ? '+' : ''}${ratio.toFixed(0)}% |`
-        );
-      }
+      const emoji = d.faster === 'tjs' ? '🟢' : '🔴';
+      const winnerText = `${emoji} ${d.faster} ${d.ratio.toFixed(2)}×`;
+      lines.push(
+        `| ${d.draft} | ${d.tests} | ${formatOps(d.tjsNs)} | ${formatOps(d.otherNs)} | ${winnerText} |`
+      );
     }
     lines.push('');
 
-    // Head-to-head
+    // Overall head-to-head
     if (comp.h2hNew) {
       const h2h = comp.h2hNew;
       const emoji = h2h.faster === 'tjs' ? '🟢' : '🔴';
@@ -293,11 +279,11 @@ function generatePrComment(): string {
               : ` (↓${Math.abs(ratioChange).toFixed(1)}%)`;
 
         lines.push(
-          `**Head-to-Head**: ${emoji} ${h2h.faster} is **${h2h.ratio.toFixed(2)}×** faster${changeStr}`
+          `**Overall**: ${emoji} ${h2h.faster} is **${h2h.ratio.toFixed(2)}×** faster on ${h2h.tests} shared tests${changeStr}`
         );
       } else {
         lines.push(
-          `**Head-to-Head**: ${emoji} ${h2h.faster} is **${h2h.ratio.toFixed(2)}×** faster (${h2h.tests} tests)`
+          `**Overall**: ${emoji} ${h2h.faster} is **${h2h.ratio.toFixed(2)}×** faster on ${h2h.tests} shared tests`
         );
       }
       lines.push('');
@@ -317,66 +303,53 @@ function generatePrBody(): string {
   lines.push('');
 
   if (comparisons.length > 0) {
-    lines.push('### Performance Changes');
+    lines.push('### Performance vs Competitors');
+    lines.push('');
+    lines.push('*Only tests where both validators pass are compared (apples-to-apples)*');
     lines.push('');
 
     for (const comp of comparisons) {
-      const hasOldData = comp.drafts.some((d) => d.tjsOld > 0);
-      if (!hasOldData) continue;
+      if (!comp.h2hNew) continue;
 
-      // Calculate overall change
-      let totalOldNs = 0;
-      let totalNewNs = 0;
-      let totalTests = 0;
-      for (const d of comp.drafts) {
-        if (d.tjsOld > 0 && d.tjsNew > 0) {
-          totalOldNs += d.tjsOld;
-          totalNewNs += d.tjsNew;
-          totalTests++;
-        }
-      }
+      const h2h = comp.h2hNew;
+      const emoji = h2h.faster === 'tjs' ? '🟢' : '🔴';
 
-      if (totalTests > 0) {
-        const avgDiff = ((totalOldNs - totalNewNs) / totalOldNs) * 100;
-        if (Math.abs(avgDiff) >= 1) {
-          const emoji = avgDiff > 0 ? '🟢' : '🔴';
-          const direction = avgDiff > 0 ? 'faster' : 'slower';
-          lines.push(
-            `- **tjs vs ${comp.validator}**: ${emoji} tjs is ${Math.abs(avgDiff).toFixed(1)}% ${direction}`
-          );
-        }
-      }
-
-      // Show h2h ratio change
-      if (comp.h2hOld && comp.h2hNew) {
+      // Show h2h ratio change if we have old data
+      if (comp.h2hOld) {
         const oldRatio = comp.h2hOld.ratio;
-        const newRatio = comp.h2hNew.ratio;
-        if (Math.abs(newRatio - oldRatio) >= 0.1) {
-          lines.push(`  - Head-to-head: ${oldRatio.toFixed(2)}× → ${newRatio.toFixed(2)}×`);
-        }
+        const newRatio = h2h.ratio;
+        const changeStr =
+          Math.abs(newRatio - oldRatio) < 0.1
+            ? ''
+            : ` (was ${oldRatio.toFixed(2)}×)`;
+
+        lines.push(
+          `- **vs ${comp.validator}**: ${emoji} ${h2h.faster} is **${h2h.ratio.toFixed(2)}×** faster on ${h2h.tests} tests${changeStr}`
+        );
+      } else {
+        lines.push(
+          `- **vs ${comp.validator}**: ${emoji} ${h2h.faster} is **${h2h.ratio.toFixed(2)}×** faster on ${h2h.tests} tests`
+        );
       }
     }
 
     lines.push('');
     lines.push('<details>');
-    lines.push('<summary>Detailed comparison (click to expand)</summary>');
+    lines.push('<summary>Per-draft breakdown (click to expand)</summary>');
     lines.push('');
 
     for (const comp of comparisons) {
-      const hasOldData = comp.drafts.some((d) => d.tjsOld > 0);
-      if (!hasOldData) continue;
+      if (comp.drafts.length === 0) continue;
 
       lines.push(`#### tjs vs ${comp.validator}`);
       lines.push('');
-      lines.push('| Draft | tjs (new) | tjs (old) | Δ |');
-      lines.push('|-------|-----------|-----------|---|');
+      lines.push(`| Draft | Tests | tjs | ${comp.validator} | Winner |`);
+      lines.push('|-------|-------|-----|-----|--------|');
 
       for (const d of comp.drafts) {
-        if (d.tjsOld === 0) continue;
-        const diff = formatDiffPercent(d.tjsNew, d.tjsOld);
-        const emoji = formatDiffEmoji(d.tjsNew, d.tjsOld);
+        const emoji = d.faster === 'tjs' ? '🟢' : '🔴';
         lines.push(
-          `| ${d.draft} | ${formatOps(d.tjsNew)} | ${formatOps(d.tjsOld)} | ${emoji} ${diff} |`
+          `| ${d.draft} | ${d.tests} | ${formatOps(d.tjsNs)} | ${formatOps(d.otherNs)} | ${emoji} ${d.faster} ${d.ratio.toFixed(2)}× |`
         );
       }
       lines.push('');
