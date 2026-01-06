@@ -59,18 +59,28 @@ export default function generatePropertiesChecks(ctx: CompileContext): void {
 
   if (!hasProps && !hasPatternProps && !hasAdditionalProps) return;
 
+  // Track which properties are required for optimization
+  const requiredSet = new Set<string>(schema.required || []);
+
   const genChecks = () => {
     for (const [propName, propSchema] of nonTrivialProps) {
       const propPathExpr = pathExpr(path, propName);
-      genPropertyCheck(code, data, propName, (valueVar) => {
-        const valueVarName = valueVar instanceof Name ? valueVar : code.genVar('pv');
-        if (!(valueVar instanceof Name)) {
-          code.line(_`const ${valueVarName} = ${valueVar};`);
-        }
-        propsTracker.withScope(() => {
-          ctx.validateSubschema(propSchema, valueVarName as Name, propPathExpr);
-        }, false);
-      });
+      const isRequired = requiredSet.has(propName);
+      genPropertyCheck(
+        code,
+        data,
+        propName,
+        (valueVar) => {
+          const valueVarName = valueVar instanceof Name ? valueVar : code.genVar('pv');
+          if (!(valueVar instanceof Name)) {
+            code.line(_`const ${valueVarName} = ${valueVar};`);
+          }
+          propsTracker.withScope(() => {
+            ctx.validateSubschema(propSchema, valueVarName as Name, propPathExpr);
+          }, false);
+        },
+        isRequired
+      );
     }
 
     if (hasPatternProps || hasAdditionalProps) {

@@ -43,11 +43,15 @@ export function genPropertyCheck(
   code: CodeBuilder,
   dataVar: Name,
   propName: string,
-  callback: (valueVar: Name | Code) => void
+  callback: (valueVar: Name | Code) => void,
+  isRequired = false
 ): void {
   const propAccessCode = propAccess(dataVar, propName);
 
-  if (isSafePropertyName(propName)) {
+  if (isRequired) {
+    // Required properties: we already verified existence, directly validate value
+    callback(propAccessCode);
+  } else if (isSafePropertyName(propName)) {
     // Fast path: store value and check !== undefined
     const propVar = code.genVar('prop');
     code.line(_`const ${propVar} = ${propAccessCode};`);

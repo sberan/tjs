@@ -71,22 +71,48 @@ export const FAST_TIME_REGEX =
 export const FAST_DATE_TIME_REGEX =
   /^\d\d\d\d-[0-1]\d-[0-3]\d[t\s](?:[0-2]\d:[0-5]\d:[0-5]\d|23:59:60)(?:\.\d+)?(?:z|[+-]\d\d(?::?\d\d)?)$/i;
 
-function isLeapYear(year: number): boolean {
-  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
-}
+// Precompiled regexes for date validation (schemasafe-style optimization)
+const DATE_FEB_VALID = /^\d\d\d\d-02-(?:[012][1-8]|[12]0|[01]9)$/;
+const DATE_FEB_29 = /^(\d\d\d\d)-02-29$/;
+const DATE_31 = /^\d\d\d\d-(?:0[13578]|1[02])-31$/;
+const DATE_OTHER = /^\d\d\d\d-(?:0[13-9]|1[012])-(?:[012][1-9]|[123]0)$/;
 
+/**
+ * Optimized date validator using schemasafe's approach:
+ * 1. Length check first (fastest rejection)
+ * 2. Special case for February (leap year handling)
+ * 3. Special case for day 31 (only certain months)
+ * 4. General pattern for other valid dates
+ */
 function validateDate(s: string): boolean {
-  const m = DATE_REGEX.exec(s);
-  if (!m) return false;
-  const year = +m[1];
-  const month = +m[2];
-  const day = +m[3];
-  return (
-    month >= 1 &&
-    month <= 12 &&
-    day >= 1 &&
-    day <= (month === 2 && isLeapYear(year) ? 29 : DAYS[month])
-  );
+  // Fast path: dates are always exactly 10 characters
+  if (s.length !== 10) return false;
+
+  // Special case for February (month digits at positions 5-6)
+  if (s.charCodeAt(5) === 48 && s.charCodeAt(6) === 50) {
+    // '0' and '2' = February
+    // Days 01-28 are always valid
+    if (DATE_FEB_VALID.test(s)) return true;
+
+    // Feb 29 requires leap year check
+    const m = DATE_FEB_29.exec(s);
+    if (!m) return false;
+
+    // Leap year: divisible by 4 and (not by 100 or by 400)
+    // Optimized: year % 16 === 0 catches years divisible by 16 (always leap)
+    // Then check (year % 4 === 0 && year % 25 !== 0) for other leap years
+    const year = +m[1];
+    return (year & 15) === 0 || ((year & 3) === 0 && year % 25 !== 0);
+  }
+
+  // Special case for day 31 (only Jan, Mar, May, Jul, Aug, Oct, Dec)
+  if (s.charCodeAt(8) === 51 && s.charCodeAt(9) === 49) {
+    // '3' and '1'
+    return DATE_31.test(s);
+  }
+
+  // All other valid dates (days 01-30 for non-February months)
+  return DATE_OTHER.test(s);
 }
 
 function validateTime(s: string): boolean {
@@ -1182,11 +1208,6 @@ function validateIdnEmail(s: string): boolean {
 function validateIPv6(s: string): boolean {
   const len = s.length;
   if (len < 2 || len > 45) return false; // Minimum "::" (2), maximum with IPv4 suffix
-
-  // Check for zone identifier (not allowed per JSON Schema)
-  for (let j = 0; j < len; j++) {
-    if (s.charCodeAt(j) === 37) return false; // '%'
-  }
 
   let i = 0;
   let groupCount = 0;
