@@ -73,72 +73,72 @@
   <text x="450" y="60" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="14">Operations per second (higher is better)</text>
 
   <!-- Bars -->
-  <!-- tjs: 19.6M, 100% valid -->
+  <!-- tjs: 19.8M, 100% valid -->
   <rect x="100" y="100" width="50" height="300" rx="6" fill="url(#grad-tjs)" filter="url(#glow-tjs)"/>
-  <text x="125" y="92" text-anchor="middle" fill="#34d399" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">19.6M</text>
+  <text x="125" y="92" text-anchor="middle" fill="#34d399" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">19.8M</text>
   <text x="125" y="420" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">tjs</text>
   <rect x="97" y="426" width="56" height="14" rx="7" fill="#22c55e"/>
   <text x="125" y="436" text-anchor="middle" fill="#0f172a" font-family="system-ui, -apple-system, sans-serif" font-size="8" font-weight="bold">100% VALID</text>
 
-  <!-- schemasafe: 19.1M, 84% valid -->
-  <rect x="170" y="107" width="50" height="293" rx="6" fill="url(#grad-schemasafe)"/>
-  <text x="195" y="99" text-anchor="middle" fill="#60a5fa" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">19.1M</text>
+  <!-- schemasafe: 19.0M, 84% valid -->
+  <rect x="170" y="112" width="50" height="288" rx="6" fill="url(#grad-schemasafe)"/>
+  <text x="195" y="104" text-anchor="middle" fill="#60a5fa" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">19.0M</text>
   <text x="195" y="420" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">schemasafe</text>
   <rect x="167" y="426" width="56" height="14" rx="7" fill="#f59e0b"/>
   <text x="195" y="436" text-anchor="middle" fill="#0f172a" font-family="system-ui, -apple-system, sans-serif" font-size="8" font-weight="bold">84% VALID</text>
 
   <!-- is-my-json-valid: 18.0M, 49% valid -->
-  <rect x="240" y="124" width="50" height="276" rx="6" fill="url(#grad-is-my-json-valid)"/>
-  <text x="265" y="116" text-anchor="middle" fill="#67e8f9" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">18.0M</text>
+  <rect x="240" y="127" width="50" height="273" rx="6" fill="url(#grad-is-my-json-valid)"/>
+  <text x="265" y="119" text-anchor="middle" fill="#67e8f9" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">18.0M</text>
   <text x="265" y="420" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">is-my-json..</text>
   <rect x="237" y="426" width="56" height="14" rx="7" fill="#f59e0b"/>
   <text x="265" y="436" text-anchor="middle" fill="#0f172a" font-family="system-ui, -apple-system, sans-serif" font-size="8" font-weight="bold">49% VALID</text>
 
   <!-- jsen: 16.9M, 50% valid -->
-  <rect x="310" y="142" width="50" height="258" rx="6" fill="url(#grad-jsen)"/>
-  <text x="335" y="134" text-anchor="middle" fill="#f472b6" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">16.9M</text>
+  <rect x="310" y="144" width="50" height="256" rx="6" fill="url(#grad-jsen)"/>
+  <text x="335" y="136" text-anchor="middle" fill="#f472b6" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">16.9M</text>
   <text x="335" y="420" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">jsen</text>
   <rect x="307" y="426" width="56" height="14" rx="7" fill="#f59e0b"/>
   <text x="335" y="436" text-anchor="middle" fill="#0f172a" font-family="system-ui, -apple-system, sans-serif" font-size="8" font-weight="bold">50% VALID</text>
 
-  <!-- ajv: 8.8M, 88% valid -->
-  <rect x="380" y="265" width="50" height="135" rx="6" fill="url(#grad-ajv)"/>
-  <text x="405" y="257" text-anchor="middle" fill="#818cf8" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">8.8M</text>
+  <!-- ajv: 8.1M, 88% valid -->
+  <rect x="380" y="277" width="50" height="123" rx="6" fill="url(#grad-ajv)"/>
+  <text x="405" y="269" text-anchor="middle" fill="#818cf8" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">8.1M</text>
   <text x="405" y="420" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">ajv</text>
   <rect x="377" y="426" width="56" height="14" rx="7" fill="#f59e0b"/>
   <text x="405" y="436" text-anchor="middle" fill="#0f172a" font-family="system-ui, -apple-system, sans-serif" font-size="8" font-weight="bold">88% VALID</text>
 
-  <!-- djv: 4.0M, 49% valid -->
+  <!-- djv: 4.1M, 49% valid -->
   <rect x="450" y="338" width="50" height="62" rx="6" fill="url(#grad-djv)"/>
-  <text x="475" y="330" text-anchor="middle" fill="#4ade80" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">4.0M</text>
+  <text x="475" y="330" text-anchor="middle" fill="#4ade80" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">4.1M</text>
   <text x="475" y="420" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">djv</text>
   <rect x="447" y="426" width="56" height="14" rx="7" fill="#f59e0b"/>
   <text x="475" y="436" text-anchor="middle" fill="#0f172a" font-family="system-ui, -apple-system, sans-serif" font-size="8" font-weight="bold">49% VALID</text>
 
-  <!-- z-schema: 821K, 11% valid -->
-  <rect x="520" y="387" width="50" height="13" rx="6" fill="url(#grad-z-schema)"/>
-  <text x="545" y="379" text-anchor="middle" fill="#fb923c" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">821K</text>
+  <!-- z-schema: 799K, 11% valid -->
+  <rect x="520" y="388" width="50" height="12" rx="6" fill="url(#grad-z-schema)"/>
+  <text x="545" y="380" text-anchor="middle" fill="#fb923c" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">799K</text>
   <text x="545" y="420" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">z-schema</text>
   <rect x="517" y="426" width="56" height="14" rx="7" fill="#ef4444"/>
   <text x="545" y="436" text-anchor="middle" fill="#fff" font-family="system-ui, -apple-system, sans-serif" font-size="8" font-weight="bold">11% VALID</text>
 
-  <!-- joi: 419K, 21% valid -->
+  <!-- joi: 442K, 21% valid -->
   <rect x="590" y="392" width="50" height="8" rx="4" fill="url(#grad-joi)"/>
-  <text x="615" y="384" text-anchor="middle" fill="#f87171" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">419K</text>
+  <text x="615" y="384" text-anchor="middle" fill="#f87171" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">442K</text>
   <text x="615" y="420" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">joi</text>
   <rect x="587" y="426" width="56" height="14" rx="7" fill="#ef4444"/>
   <text x="615" y="436" text-anchor="middle" fill="#fff" font-family="system-ui, -apple-system, sans-serif" font-size="8" font-weight="bold">21% VALID</text>
 
-  <!-- zod: 168K, 26% valid -->
+  <!-- zod: 169K, 26% valid -->
   <rect x="660" y="392" width="50" height="8" rx="4" fill="url(#grad-zod)"/>
-  <text x="685" y="384" text-anchor="middle" fill="#fbbf24" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">168K</text>
+  <text x="685" y="384" text-anchor="middle" fill="#fbbf24" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">169K</text>
   <text x="685" y="420" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">zod</text>
   <rect x="657" y="426" width="56" height="14" rx="7" fill="#ef4444"/>
   <text x="685" y="436" text-anchor="middle" fill="#fff" font-family="system-ui, -apple-system, sans-serif" font-size="8" font-weight="bold">26% VALID</text>
 
-  <!-- jsonschema: 130K, 66% valid -->
+  <!-- jsonschema: 125K, 66% valid -->
   <rect x="730" y="392" width="50" height="8" rx="4" fill="url(#grad-jsonschema)"/>
-  <text x="755" y="384" text-anchor="middle" fill="#a78bfa" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">130K</text>
+  <text x="755" y="384" text-anchor="middle" fill="#a78bfa" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">125K</text>
   <text x="755" y="420" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">jsonschema</text>
   <rect x="727" y="426" width="56" height="14" rx="7" fill="#f59e0b"/>
   <text x="755" y="436" text-anchor="middle" fill="#0f172a" font-family="system-ui, -apple-system, sans-serif" font-size="8" font-weight="bold">66% VALID</text>
