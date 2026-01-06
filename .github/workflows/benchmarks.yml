@@ -15,6 +15,8 @@ jobs:
   # Run benchmarks for tjs (once per draft for parallelism)
   benchmark-tjs:
     runs-on: ubuntu-latest
+    # Skip if this is a bot commit (prevents infinite loop)
+    if: github.actor != 'github-actions[bot]'
     strategy:
       matrix:
         draft: [draft4, draft6, draft7, draft2019-09, draft2020-12]
@@ -52,6 +54,8 @@ jobs:
   # Run benchmarks for each validator (per draft for parallelism)
   benchmark-validator:
     runs-on: ubuntu-latest
+    # Skip if this is a bot commit (prevents infinite loop)
+    if: github.actor != 'github-actions[bot]'
     strategy:
       matrix:
         draft: [draft4, draft6, draft7, draft2019-09, draft2020-12]
@@ -184,7 +188,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore: update benchmark results [skip ci]"
+          git commit -m "chore: update benchmark results"
           git push origin HEAD:${{ github.head_ref }}
 
       - name: Generate PR comment
