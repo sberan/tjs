@@ -8,15 +8,15 @@ Head-to-head performance comparison (tjs vs each validator). Only test groups wh
 
 | Validator | Compliance | ops/s | vs tjs |
 |-----------|----------:|------:|-------:|
-| [tjs](https://github.com/sberan/tjs) | 100% | 20.7M | - |
-| [ajv](https://ajv.js.org/) | 95% | 8.9M | 2.3x slower |
-| [zod](https://zod.dev/) | 59% | 167K | 124.1x slower |
-| [joi](https://joi.dev/) | 58% | 439K | 47.2x slower |
-| [is-my-json-valid](https://www.npmjs.com/package/is-my-json-valid) | 81% | 18.0M | 1.2x slower |
-| [z-schema](https://github.com/zaggino/z-schema) | 52% | 791K | 26.2x slower |
-| [djv](https://github.com/korzio/djv) | 76% | 4.1M | 5.1x slower |
-| [jsen](https://github.com/bugventure/jsen) | 76% | 16.5M | 1.3x slower |
-| [@exodus/schemasafe](https://github.com/ExodusMovement/schemasafe) | 90% | 18.9M | 1.1x slower |
+| [tjs](https://github.com/sberan/tjs) | 100% | 6.9M | - |
+| [ajv](https://ajv.js.org/) | 95% | 357K | 🟢 19.3x slower |
+| [zod](https://zod.dev/) | 59% | 35K | 🟢 195.6x slower |
+| [joi](https://joi.dev/) | 58% | 276K | 🟢 25.0x slower |
+| [jsonschema](https://www.npmjs.com/package/jsonschema) | 87% | 47K | 🟢 145.2x slower |
+| [is-my-json-valid](https://www.npmjs.com/package/is-my-json-valid) | 81% | 3.3M | 🟢 2.1x slower |
+| [djv](https://github.com/korzio/djv) | 76% | 1.7M | 🟢 4.0x slower |
+| [jsen](https://github.com/bugventure/jsen) | 76% | 2.4M | 🟢 2.8x slower |
+| [@exodus/schemasafe](https://github.com/ExodusMovement/schemasafe) | 90% | 2.6M | 🟢 2.7x slower |
 
 ## Performance Chart
 
@@ -29,8 +29,8 @@ Click on a validator below to see the full benchmark report:
 - [**tjs vs ajv**](benchmarks/results/BENCHMARK_AJV.md) - The fastest JSON Schema validator (until now)
 - [**tjs vs zod**](benchmarks/results/BENCHMARK_ZOD.md) - TypeScript-first schema validation
 - [**tjs vs joi**](benchmarks/results/BENCHMARK_JOI.md) - Object schema validation (via enjoi)
+- [**tjs vs jsonschema**](benchmarks/results/BENCHMARK_JSONSCHEMA.md) - Simple and lightweight validator
 - [**tjs vs is-my-json-valid**](benchmarks/results/BENCHMARK_IS_MY_JSON_VALID.md) - Code-generation based validator
-- [**tjs vs z-schema**](benchmarks/results/BENCHMARK_Z_SCHEMA.md) - JSON Schema validator with async support
 - [**tjs vs djv**](benchmarks/results/BENCHMARK_DJV.md) - Dynamic JSON Schema Validator
 - [**tjs vs jsen**](benchmarks/results/BENCHMARK_JSEN.md) - JSON Sentinel, built for speed
 - [**tjs vs @exodus/schemasafe**](benchmarks/results/BENCHMARK_SCHEMASAFE.md) - Safe JSON Schema validator with code generation
@@ -39,13 +39,32 @@ Click on a validator below to see the full benchmark report:
 
 Average nanoseconds per test for each JSON Schema draft version (lower is better):
 
-| Draft | tjs | ajv | zod | joi | is-my-json-valid | z-schema | djv | jsen | schemasafe |
+| Draft | tjs | ajv | zod | joi | jsonschema | is-my-json-valid | djv | jsen | schemasafe |
 |-------|----:|----:|----:|----:|----:|----:|----:|----:|----:|
-| draft4 | 38 | 77 | 6950 | 2927 | 65 | 1197 | 288 | 66 | 47 |
-| draft6 | 34 | 69 | 6775 | 2299 | 59 | - | 277 | 64 | 43 |
-| draft7 | 63 | 75 | 5935 | 2065 | 54 | - | 250 | 58 | 47 |
-| draft2019-09 | 51 | 152 | 5477 | 2151 | 50 | 1933 | 217 | 60 | 53 |
-| draft2020-12 | 48 | 147 | 5349 | 2103 | 54 | 1476 | 215 | 55 | 67 |
+| draft4 | 119 | 466 | 65254 | 4193 | 19898 | 341 | 666 | 490 | 354 |
+| draft6 | 111 | 484 | 17638 | 3323 | 17083 | 318 | 633 | 443 | 348 |
+| draft7 | 145 | 436 | 47384 | 3316 | 27294 | 316 | 620 | 425 | 326 |
+| draft2019-09 | 161 | 9221 | 14742 | 3762 | 13442 | 272 | 530 | 370 | 411 |
+| draft2020-12 | 162 | 795 | 11864 | 3588 | 27747 | 292 | 526 | 357 | 453 |
+
+## Error Validation Summary
+
+Summary of cases where validator results did not match expected error states (expected error but got none, or expected no error but got one):
+
+| Validator | Missing Errors | False Errors | Total Mismatches |
+|-----------|---------------:|-------------:|-----------------:|
+| [tjs](https://github.com/sberan/tjs) | 1 | 0 | **1** |
+| [ajv](https://ajv.js.org/) | 232 | 95 | **327** |
+| [zod](https://zod.dev/) | 1877 | 692 | **2569** |
+| [joi](https://joi.dev/) | 1579 | 1313 | **2892** |
+| [jsonschema](https://www.npmjs.com/package/jsonschema) | 547 | 259 | **806** |
+| [is-my-json-valid](https://www.npmjs.com/package/is-my-json-valid) | 1286 | 158 | **1444** |
+| [djv](https://github.com/korzio/djv) | 775 | 869 | **1644** |
+| [jsen](https://github.com/bugventure/jsen) | 1211 | 377 | **1588** |
+| [@exodus/schemasafe](https://github.com/ExodusMovement/schemasafe) | 89 | 427 | **516** |
+
+- **Missing Errors**: Data was invalid but validator returned `true` (passed) - failed to catch invalid data
+- **False Errors**: Data was valid but validator returned `false` (failed) - incorrectly rejected valid data
 
 ## Methodology
 
