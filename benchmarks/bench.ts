@@ -593,6 +593,27 @@ async function main() {
 
   if (complianceOnly) {
     console.log('\nCompliance check complete (benchmark skipped).');
+    // Still write JSON output in compliance-only mode
+    if (jsonFile) {
+      const jsonData = {
+        validator: validatorName,
+        timestamp: new Date().toISOString(),
+        results: allResults,
+        summary: Object.fromEntries(
+          drafts.map((draft) => [
+            draft,
+            {
+              totalPass: draftSummary[draft].totalPass,
+              totalFail: draftSummary[draft].totalFail,
+              files: draftSummary[draft].files,
+            },
+          ])
+        ),
+      };
+
+      fs.writeFileSync(jsonFile, JSON.stringify(jsonData, null, 2));
+      console.log(`Wrote results to ${jsonFile}`);
+    }
     return;
   }
 
