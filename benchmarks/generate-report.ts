@@ -408,7 +408,13 @@ function main() {
   if (tjsMismatches.length > 0 || otherMismatches.length > 0) {
     lines.push('## Error Validation Mismatches');
     lines.push('');
-    lines.push('Cases where the validator result did not match the expected error state.');
+    lines.push('Cases where the validator result did not match the expected outcome:');
+    lines.push(
+      '- `expected: error, actual: no-error` = Data was invalid but validator returned `true` (passed)'
+    );
+    lines.push(
+      '- `expected: no-error, actual: error` = Data was valid but validator returned `false` (failed)'
+    );
     lines.push('');
 
     if (tjsMismatches.length > 0) {

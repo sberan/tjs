@@ -347,8 +347,12 @@ function generateErrorMismatchSummary(validatorData: Map<string, ValidatorBenchm
   }
 
   lines.push('');
-  lines.push('- **Missing Errors**: Expected an error but validator returned valid');
-  lines.push('- **False Errors**: Expected valid but validator returned an error');
+  lines.push(
+    '- **Missing Errors**: Data was invalid but validator returned `true` (passed) - failed to catch invalid data'
+  );
+  lines.push(
+    '- **False Errors**: Data was valid but validator returned `false` (failed) - incorrectly rejected valid data'
+  );
 
   return lines.join('\n');
 }
