@@ -19,6 +19,12 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+interface ErrorMismatch {
+  description: string;
+  expected: 'error' | 'no-error';
+  actual: 'error' | 'no-error';
+}
+
 interface GroupResult {
   groupDesc: string;
   passed: boolean;
@@ -26,6 +32,7 @@ interface GroupResult {
   failCount: number;
   nsPerTest: number;
   testCount: number;
+  errorMismatches?: ErrorMismatch[];
 }
 
 interface FileResult {
@@ -356,6 +363,91 @@ function main() {
       }
     }
     lines.push('');
+  }
+
+  // Error Mismatches Section - show validation errors that don't match expectations
+  const tjsMismatches: Array<{
+    draft: string;
+    file: string;
+    group: string;
+    mismatches: ErrorMismatch[];
+  }> = [];
+  const otherMismatches: Array<{
+    draft: string;
+    file: string;
+    group: string;
+    mismatches: ErrorMismatch[];
+  }> = [];
+
+  for (const result of tjsData.results) {
+    for (const group of result.groups) {
+      if (group.errorMismatches && group.errorMismatches.length > 0) {
+        tjsMismatches.push({
+          draft: result.draft,
+          file: result.file,
+          group: group.groupDesc,
+          mismatches: group.errorMismatches,
+        });
+      }
+    }
+  }
+
+  for (const result of otherData.results) {
+    for (const group of result.groups) {
+      if (group.errorMismatches && group.errorMismatches.length > 0) {
+        otherMismatches.push({
+          draft: result.draft,
+          file: result.file,
+          group: group.groupDesc,
+          mismatches: group.errorMismatches,
+        });
+      }
+    }
+  }
+
+  if (tjsMismatches.length > 0 || otherMismatches.length > 0) {
+    lines.push('## Error Validation Mismatches');
+    lines.push('');
+    lines.push('Cases where the validator result did not match the expected error state.');
+    lines.push('');
+
+    if (tjsMismatches.length > 0) {
+      lines.push('### tjs Mismatches');
+      lines.push('');
+      lines.push('| Draft | File | Group | Test | Expected | Actual |');
+      lines.push('|-------|------|-------|------|----------|--------|');
+      for (const entry of tjsMismatches) {
+        for (const m of entry.mismatches) {
+          const groupDesc =
+            entry.group.length > 30 ? entry.group.slice(0, 27) + '...' : entry.group;
+          const testDesc =
+            m.description.length > 30 ? m.description.slice(0, 27) + '...' : m.description;
+          lines.push(
+            `| ${entry.draft} | ${entry.file} | ${groupDesc} | ${testDesc} | ${m.expected} | ${m.actual} |`
+          );
+        }
+      }
+      lines.push('');
+    }
+
+    if (otherMismatches.length > 0) {
+      lines.push(`### ${validator} Mismatches`);
+      lines.push('');
+      lines.push('| Draft | File | Group | Test | Expected | Actual |');
+      lines.push('|-------|------|-------|------|----------|--------|');
+      for (const entry of otherMismatches) {
+        for (const m of entry.mismatches) {
+          const groupDesc =
+            entry.group.length > 30 ? entry.group.slice(0, 27) + '...' : entry.group;
+          const testDesc =
+            m.description.length > 30 ? m.description.slice(0, 27) + '...' : m.description;
+          lines.push(
+            `| ${entry.draft} | ${entry.file} | ${groupDesc} | ${testDesc} | ${m.expected} | ${m.actual} |`
+          );
+        }
+      }
+      lines.push('');
+    }
   }
 
   const output = lines.join('\n');

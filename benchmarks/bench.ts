@@ -97,6 +97,12 @@ interface CompiledTest {
   valid: boolean;
 }
 
+interface ErrorMismatch {
+  description: string;
+  expected: 'error' | 'no-error';
+  actual: 'error' | 'no-error';
+}
+
 interface GroupResult {
   groupDesc: string;
   passed: boolean;
@@ -104,6 +110,7 @@ interface GroupResult {
   failCount: number;
   nsPerTest: number;
   testCount: number;
+  errorMismatches?: ErrorMismatch[];
 }
 
 interface FileResult {
@@ -392,6 +399,11 @@ async function benchmarkFile(
     if (!validatorFn) {
       // Validator couldn't compile this schema - mark all tests as failed
       totalFail += group.tests.length;
+      const compilationMismatches: ErrorMismatch[] = group.tests.map((test) => ({
+        description: test.description,
+        expected: test.valid ? 'no-error' : 'error',
+        actual: 'error' as const, // Compilation failure is treated as an error
+      }));
       groupResults.push({
         groupDesc: group.description,
         passed: false,
@@ -399,6 +411,7 @@ async function benchmarkFile(
         failCount: group.tests.length,
         nsPerTest: 0,
         testCount: group.tests.length,
+        errorMismatches: compilationMismatches,
       });
       continue;
     }
@@ -407,12 +420,15 @@ async function benchmarkFile(
     const compiledTests: CompiledTest[] = [];
     let passCount = 0;
     let failCount = 0;
+    const errorMismatches: ErrorMismatch[] = [];
 
     for (const test of group.tests) {
-      let isCorrect = false;
+      let validationResult: boolean | undefined;
       try {
-        isCorrect = validatorFn(test.data) === test.valid;
+        validationResult = validatorFn(test.data);
       } catch {}
+
+      const isCorrect = validationResult === test.valid;
 
       if (isCorrect) {
         passCount++;
@@ -420,6 +436,14 @@ async function benchmarkFile(
       } else {
         failCount++;
         totalFail++;
+        // Track the error mismatch details
+        const expected = test.valid ? 'no-error' : 'error';
+        const actual = validationResult ? 'no-error' : 'error';
+        errorMismatches.push({
+          description: test.description,
+          expected,
+          actual,
+        });
       }
 
       compiledTests.push({
@@ -458,6 +482,7 @@ async function benchmarkFile(
       failCount,
       nsPerTest,
       testCount: group.tests.length,
+      ...(errorMismatches.length > 0 && { errorMismatches }),
     });
   }
 

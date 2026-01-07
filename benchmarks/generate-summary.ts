@@ -82,6 +82,12 @@ const validatorInfo: Record<string, { name: string; link: string; description: s
   },
 };
 
+interface ErrorMismatch {
+  description: string;
+  expected: 'error' | 'no-error';
+  actual: 'error' | 'no-error';
+}
+
 interface GroupResult {
   groupDesc: string;
   passed: boolean;
@@ -89,6 +95,7 @@ interface GroupResult {
   failCount: number;
   nsPerTest: number;
   testCount: number;
+  errorMismatches?: ErrorMismatch[];
 }
 
 interface FileResult {
@@ -291,6 +298,61 @@ function generateDraftTable(validatorData: Map<string, ValidatorBenchmark>): str
   return lines.join('\n');
 }
 
+function countErrorMismatches(data: ValidatorBenchmark): {
+  expectedError: number;
+  expectedNoError: number;
+  total: number;
+} {
+  let expectedError = 0; // Expected error but got no-error
+  let expectedNoError = 0; // Expected no-error but got error
+
+  for (const result of data.results) {
+    for (const group of result.groups) {
+      if (group.errorMismatches) {
+        for (const m of group.errorMismatches) {
+          if (m.expected === 'error' && m.actual === 'no-error') {
+            expectedError++;
+          } else if (m.expected === 'no-error' && m.actual === 'error') {
+            expectedNoError++;
+          }
+        }
+      }
+    }
+  }
+
+  return { expectedError, expectedNoError, total: expectedError + expectedNoError };
+}
+
+function generateErrorMismatchSummary(validatorData: Map<string, ValidatorBenchmark>): string {
+  const lines: string[] = [];
+
+  lines.push('| Validator | Missing Errors | False Errors | Total Mismatches |');
+  lines.push('|-----------|---------------:|-------------:|-----------------:|');
+
+  for (const validator of ALL_VALIDATORS) {
+    const data = validatorData.get(validator);
+    if (!data) continue;
+
+    const counts = countErrorMismatches(data);
+    const info = validatorInfo[validator];
+    const validatorLink = info ? `[${info.name}](${info.link})` : validator;
+
+    if (counts.total === 0) {
+      lines.push(`| ${validatorLink} | 0 | 0 | 0 |`);
+    } else {
+      lines.push(
+        `| ${validatorLink} | ${counts.expectedError} | ${counts.expectedNoError} | **${counts.total}** |`
+      );
+    }
+  }
+
+  lines.push('');
+  lines.push('- **Missing Errors**: Expected an error but validator returned valid');
+  lines.push('- **False Errors**: Expected valid but validator returned an error');
+
+  return lines.join('\n');
+}
+
 function main() {
   // Load template
   const templatePath = path.join(__dirname, 'BENCHMARKS.template.md');
@@ -319,11 +381,13 @@ function main() {
   const summaryTable = generateSummaryTable(validatorData);
   const detailedReports = generateDetailedReports(validatorData);
   const draftTable = generateDraftTable(validatorData);
+  const errorMismatchSummary = generateErrorMismatchSummary(validatorData);
 
   // Replace placeholders in template
   template = template.replace('{{SUMMARY_TABLE}}', summaryTable);
   template = template.replace('{{DETAILED_REPORTS}}', detailedReports);
   template = template.replace('{{DRAFT_TABLE}}', draftTable);
+  template = template.replace('{{ERROR_MISMATCH_SUMMARY}}', errorMismatchSummary);
 
   // Write to BENCHMARKS.md
   const outputPath = path.join(__dirname, '..', 'BENCHMARKS.md');

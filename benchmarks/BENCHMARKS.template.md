@@ -24,6 +24,12 @@ Average nanoseconds per test for each JSON Schema draft version (lower is better
 
 {{DRAFT_TABLE}}
 
+## Error Validation Summary
+
+Summary of cases where validator results did not match expected error states (expected error but got none, or expected no error but got one):
+
+{{ERROR_MISMATCH_SUMMARY}}
+
 ## Methodology
 
 We only benchmark test **groups** where **both** validators pass **all** tests in that group. A file contains multiple groups (each with a schema and test cases). If either validator fails any test in a group, that entire group is excluded from benchmarking. This ensures we compare actual validation performance, not no-op functions that return early due to unsupported features.
