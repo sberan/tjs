@@ -13,13 +13,12 @@ permissions:
 
 jobs:
   # Run benchmarks for all validators (except jsonschema)
-  # TODO: restore full list: [tjs, ajv, zod, joi, is-my-json-valid, z-schema, djv, jsen, schemasafe]
   benchmark:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         draft: [draft4, draft6, draft7, draft2019-09, draft2020-12]
-        validator: [tjs, ajv, schemasafe]
+        validator: [tjs, ajv, zod, joi, is-my-json-valid, z-schema, djv, jsen, schemasafe]
 
     steps:
       - uses: actions/checkout@v4

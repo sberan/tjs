@@ -200,7 +200,8 @@ function main() {
   const chartHeight = 520; // Increased for badges
   const barWidth = Math.min(50, (chartWidth - 200) / numValidators - 20);
   const barSpacing = barWidth + 20;
-  const startX = 100;
+  const totalBarsWidth = numValidators * barSpacing - 20; // Total width of all bars
+  const startX = (chartWidth - totalBarsWidth) / 2; // Center the bars
   const baseY = 400;
   const maxHeight = 300;
 
@@ -254,7 +255,8 @@ function main() {
     .join('\n\n');
 
   // Generate grid lines based on chart width
-  const gridEndX = startX + (numValidators - 1) * barSpacing + barWidth + 20;
+  const gridStartX = startX - 20;
+  const gridEndX = startX + totalBarsWidth + 20;
 
   // Generate SVG
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${chartWidth} ${chartHeight}">
@@ -276,17 +278,17 @@ ${gradientDefs}
 
   <!-- Subtle grid pattern -->
   <g opacity="0.1">
-    <line x1="80" y1="400" x2="${gridEndX}" y2="400" stroke="#94a3b8" stroke-width="1"/>
-    <line x1="80" y1="300" x2="${gridEndX}" y2="300" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
-    <line x1="80" y1="200" x2="${gridEndX}" y2="200" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
-    <line x1="80" y1="100" x2="${gridEndX}" y2="100" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
+    <line x1="${gridStartX}" y1="400" x2="${gridEndX}" y2="400" stroke="#94a3b8" stroke-width="1"/>
+    <line x1="${gridStartX}" y1="300" x2="${gridEndX}" y2="300" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
+    <line x1="${gridStartX}" y1="200" x2="${gridEndX}" y2="200" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
+    <line x1="${gridStartX}" y1="100" x2="${gridEndX}" y2="100" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
   </g>
 
   <!-- Y-axis labels -->
-  <text x="70" y="405" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">0</text>
-  <text x="70" y="305" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">${formatOps(yAxisStep)}</text>
-  <text x="70" y="205" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">${formatOps(yAxisStep * 2)}</text>
-  <text x="70" y="105" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">${formatOps(yAxisStep * 3)}</text>
+  <text x="${gridStartX - 10}" y="405" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">0</text>
+  <text x="${gridStartX - 10}" y="305" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">${formatOps(yAxisStep)}</text>
+  <text x="${gridStartX - 10}" y="205" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">${formatOps(yAxisStep * 2)}</text>
+  <text x="${gridStartX - 10}" y="105" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">${formatOps(yAxisStep * 3)}</text>
 
   <!-- Title -->
   <text x="${chartWidth / 2}" y="35" text-anchor="middle" fill="#f1f5f9" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">JSON Schema Validator Performance</text>
