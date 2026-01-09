@@ -19,7 +19,7 @@ jobs:
     strategy:
       matrix:
         draft: [draft4, draft6, draft7, draft2019-09, draft2020-12]
-        validator: [tjs, schemasafe]
+        validator: [tjs, ajv, schemasafe]
 
     steps:
       - uses: actions/checkout@v4
@@ -100,8 +100,12 @@ jobs:
           # Generate BENCHMARKS.md
           npx tsx benchmarks/generate-summary.ts
 
-          # Update README.md
-          npx tsx benchmarks/update-readme.ts
+          # Update README.md (requires ajv.json)
+          if [ -f benchmarks/results/ajv.json ]; then
+            npx tsx benchmarks/update-readme.ts
+          else
+            echo "Skipping README update (ajv.json not found)"
+          fi
 
           # Update SVG chart
           npx tsx benchmarks/update-svg.ts
