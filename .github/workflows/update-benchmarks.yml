@@ -118,7 +118,7 @@ jobs:
 
       - name: Create PR with benchmark updates
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
           # Check if there are changes
           if git diff --quiet; then
@@ -127,6 +127,7 @@ jobs:
           fi
 
           # Create branch and commit
+          # Using PAT_TOKEN so the PR triggers workflows (required checks)
           BRANCH="chore/update-benchmarks-$(date +%Y%m%d-%H%M%S)"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
