@@ -16,7 +16,7 @@
 
 ![Benchmark](assets/benchmark.svg)
 
-100% spec compliance. 51% faster than ajv. Zero dependencies. Full TypeScript inference.
+100% spec compliance. 50% faster than ajv. Zero dependencies. Full TypeScript inference.
 
 
 ## At a Glance
@@ -81,20 +81,20 @@ See [COMPLIANCE.md](COMPLIANCE.md) for details.
 ### Blazing Fast
 
 See [BENCHMARKS.md](BENCHMARKS.md) for detailed performance comparison.
-tjs uses JIT compilation to generate optimized validation code — **51% faster than ajv** overall:
+tjs uses JIT compilation to generate optimized validation code — **50% faster than ajv** overall:
 
 ```
 Performance vs ajv (JSON Schema Test Suite):
 --------------------------------------------------------------------------------
 Draft          Files   Tests | tjs ns/test  ajv ns/test      Diff
 --------------------------------------------------------------------------------
-draft-04         43     881 |         38           77      -51%
-draft-06         52    1170 |         34           69      -51%
-draft-07         63    1534 |         63           75      -17%
-draft-2019-09    77    1941 |         51          152      -67%
-draft-2020-12    80    1990 |         48          147      -67%
+draft-04         43     881 |         37           75      -51%
+draft-06         52    1170 |         35           68      -49%
+draft-07         63    1534 |         63           78      -20%
+draft-2019-09    77    1941 |         52          151      -66%
+draft-2020-12    80    1990 |         50          146      -66%
 --------------------------------------------------------------------------------
-TOTAL            315    7516 |         48           99      -51%
+TOTAL            315    7516 |         49           98      -50%
 --------------------------------------------------------------------------------
 ```
 
