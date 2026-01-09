@@ -117,30 +117,11 @@ jobs:
           done
 
       - name: Create PR with benchmark updates
-        env:
-          GH_TOKEN: ${{ secrets.PAT_TOKEN }}
-        run: |
-          # Check if there are changes
-          if git diff --quiet; then
-            echo "No changes detected"
-            exit 0
-          fi
-
-          # Configure git with PAT for pushing
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
-
-          # Create branch and commit
-          BRANCH="chore/update-benchmarks-$(date +%Y%m%d-%H%M%S)"
-          git checkout -b "$BRANCH"
-          git add -A
-          git commit -m "chore: update benchmark results"
-          git push origin "$BRANCH"
-
-          # Create PR
-          gh pr create \
-            --title "chore: update benchmark results" \
-            --body "Automated benchmark update from main branch." \
-            --base main \
-            --head "$BRANCH"
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+          commit-message: "chore: update benchmark results"
+          title: "chore: update benchmark results"
+          body: "Automated benchmark update from main branch."
+          branch: chore/update-benchmarks
+          delete-branch: true
