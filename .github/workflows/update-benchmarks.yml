@@ -110,7 +110,7 @@ jobs:
           npx tsx benchmarks/update-svg.ts
 
           # Generate detailed markdown reports for each validator that has results
-          for v in $(ls benchmarks/results/*.json 2>/dev/null | xargs -n1 basename | sed 's/.json//' | grep -v tjs); do
+          for v in $(ls benchmarks/results/*.json 2>/dev/null | xargs -n1 basename | sed 's/\.json$//' | grep -v tjs); do
             UPPER_NAME=$(echo "$v" | tr '[:lower:]-' '[:upper:]_')
             npx tsx benchmarks/generate-report.ts "$v" -o "benchmarks/results/BENCHMARK_${UPPER_NAME}.md"
           done
