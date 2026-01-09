@@ -126,11 +126,13 @@ jobs:
             exit 0
           fi
 
-          # Create branch and commit
-          # Using PAT_TOKEN so the PR triggers workflows (required checks)
-          BRANCH="chore/update-benchmarks-$(date +%Y%m%d-%H%M%S)"
+          # Configure git with PAT for pushing
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+
+          # Create branch and commit
+          BRANCH="chore/update-benchmarks-$(date +%Y%m%d-%H%M%S)"
           git checkout -b "$BRANCH"
           git add -A
           git commit -m "chore: update benchmark results"
