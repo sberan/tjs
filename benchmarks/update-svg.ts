@@ -6,6 +6,9 @@
  *
  * Reads from:
  *   benchmarks/results/*.json (individual validator benchmark results)
+ *
+ * Uses head-to-head comparison: only tests where both tjs AND the other
+ * validator pass are compared. This gives apples-to-apples performance numbers.
  */
 
 import * as fs from 'fs';
@@ -87,22 +90,51 @@ function loadBenchmarkData(validator: string): ValidatorBenchmark | null {
   }
 }
 
-// Calculate ops/sec for a validator
-function calculateOps(data: ValidatorBenchmark): number {
-  let totalNs = 0;
-  let totalTests = 0;
-
-  for (const result of data.results) {
+// Calculate head-to-head ops/sec between tjs and another validator
+// Only counts tests where BOTH validators pass (apples-to-apples)
+function calculateH2HOps(
+  tjsData: ValidatorBenchmark,
+  otherData: ValidatorBenchmark
+): { tjsOps: number; otherOps: number; sharedTests: number } | null {
+  // Build lookup for other validator's groups
+  const otherLookup = new Map<string, GroupResult>();
+  for (const result of otherData.results) {
     for (const group of result.groups) {
-      if (group.passed && group.nsPerTest > 0) {
-        totalNs += group.nsPerTest * group.testCount;
-        totalTests += group.testCount;
+      const key = `${result.draft}:${result.file}:${group.groupDesc}`;
+      otherLookup.set(key, group);
+    }
+  }
+
+  let h2hTjsNs = 0;
+  let h2hOtherNs = 0;
+  let h2hTests = 0;
+
+  for (const result of tjsData.results) {
+    for (const tjsGroup of result.groups) {
+      const key = `${result.draft}:${result.file}:${tjsGroup.groupDesc}`;
+      const otherGroup = otherLookup.get(key);
+
+      // Only include tests where BOTH validators pass
+      if (
+        tjsGroup.passed &&
+        otherGroup?.passed &&
+        tjsGroup.nsPerTest > 0 &&
+        otherGroup.nsPerTest > 0
+      ) {
+        h2hTjsNs += tjsGroup.nsPerTest * tjsGroup.testCount;
+        h2hOtherNs += otherGroup.nsPerTest * otherGroup.testCount;
+        h2hTests += tjsGroup.testCount;
       }
     }
   }
 
-  if (totalTests === 0 || totalNs === 0) return 0;
-  return (1e9 * totalTests) / totalNs;
+  if (h2hTests === 0) return null;
+
+  return {
+    tjsOps: (1e9 * h2hTests) / h2hTjsNs,
+    otherOps: (1e9 * h2hTests) / h2hOtherNs,
+    sharedTests: h2hTests,
+  };
 }
 
 // Calculate total passed tests for a validator
@@ -145,22 +177,66 @@ function getBadgeColor(percent: number): { bg: string; text: string } {
 }
 
 function main() {
-  // Load all validator data and calculate ops/sec
-  const validatorData: Array<{ name: string; ops: number; passedTests: number }> = [];
+  // Load tjs data first (baseline for all comparisons)
+  const tjsBenchmark = loadBenchmarkData('tjs');
+  if (!tjsBenchmark) {
+    console.error('Error: tjs.json is required for SVG generation');
+    process.exit(1);
+  }
+
+  const tjsPassedTests = calculatePassedTests(tjsBenchmark);
+
+  // For each other validator, calculate head-to-head ops/sec
+  // This only counts tests where BOTH validators pass
+  const validatorData: Array<{
+    name: string;
+    tjsOps: number; // tjs ops/sec on shared tests
+    ops: number; // this validator's ops/sec on shared tests
+    sharedTests: number;
+    passedTests: number; // total tests this validator passes (for compliance badge)
+  }> = [];
+
+  // Add tjs first with its full performance
+  validatorData.push({
+    name: 'tjs',
+    tjsOps: 0, // not used for tjs
+    ops: 0, // will be set to max of all h2h tjs ops
+    sharedTests: tjsPassedTests,
+    passedTests: tjsPassedTests,
+  });
+
+  let maxTjsOps = 0;
 
   for (const validator of ALL_VALIDATORS) {
+    if (validator === 'tjs') continue;
+
     const data = loadBenchmarkData(validator);
-    if (data) {
-      const ops = calculateOps(data);
-      const passedTests = calculatePassedTests(data);
-      if (ops > 0) {
-        validatorData.push({ name: validator, ops, passedTests });
-        console.error(
-          `Loaded ${validator}: ${formatOps(ops)} ops/sec, ${passedTests} tests passed`
-        );
-      }
+    if (!data) continue;
+
+    const h2h = calculateH2HOps(tjsBenchmark, data);
+    if (!h2h) continue;
+
+    validatorData.push({
+      name: validator,
+      tjsOps: h2h.tjsOps,
+      ops: h2h.otherOps,
+      sharedTests: h2h.sharedTests,
+      passedTests: calculatePassedTests(data),
+    });
+
+    // Track max tjs ops for the tjs bar
+    if (h2h.tjsOps > maxTjsOps) {
+      maxTjsOps = h2h.tjsOps;
     }
+
+    const ratio = h2h.tjsOps / h2h.otherOps;
+    console.error(
+      `H2H ${validator}: tjs ${formatOps(h2h.tjsOps)} vs ${formatOps(h2h.otherOps)} (${ratio.toFixed(2)}x) on ${h2h.sharedTests} shared tests`
+    );
   }
+
+  // Set tjs ops to max of all head-to-head comparisons
+  validatorData[0].ops = maxTjsOps;
 
   if (validatorData.length < 2) {
     console.error('Not enough benchmark data found. Run benchmarks first.');
@@ -170,29 +246,22 @@ function main() {
   // Sort by ops/sec (fastest first)
   validatorData.sort((a, b) => b.ops - a.ops);
 
-  // Get tjs test count as the baseline for compliance percentage
-  const tjsData = validatorData.find((v) => v.name === 'tjs');
-  const tjsTestCount = tjsData?.passedTests || 6602; // fallback to known value
-
-  console.error('\nPerformance (ops/sec):');
+  console.error('\nHead-to-head performance (ops/sec on shared tests):');
   for (const v of validatorData) {
-    const compliance = Math.round((v.passedTests / tjsTestCount) * 100);
-    console.error(`  ${v.name}: ${formatOps(v.ops)} ops/sec, ${compliance}% valid`);
-  }
-
-  const tjsOps = tjsData?.ops || 0;
-  if (tjsOps > 0) {
-    console.error('\nMultipliers (tjs vs):');
-    for (const v of validatorData) {
-      if (v.name !== 'tjs') {
-        const mult = tjsOps / v.ops;
-        console.error(`  ${v.name}: ${mult.toFixed(1)}x`);
-      }
+    const compliance = Math.round((v.passedTests / tjsPassedTests) * 100);
+    if (v.name === 'tjs') {
+      console.error(`  tjs: ${formatOps(v.ops)} ops/sec, ${compliance}% valid (baseline)`);
+    } else {
+      const ratio = v.tjsOps / v.ops;
+      console.error(
+        `  ${v.name}: ${formatOps(v.ops)} ops/sec, ${compliance}% valid (tjs ${ratio.toFixed(2)}x faster)`
+      );
     }
   }
 
   // Calculate chart dimensions based on number of validators
   const maxOps = Math.max(...validatorData.map((v) => v.ops));
+  const tjsTestCount = tjsPassedTests;
   const numValidators = validatorData.length;
 
   // Dynamic chart sizing
@@ -292,7 +361,7 @@ ${gradientDefs}
 
   <!-- Title -->
   <text x="${chartWidth / 2}" y="35" text-anchor="middle" fill="#f1f5f9" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">JSON Schema Validator Performance</text>
-  <text x="${chartWidth / 2}" y="60" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="14">Operations per second (higher is better)</text>
+  <text x="${chartWidth / 2}" y="60" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="14">Head-to-head ops/sec on shared tests (higher is better)</text>
 
   <!-- Bars -->
 ${barsSvg}
