@@ -8,15 +8,9 @@ Head-to-head performance comparison (tjs vs each validator). Only test groups wh
 
 | Validator | Compliance | ops/s | vs tjs |
 |-----------|----------:|------:|-------:|
-| [tjs](https://github.com/sberan/tjs) | 100% | 20.7M | - |
-| [ajv](https://ajv.js.org/) | 95% | 8.9M | 2.3x slower |
-| [zod](https://zod.dev/) | 59% | 167K | 124.1x slower |
-| [joi](https://joi.dev/) | 58% | 439K | 47.2x slower |
-| [is-my-json-valid](https://www.npmjs.com/package/is-my-json-valid) | 81% | 18.0M | 1.2x slower |
-| [z-schema](https://github.com/zaggino/z-schema) | 52% | 791K | 26.2x slower |
-| [djv](https://github.com/korzio/djv) | 76% | 4.1M | 5.1x slower |
-| [jsen](https://github.com/bugventure/jsen) | 76% | 16.5M | 1.3x slower |
-| [@exodus/schemasafe](https://github.com/ExodusMovement/schemasafe) | 90% | 18.9M | 1.1x slower |
+| [tjs](https://github.com/sberan/tjs) | 100% | 20.5M | - |
+| [ajv](https://ajv.js.org/) | 95% | 8.9M | 🟢 2.3x slower |
+| [@exodus/schemasafe](https://github.com/ExodusMovement/schemasafe) | 90% | 19.0M | 🟢 1.1x slower |
 
 ## Performance Chart
 
@@ -27,25 +21,19 @@ Head-to-head performance comparison (tjs vs each validator). Only test groups wh
 Click on a validator below to see the full benchmark report:
 
 - [**tjs vs ajv**](benchmarks/results/BENCHMARK_AJV.md) - The fastest JSON Schema validator (until now)
-- [**tjs vs zod**](benchmarks/results/BENCHMARK_ZOD.md) - TypeScript-first schema validation
-- [**tjs vs joi**](benchmarks/results/BENCHMARK_JOI.md) - Object schema validation (via enjoi)
-- [**tjs vs is-my-json-valid**](benchmarks/results/BENCHMARK_IS_MY_JSON_VALID.md) - Code-generation based validator
-- [**tjs vs z-schema**](benchmarks/results/BENCHMARK_Z_SCHEMA.md) - JSON Schema validator with async support
-- [**tjs vs djv**](benchmarks/results/BENCHMARK_DJV.md) - Dynamic JSON Schema Validator
-- [**tjs vs jsen**](benchmarks/results/BENCHMARK_JSEN.md) - JSON Sentinel, built for speed
 - [**tjs vs @exodus/schemasafe**](benchmarks/results/BENCHMARK_SCHEMASAFE.md) - Safe JSON Schema validator with code generation
 
 ## Performance by Draft
 
 Average nanoseconds per test for each JSON Schema draft version (lower is better):
 
-| Draft | tjs | ajv | zod | joi | is-my-json-valid | z-schema | djv | jsen | schemasafe |
-|-------|----:|----:|----:|----:|----:|----:|----:|----:|----:|
-| draft4 | 38 | 77 | 6950 | 2927 | 65 | 1197 | 288 | 66 | 47 |
-| draft6 | 34 | 69 | 6775 | 2299 | 59 | - | 277 | 64 | 43 |
-| draft7 | 63 | 75 | 5935 | 2065 | 54 | - | 250 | 58 | 47 |
-| draft2019-09 | 51 | 152 | 5477 | 2151 | 50 | 1933 | 217 | 60 | 53 |
-| draft2020-12 | 48 | 147 | 5349 | 2103 | 54 | 1476 | 215 | 55 | 67 |
+| Draft | tjs | ajv | schemasafe |
+|-------|----:|----:|----:|
+| draft4 | 37 | 75 | 46 |
+| draft6 | 35 | 66 | 42 |
+| draft7 | 62 | 76 | 48 |
+| draft2019-09 | 51 | 153 | 53 |
+| draft2020-12 | 50 | 149 | 67 |
 
 ## Methodology
 
