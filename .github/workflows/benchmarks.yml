@@ -5,55 +5,19 @@ on:
     branches: [main]
 
 # Runs benchmarks on PRs and posts a comparison comment
-# Benchmark file updates are handled separately on main branch
+# Benchmark file updates are handled separately on main branch (update-benchmarks.yml)
 
 permissions:
   pull-requests: write
 
 jobs:
-  # Run benchmarks for tjs (once per draft for parallelism)
-  benchmark-tjs:
+  # Run benchmarks for tjs and the 5 fastest validators
+  benchmark:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         draft: [draft4, draft6, draft7, draft2019-09, draft2020-12]
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - name: Use Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build
-        run: npm run build
-
-      - name: Run benchmark for tjs ${{ matrix.draft }}
-        run: |
-          mkdir -p benchmarks/results
-          npx tsx benchmarks/bench.ts -v tjs ${{ matrix.draft }} \
-            --json benchmarks/results/tjs-${{ matrix.draft }}.json
-
-      - name: Upload tjs benchmark results
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-tjs-${{ matrix.draft }}
-          path: benchmarks/results/tjs-${{ matrix.draft }}.json
-
-  # Run benchmarks for the 5 fastest validators (for comparison)
-  benchmark-validators:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        draft: [draft4, draft6, draft7, draft2019-09, draft2020-12]
-        validator: [ajv, schemasafe, is-my-json-valid, jsen, djv]
+        validator: [tjs, ajv, schemasafe, is-my-json-valid, jsen, djv]
 
     steps:
       - uses: actions/checkout@v4
@@ -87,7 +51,7 @@ jobs:
   # Merge results and post PR comment
   comment:
     runs-on: ubuntu-latest
-    needs: [benchmark-tjs, benchmark-validators]
+    needs: [benchmark]
 
     steps:
       - uses: actions/checkout@v4
@@ -119,17 +83,8 @@ jobs:
 
       - name: Merge benchmark results
         run: |
-          # Merge tjs results from all drafts
-          echo "Merging tjs results..."
-          npx tsx benchmarks/merge-isolated.ts "benchmarks/results/tjs.json" \
-            "benchmarks/results/tjs-draft4.json" \
-            "benchmarks/results/tjs-draft6.json" \
-            "benchmarks/results/tjs-draft7.json" \
-            "benchmarks/results/tjs-draft2019-09.json" \
-            "benchmarks/results/tjs-draft2020-12.json"
-
           # Merge each validator's results from all drafts
-          for v in ajv schemasafe is-my-json-valid jsen djv; do
+          for v in $(ls benchmarks/results/*-draft4.json 2>/dev/null | xargs -n1 basename | sed 's/-draft4.json//'); do
             echo "Merging $v results..."
             npx tsx benchmarks/merge-isolated.ts "benchmarks/results/${v}.json" \
               "benchmarks/results/${v}-draft4.json" \
