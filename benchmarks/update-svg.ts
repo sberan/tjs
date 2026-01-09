@@ -310,7 +310,6 @@ ${barsSvg}
     <text x="210" y="10" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="10">&lt;30%</text>
   </g>
 
-  <text x="${chartWidth / 2}" y="508" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="10">Fast validators that fail most tests aren't actually validating - they're just returning early</text>
 </svg>
 `;
 
