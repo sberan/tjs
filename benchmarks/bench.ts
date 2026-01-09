@@ -2,7 +2,8 @@
  * Benchmark a single JSON Schema validator using mitata's measure() API.
  *
  * Benchmarks at the FILE level (e.g., ref.json, allOf.json) for meaningful
- * keyword-level insights with minimal overhead.
+ * keyword-level insights with minimal overhead. Results are automatically
+ * updated via GitHub Actions on pull requests.
  *
  * METHODOLOGY:
  *   All validators are configured to report the first validation error (not all errors).
