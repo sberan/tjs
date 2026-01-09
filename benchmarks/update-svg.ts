@@ -165,11 +165,11 @@ const validatorColors: Record<string, { start: string; end: string; label: strin
 };
 
 // Get badge color based on compliance percentage
-// 90%+ = green, 30-89% = yellow, <30% = red
+// 90%+ = green, 70-89% = yellow, <70% = red
 function getBadgeColor(percent: number): { bg: string; text: string } {
   if (percent >= 90) {
     return { bg: '#22c55e', text: '#0f172a' }; // green
-  } else if (percent >= 30) {
+  } else if (percent >= 70) {
     return { bg: '#f59e0b', text: '#0f172a' }; // yellow
   } else {
     return { bg: '#ef4444', text: '#fff' }; // red
@@ -373,9 +373,9 @@ ${barsSvg}
     <rect x="0" y="0" width="30" height="12" rx="6" fill="#22c55e"/>
     <text x="35" y="10" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="10">90%+</text>
     <rect x="80" y="0" width="30" height="12" rx="6" fill="#f59e0b"/>
-    <text x="115" y="10" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="10">30-89%</text>
+    <text x="115" y="10" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="10">70-89%</text>
     <rect x="175" y="0" width="30" height="12" rx="6" fill="#ef4444"/>
-    <text x="210" y="10" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="10">&lt;30%</text>
+    <text x="210" y="10" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="10">&lt;70%</text>
   </g>
 
 </svg>
