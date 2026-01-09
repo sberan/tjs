@@ -6,6 +6,9 @@
  *
  * Reads from:
  *   benchmarks/results/*.json (individual validator benchmark results)
+ *
+ * Uses head-to-head comparison: only tests where both tjs AND the other
+ * validator pass are compared. This gives apples-to-apples performance numbers.
  */
 
 import * as fs from 'fs';
@@ -87,22 +90,51 @@ function loadBenchmarkData(validator: string): ValidatorBenchmark | null {
   }
 }
 
-// Calculate ops/sec for a validator
-function calculateOps(data: ValidatorBenchmark): number {
-  let totalNs = 0;
-  let totalTests = 0;
-
-  for (const result of data.results) {
+// Calculate head-to-head ops/sec between tjs and another validator
+// Only counts tests where BOTH validators pass (apples-to-apples)
+function calculateH2HOps(
+  tjsData: ValidatorBenchmark,
+  otherData: ValidatorBenchmark
+): { tjsOps: number; otherOps: number; sharedTests: number } | null {
+  // Build lookup for other validator's groups
+  const otherLookup = new Map<string, GroupResult>();
+  for (const result of otherData.results) {
     for (const group of result.groups) {
-      if (group.passed && group.nsPerTest > 0) {
-        totalNs += group.nsPerTest * group.testCount;
-        totalTests += group.testCount;
+      const key = `${result.draft}:${result.file}:${group.groupDesc}`;
+      otherLookup.set(key, group);
+    }
+  }
+
+  let h2hTjsNs = 0;
+  let h2hOtherNs = 0;
+  let h2hTests = 0;
+
+  for (const result of tjsData.results) {
+    for (const tjsGroup of result.groups) {
+      const key = `${result.draft}:${result.file}:${tjsGroup.groupDesc}`;
+      const otherGroup = otherLookup.get(key);
+
+      // Only include tests where BOTH validators pass
+      if (
+        tjsGroup.passed &&
+        otherGroup?.passed &&
+        tjsGroup.nsPerTest > 0 &&
+        otherGroup.nsPerTest > 0
+      ) {
+        h2hTjsNs += tjsGroup.nsPerTest * tjsGroup.testCount;
+        h2hOtherNs += otherGroup.nsPerTest * otherGroup.testCount;
+        h2hTests += tjsGroup.testCount;
       }
     }
   }
 
-  if (totalTests === 0 || totalNs === 0) return 0;
-  return (1e9 * totalTests) / totalNs;
+  if (h2hTests === 0) return null;
+
+  return {
+    tjsOps: (1e9 * h2hTests) / h2hTjsNs,
+    otherOps: (1e9 * h2hTests) / h2hOtherNs,
+    sharedTests: h2hTests,
+  };
 }
 
 // Calculate total passed tests for a validator
@@ -145,54 +177,90 @@ function getBadgeColor(percent: number): { bg: string; text: string } {
 }
 
 function main() {
-  // Load all validator data and calculate ops/sec
-  const validatorData: Array<{ name: string; ops: number; passedTests: number }> = [];
-
-  for (const validator of ALL_VALIDATORS) {
-    const data = loadBenchmarkData(validator);
-    if (data) {
-      const ops = calculateOps(data);
-      const passedTests = calculatePassedTests(data);
-      if (ops > 0) {
-        validatorData.push({ name: validator, ops, passedTests });
-        console.error(
-          `Loaded ${validator}: ${formatOps(ops)} ops/sec, ${passedTests} tests passed`
-        );
-      }
-    }
+  // Load tjs data first (baseline for all comparisons)
+  const tjsBenchmark = loadBenchmarkData('tjs');
+  if (!tjsBenchmark) {
+    console.error('Error: tjs.json is required for SVG generation');
+    process.exit(1);
   }
 
-  if (validatorData.length < 2) {
+  const tjsPassedTests = calculatePassedTests(tjsBenchmark);
+
+  // For each other validator, calculate head-to-head comparison
+  // This only counts tests where BOTH validators pass
+  const validatorData: Array<{
+    name: string;
+    ops: number; // adjusted ops/sec (normalized to tjs baseline)
+    ratio: number; // how many times faster tjs is
+    sharedTests: number;
+    passedTests: number; // total tests this validator passes (for compliance badge)
+  }> = [];
+
+  // We'll use the tjs ops from the comparison with the most shared tests as baseline
+  let tjsBaselineOps = 0;
+  let maxSharedTests = 0;
+
+  for (const validator of ALL_VALIDATORS) {
+    if (validator === 'tjs') continue;
+
+    const data = loadBenchmarkData(validator);
+    if (!data) continue;
+
+    const h2h = calculateH2HOps(tjsBenchmark, data);
+    if (!h2h) continue;
+
+    const ratio = h2h.tjsOps / h2h.otherOps;
+    validatorData.push({
+      name: validator,
+      ops: h2h.otherOps, // will be adjusted after we find tjs baseline
+      ratio,
+      sharedTests: h2h.sharedTests,
+      passedTests: calculatePassedTests(data),
+    });
+
+    // Track the comparison with the most shared tests to use as tjs baseline
+    if (h2h.sharedTests > maxSharedTests) {
+      maxSharedTests = h2h.sharedTests;
+      tjsBaselineOps = h2h.tjsOps;
+    }
+
+    console.error(
+      `H2H ${validator}: tjs ${formatOps(h2h.tjsOps)} vs ${formatOps(h2h.otherOps)} (${ratio.toFixed(2)}x) on ${h2h.sharedTests} shared tests`
+    );
+  }
+
+  if (validatorData.length < 1) {
     console.error('Not enough benchmark data found. Run benchmarks first.');
     process.exit(1);
   }
 
+  // Adjust each validator's ops based on ratio relative to tjs baseline
+  // This normalizes all comparisons to the same scale
+  for (const v of validatorData) {
+    v.ops = tjsBaselineOps / v.ratio;
+  }
+
+  // Add tjs with the baseline ops
+  validatorData.push({
+    name: 'tjs',
+    ops: tjsBaselineOps,
+    ratio: 1,
+    sharedTests: tjsPassedTests,
+    passedTests: tjsPassedTests,
+  });
+
   // Sort by ops/sec (fastest first)
   validatorData.sort((a, b) => b.ops - a.ops);
 
-  // Get tjs test count as the baseline for compliance percentage
-  const tjsData = validatorData.find((v) => v.name === 'tjs');
-  const tjsTestCount = tjsData?.passedTests || 6602; // fallback to known value
-
-  console.error('\nPerformance (ops/sec):');
+  console.error('\nAdjusted ops/sec (normalized to tjs baseline):');
   for (const v of validatorData) {
-    const compliance = Math.round((v.passedTests / tjsTestCount) * 100);
+    const compliance = Math.round((v.passedTests / tjsPassedTests) * 100);
     console.error(`  ${v.name}: ${formatOps(v.ops)} ops/sec, ${compliance}% valid`);
-  }
-
-  const tjsOps = tjsData?.ops || 0;
-  if (tjsOps > 0) {
-    console.error('\nMultipliers (tjs vs):');
-    for (const v of validatorData) {
-      if (v.name !== 'tjs') {
-        const mult = tjsOps / v.ops;
-        console.error(`  ${v.name}: ${mult.toFixed(1)}x`);
-      }
-    }
   }
 
   // Calculate chart dimensions based on number of validators
   const maxOps = Math.max(...validatorData.map((v) => v.ops));
+  const tjsTestCount = tjsPassedTests;
   const numValidators = validatorData.length;
 
   // Dynamic chart sizing
@@ -200,7 +268,8 @@ function main() {
   const chartHeight = 520; // Increased for badges
   const barWidth = Math.min(50, (chartWidth - 200) / numValidators - 20);
   const barSpacing = barWidth + 20;
-  const startX = 100;
+  const totalBarsWidth = numValidators * barSpacing - 20; // Total width of all bars
+  const startX = (chartWidth - totalBarsWidth) / 2; // Center the bars
   const baseY = 400;
   const maxHeight = 300;
 
@@ -208,7 +277,7 @@ function main() {
   const maxOpsRounded = Math.ceil(maxOps / 1e6) * 1e6;
   const yAxisStep = maxOpsRounded / 3;
 
-  // Generate gradient definitions
+  // Generate gradient definitions - use tjs color for all bars since they show tjs speedup
   const gradientDefs = validatorData
     .map((v) => {
       const colors = validatorColors[v.name] || { start: '#94a3b8', end: '#64748b' };
@@ -244,7 +313,7 @@ function main() {
       const badgeX = x + barWidth / 2 - badgeWidth / 2;
       const badgeY = 426;
 
-      return `  <!-- ${v.name}: ${formatOps(v.ops)}, ${compliance}% valid -->
+      return `  <!-- ${v.name}: ${formatOps(v.ops)} adjusted ops/sec, ${compliance}% valid -->
   <rect x="${x}" y="${y}" width="${barWidth}" height="${height}" rx="${rx}" fill="url(#${gradientId})"${filter}/>
   <text x="${x + barWidth / 2}" y="${y - 8}" text-anchor="middle" fill="${colors.label}" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="bold">${formatOps(v.ops)}</text>
   <text x="${x + barWidth / 2}" y="420" text-anchor="middle" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="500">${labelName}</text>
@@ -254,7 +323,8 @@ function main() {
     .join('\n\n');
 
   // Generate grid lines based on chart width
-  const gridEndX = startX + (numValidators - 1) * barSpacing + barWidth + 20;
+  const gridStartX = startX - 20;
+  const gridEndX = startX + totalBarsWidth + 20;
 
   // Generate SVG
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${chartWidth} ${chartHeight}">
@@ -276,21 +346,21 @@ ${gradientDefs}
 
   <!-- Subtle grid pattern -->
   <g opacity="0.1">
-    <line x1="80" y1="400" x2="${gridEndX}" y2="400" stroke="#94a3b8" stroke-width="1"/>
-    <line x1="80" y1="300" x2="${gridEndX}" y2="300" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
-    <line x1="80" y1="200" x2="${gridEndX}" y2="200" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
-    <line x1="80" y1="100" x2="${gridEndX}" y2="100" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
+    <line x1="${gridStartX}" y1="400" x2="${gridEndX}" y2="400" stroke="#94a3b8" stroke-width="1"/>
+    <line x1="${gridStartX}" y1="300" x2="${gridEndX}" y2="300" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
+    <line x1="${gridStartX}" y1="200" x2="${gridEndX}" y2="200" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
+    <line x1="${gridStartX}" y1="100" x2="${gridEndX}" y2="100" stroke="#94a3b8" stroke-width="1" stroke-dasharray="5,5"/>
   </g>
 
   <!-- Y-axis labels -->
-  <text x="70" y="405" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">0</text>
-  <text x="70" y="305" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">${formatOps(yAxisStep)}</text>
-  <text x="70" y="205" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">${formatOps(yAxisStep * 2)}</text>
-  <text x="70" y="105" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">${formatOps(yAxisStep * 3)}</text>
+  <text x="${gridStartX - 10}" y="405" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">0</text>
+  <text x="${gridStartX - 10}" y="305" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">${formatOps(yAxisStep)}</text>
+  <text x="${gridStartX - 10}" y="205" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">${formatOps(yAxisStep * 2)}</text>
+  <text x="${gridStartX - 10}" y="105" text-anchor="end" fill="#64748b" font-family="system-ui, -apple-system, sans-serif" font-size="12">${formatOps(yAxisStep * 3)}</text>
 
   <!-- Title -->
   <text x="${chartWidth / 2}" y="35" text-anchor="middle" fill="#f1f5f9" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="bold">JSON Schema Validator Performance</text>
-  <text x="${chartWidth / 2}" y="60" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="14">Operations per second (higher is better)</text>
+  <text x="${chartWidth / 2}" y="60" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="14">Adjusted ops/sec (head-to-head on shared tests)</text>
 
   <!-- Bars -->
 ${barsSvg}
@@ -308,7 +378,6 @@ ${barsSvg}
     <text x="210" y="10" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="10">&lt;30%</text>
   </g>
 
-  <text x="${chartWidth / 2}" y="508" text-anchor="middle" fill="#94a3b8" font-family="system-ui, -apple-system, sans-serif" font-size="10">Fast validators that fail most tests aren't actually validating - they're just returning early</text>
 </svg>
 `;
 
