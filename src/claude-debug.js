@@ -1,13 +1,37 @@
-// Check format (annotation mode - no validation) - why is this slow?
-import { compile } from '../dist/core/compiler.js';
-import { validator as schemasafe } from '@exodus/schemasafe';
+// Test the functional type handler
+import generateTypeCheck from './core/keywords/value/type-functional.js';
+import { Name, _ } from './core/codegen.js';
 
-// Format from benchmark - should just do type check since formatAssertion is false
-const formatSchema = { format: "email" };
-const tjs = compile(formatSchema, { legacyRef: true });
-const ss = schemasafe(formatSchema, { mode: 'lax', includeErrors: true });
+// Mock context
+const mockCtx = {
+  schema: { type: 'string' },
+  data: new Name('data'),
+  path: _`''`,
+  isVocabularyEnabled: () => true,
+  getMainFuncName: () => new Name('validate0'),
+};
 
-console.log("TJS format email (annotation mode):");
-console.log(tjs.toString());
-console.log("\nSchemasSafe format email:");
-console.log(ss.toString());
+console.log('=== Single type: string ===');
+const result1 = generateTypeCheck(mockCtx);
+console.log(result1.toString());
+console.log();
+
+// Test with number
+mockCtx.schema = { type: 'number' };
+console.log('=== Single type: number ===');
+const result2 = generateTypeCheck(mockCtx);
+console.log(result2.toString());
+console.log();
+
+// Test with multiple types (optimizable)
+mockCtx.schema = { type: ['string', 'number'] };
+console.log('=== Union type: string | number (optimizable) ===');
+const result3 = generateTypeCheck(mockCtx);
+console.log(result3.toString());
+console.log();
+
+// Test with mixed types (not optimizable)
+mockCtx.schema = { type: ['string', 'array'] };
+console.log('=== Union type: string | array ===');
+const result4 = generateTypeCheck(mockCtx);
+console.log(result4.toString());
