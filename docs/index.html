@@ -516,6 +516,7 @@
 
         <div class="panel-tabs" style="margin-bottom: 16px;">
           <button class="panel-tab active" data-example="user">user object</button>
+          <button class="panel-tab" data-example="shorthand">shorthand</button>
           <button class="panel-tab" data-example="union">discriminated union</button>
           <button class="panel-tab" data-example="recursive">recursive</button>
           <button class="panel-tab" data-example="formats">formats</button>
@@ -968,6 +969,24 @@ declare const result: Result;
           age: 28
         }
       },
+      shorthand: {
+        schema: `// Shorthand: use type strings directly
+// instead of { type: 'string' }
+
+// Simple primitive validation
+schema('string')
+
+// Also works in properties:
+// schema({
+//   type: 'object',
+//   properties: {
+//     name: 'string',
+//     age: 'integer',
+//     active: 'boolean'
+//   }
+// })`,
+        data: "hello world"
+      },
       union: {
         schema: `schema({
   oneOf: [
@@ -1062,18 +1081,23 @@ declare const result: Result;
     const statusBadge = document.getElementById('status-badge');
     const tabs = document.querySelectorAll('.panel-tab');
 
-    // Extract schema object from TypeScript code like "schema({...})"
+    // Extract schema object from TypeScript code like "schema({...})" or "schema('string')"
     function extractSchemaFromCode(code) {
-      const match = code.match(/schema\s*\(\s*(\{[\s\S]*\})\s*\)/);
-      if (!match) {
-        throw new Error('Could not find schema({...}) in code');
+      // Try object literal first: schema({...})
+      const objectMatch = code.match(/schema\s*\(\s*(\{[\s\S]*\})\s*\)/);
+      if (objectMatch) {
+        try {
+          return new Function('return ' + objectMatch[1])();
+        } catch (e) {
+          throw new Error('Invalid schema object: ' + e.message);
+        }
       }
-      // Use Function constructor to safely evaluate the object literal
-      try {
-        return new Function('return ' + match[1])();
-      } catch (e) {
-        throw new Error('Invalid schema object: ' + e.message);
+      // Try string shorthand: schema('string') or schema("string")
+      const stringMatch = code.match(/schema\s*\(\s*(['"])(\w+)\1\s*\)/);
+      if (stringMatch) {
+        return stringMatch[2]; // Return the type string directly
       }
+      throw new Error('Could not find schema({...}) or schema(\'type\') in code');
     }
 
     async function init() {
