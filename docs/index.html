@@ -973,19 +973,19 @@ declare const result: Result;
         schema: `// Shorthand: use type strings directly
 // instead of { type: 'string' }
 
-// Simple primitive validation
-schema('string')
-
-// Also works in properties:
-// schema({
-//   type: 'object',
-//   properties: {
-//     name: 'string',
-//     age: 'integer',
-//     active: 'boolean'
-//   }
-// })`,
-        data: "hello world"
+schema({
+  type: 'object',
+  properties: {
+    name: 'string',
+    age: 'integer',
+    active: 'boolean'
+  }
+})`,
+        data: {
+          name: 'Alice',
+          age: 30,
+          active: true
+        }
       },
       union: {
         schema: `schema({
